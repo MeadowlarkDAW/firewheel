@@ -3,7 +3,37 @@ name = "goldenrod"
 version = "0.1.0"
 authors = ["Billy Messenger <BillyDM@protonmail.com>"]
 edition = "2018"
+license = "MIT"
+keywords = ["gui", "audio", "vst", "lv2"]
+categories = ["gui", "visualization"]
+description = "A simple GUI library for audio plugins"
+homepage = "https://github.com/BillyDM/goldenrod"
+documentation = "https://docs.rs/goldenrod"
+repository = "https://github.com/BillyDM/goldenrod"
+readme = "README.md"
+
+[workspace]
+members = [
+    "examples/hello_world",
+]
+
+[badges]
+maintenance = { status = "actively-developed" }
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+wgpu = "0.6"
+zerocopy = "0.3"
+glam = "0.9"
+image = "0.23"
+twox-hash = "1.6"
+anyhow = "1.0"
+futures = "0.3"
+raw-window-handle = "0.3"
+
+[build-dependencies]
+anyhow = "1.0"
+fs_extra = "1.2"
+glob = "0.3"
+shaderc = "0.6"
