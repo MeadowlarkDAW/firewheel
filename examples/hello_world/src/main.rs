@@ -33,24 +33,19 @@ impl WindowHandler for HelloWorldExample {
 
     fn on_event(&mut self, _window: &mut Window, event: Event) {
         match event {
-            Event::Mouse(e) => println!("Mouse event: {:?}", e),
-            Event::Keyboard(e) => println!("Keyboard event: {:?}", e),
-            Event::Window(e) => {
-                println!("Window event: {:?}", e);
+            Event::Mouse(e) => {}
+            Event::Keyboard(e) => {}
+            Event::Window(e) => match e {
+                baseview::WindowEvent::Resized(window_info) => {
+                    let physical_size = Size::new(
+                        window_info.physical_size().width as f32,
+                        window_info.physical_size().height as f32,
+                    );
 
-                match e {
-                    baseview::WindowEvent::Resized(window_info) => {
-                        let physical_size = Size::new(
-                            window_info.physical_size().width as f32,
-                            window_info.physical_size().height as f32,
-                        );
-
-                        self.renderer
-                            .resize(physical_size, window_info.scale());
-                    }
-                    _ => {}
+                    self.renderer.resize(physical_size, window_info.scale());
                 }
-            }
+                _ => {}
+            },
         }
     }
 

@@ -1,8 +1,9 @@
-use std::cell::RefCell;
+use crate::{Rectangle, TextureSource};
+use std::fmt::Debug;
 use std::mem;
 use zerocopy::AsBytes;
 
-use crate::Rectangle;
+pub mod atlas;
 
 pub struct Pipeline {
     pipeline: wgpu::RenderPipeline,
@@ -13,6 +14,7 @@ pub struct Pipeline {
     constants_bind_group: wgpu::BindGroup,
     texture_bind_group: wgpu::BindGroup,
     texture_layout: wgpu::BindGroupLayout,
+    texture_atlas: atlas::Atlas,
 }
 
 impl Pipeline {
@@ -35,7 +37,7 @@ impl Pipeline {
 
         let constants_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("image constants layout"),
+                label: Some("goldenrod::texture constants layout"),
                 entries: &[
                     wgpu::BindGroupLayoutEntry {
                         binding: 0,
@@ -58,7 +60,7 @@ impl Pipeline {
             });
 
         let uniforms_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("image uniforms buffer"),
+            label: Some("goldenrod::texture uniforms buffer"),
             size: mem::size_of::<Uniforms>() as u64,
             usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
             mapped_at_creation: false,
@@ -66,7 +68,7 @@ impl Pipeline {
 
         let constants_bind_group =
             device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("image constants bind group"),
+                label: Some("goldenrod::texture constants bind group"),
                 layout: &constants_layout,
                 entries: &[
                     wgpu::BindGroupEntry {
@@ -84,7 +86,7 @@ impl Pipeline {
 
         let texture_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("image texture layout"),
+                label: Some("goldenrod::texture texture layout"),
                 entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStage::FRAGMENT,
@@ -99,7 +101,7 @@ impl Pipeline {
 
         let pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("image pipeline layout"),
+                label: Some("goldenrod::texture pipeline layout"),
                 push_constant_ranges: &[],
                 bind_group_layouts: &[&constants_layout, &texture_layout],
             });
@@ -114,7 +116,7 @@ impl Pipeline {
 
         let pipeline =
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("image pipeline"),
+                label: Some("goldenrod::texture pipeline"),
                 layout: Some(&pipeline_layout),
                 vertex_stage: wgpu::ProgrammableStageDescriptor {
                     module: &vs_module,
@@ -156,43 +158,37 @@ impl Pipeline {
 
         let vertex_buffer =
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("image vertex buffer"),
+                label: Some("goldenrod::texture vertex buffer"),
                 contents: QUAD_VERTICES.as_bytes(),
                 usage: wgpu::BufferUsage::VERTEX,
             });
 
         let index_buffer =
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("image index buffer"),
+                label: Some("goldenrod::texture index buffer"),
                 contents: QUAD_INDICES.as_bytes(),
                 usage: wgpu::BufferUsage::INDEX,
             });
-        let num_indices = QUAD_INDICES.len() as u32;
 
         let instances_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("image instance buffer"),
+            label: Some("goldenrod::texture instance buffer"),
             size: mem::size_of::<Instance>() as u64 * Instance::MAX as u64,
             usage: wgpu::BufferUsage::VERTEX | wgpu::BufferUsage::COPY_DST,
             mapped_at_creation: false,
         });
 
-        let texture_bytes = include_bytes!("../../happy-tree.png");
-        let texture = crate::texture::Texture::from_bytes(
-            &device,
-            &queue,
-            texture_bytes,
-            "happy-tree.png",
-        )
-        .unwrap();
+        let texture_atlas = atlas::Atlas::new(device);
 
         let texture_bind_group =
             device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("goldenrod::texture texture atlas bind group"),
                 layout: &texture_layout,
                 entries: &[wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&texture.view),
+                    resource: wgpu::BindingResource::TextureView(
+                        &texture_atlas.view(),
+                    ),
                 }],
-                label: Some("image texture bind group"),
             });
 
         Self {
@@ -204,6 +200,7 @@ impl Pipeline {
             constants_bind_group,
             texture_bind_group,
             texture_layout,
+            texture_atlas,
         }
     }
 
@@ -295,6 +292,21 @@ impl Pipeline {
             i += Instance::MAX;
         }
     }
+
+    pub fn load_texture_sources(
+        &mut self,
+        texture_sources: &[TextureSource],
+        hi_dpi: bool,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+    ) -> Result<(), atlas::AtlasError> {
+        self.texture_atlas.load_texture_sources(
+            device,
+            texture_sources,
+            encoder,
+            hi_dpi,
+        )
+    }
 }
 
 #[repr(C)]
@@ -341,6 +353,7 @@ struct Instance {
     _size: [f32; 2],
     _atlas_position: [f32; 2],
     _atlas_size: [f32; 2],
+    _atlas_layer: u32,
 }
 
 impl Instance {
@@ -374,6 +387,12 @@ impl Instance {
                     offset: (std::mem::size_of::<[f32; 2]>() * 3)
                         as wgpu::BufferAddress,
                 },
+                wgpu::VertexAttributeDescriptor {
+                    shader_location: 5,
+                    format: wgpu::VertexFormat::Uint,
+                    offset: (std::mem::size_of::<[f32; 2]>() * 4)
+                        as wgpu::BufferAddress,
+                },
             ],
         }
     }
@@ -391,4 +410,5 @@ const INSTANCES: [Instance; 1] = [Instance {
     _size: [200.0, 200.0],
     _atlas_position: [0.0, 0.0],
     _atlas_size: [256.0, 256.0],
+    _atlas_layer: 0,
 }];

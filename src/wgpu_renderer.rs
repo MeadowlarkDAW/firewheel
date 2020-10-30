@@ -1,9 +1,8 @@
+use crate::{Size, TextureSource};
 use futures::task::SpawnExt;
 use raw_window_handle::HasRawWindowHandle;
 
-use crate::Size;
-
-mod image;
+mod texture;
 mod viewport;
 
 pub use viewport::Viewport;
@@ -19,7 +18,7 @@ pub struct Renderer {
     staging_belt: wgpu::util::StagingBelt,
     local_pool: futures::executor::LocalPool,
 
-    image_pipeline: image::Pipeline,
+    texture_pipeline: texture::Pipeline,
 }
 
 impl Renderer {
@@ -72,8 +71,8 @@ impl Renderer {
         let staging_belt = wgpu::util::StagingBelt::new(Self::CHUNK_SIZE);
         let local_pool = futures::executor::LocalPool::new();
 
-        let image_pipeline =
-            image::Pipeline::new(&device, &queue, sc_desc.format);
+        let texture_pipeline =
+            texture::Pipeline::new(&device, &queue, sc_desc.format);
 
         Some(Self {
             instance,
@@ -86,7 +85,7 @@ impl Renderer {
             staging_belt,
             local_pool,
 
-            image_pipeline,
+            texture_pipeline,
         })
     }
 
@@ -136,7 +135,7 @@ impl Renderer {
             depth_stencil_attachment: None,
         });
 
-        self.image_pipeline.render(
+        self.texture_pipeline.render(
             &self.device,
             &mut self.staging_belt,
             &mut encoder,
@@ -156,5 +155,28 @@ impl Renderer {
             .expect("Failed to recall staging belt");
 
         self.local_pool.run_until_stalled();
+    }
+
+    pub fn load_texture_sources(
+        &mut self,
+        texture_sources: &[TextureSource],
+        hi_dpi: bool,
+    ) -> Result<(), texture::atlas::AtlasError> {
+        let mut encoder = self.device.create_command_encoder(
+            &wgpu::CommandEncoderDescriptor {
+                label: Some("texture loader encoder"),
+            },
+        );
+
+        self.texture_pipeline.load_texture_sources(
+            texture_sources,
+            hi_dpi,
+            &self.device,
+            &mut encoder,
+        )?;
+
+        self.queue.submit(Some(encoder.finish()));
+
+        Ok(())
     }
 }

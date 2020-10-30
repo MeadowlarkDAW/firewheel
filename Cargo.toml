@@ -25,12 +25,12 @@ maintenance = { status = "actively-developed" }
 [dependencies]
 wgpu = "0.6"
 zerocopy = "0.3"
-glam = "0.9"
 image = "0.23"
 twox-hash = "1.6"
 anyhow = "1.0"
 futures = "0.3"
 raw-window-handle = "0.3"
+guillotiere = "0.6.0"
 
 [build-dependencies]
 anyhow = "1.0"

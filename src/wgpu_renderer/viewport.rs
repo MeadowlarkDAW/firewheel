@@ -19,10 +19,8 @@ impl Viewport {
             (physical_size.height as f64 / scale_factor) as f32,
         );
 
-        let projection_scale = [
-            2.0 / logical_size.width,
-            -2.0 / logical_size.height
-        ];
+        let projection_scale =
+            [2.0 / logical_size.width, -2.0 / logical_size.height];
 
         Self {
             physical_size,
