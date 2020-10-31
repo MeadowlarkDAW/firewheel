@@ -1,4 +1,4 @@
-use crate::{Size, TextureSource};
+use crate::{Size, TextureHandle};
 use futures::task::SpawnExt;
 use raw_window_handle::HasRawWindowHandle;
 
@@ -157,9 +157,9 @@ impl Renderer {
         self.local_pool.run_until_stalled();
     }
 
-    pub fn load_texture_sources(
+    pub fn load_texture_handles<T: Into<TextureHandle> + Copy + Clone>(
         &mut self,
-        texture_sources: &[TextureSource],
+        textures: &[T],
         hi_dpi: bool,
     ) -> Result<(), texture::atlas::AtlasError> {
         let mut encoder = self.device.create_command_encoder(
@@ -168,8 +168,8 @@ impl Renderer {
             },
         );
 
-        self.texture_pipeline.load_texture_sources(
-            texture_sources,
+        self.texture_pipeline.load_texture_handles(
+            textures,
             hi_dpi,
             &self.device,
             &mut encoder,

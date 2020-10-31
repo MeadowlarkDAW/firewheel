@@ -1,9 +1,11 @@
-use crate::{Rectangle, TextureSource};
+use crate::{Rectangle, TextureHandle};
 use std::fmt::Debug;
 use std::mem;
 use zerocopy::AsBytes;
 
 pub mod atlas;
+
+const ATLAS_SCALE: [f32; 2] = [1.0 / atlas::ATLAS_SIZE as f32, 1.0 / atlas::ATLAS_SIZE as f32];
 
 pub struct Pipeline {
     pipeline: wgpu::RenderPipeline,
@@ -227,6 +229,7 @@ impl Pipeline {
             uniforms_buffer.copy_from_slice(
                 Uniforms {
                     scale: projection_scale,
+                    atlas_scale: ATLAS_SCALE,
                 }
                 .as_bytes(),
             );
@@ -293,19 +296,15 @@ impl Pipeline {
         }
     }
 
-    pub fn load_texture_sources(
+    pub fn load_texture_handles<T: Into<TextureHandle> + Copy + Clone>(
         &mut self,
-        texture_sources: &[TextureSource],
+        textures: &[T],
         hi_dpi: bool,
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
     ) -> Result<(), atlas::AtlasError> {
-        self.texture_atlas.load_texture_sources(
-            device,
-            texture_sources,
-            encoder,
-            hi_dpi,
-        )
+        self.texture_atlas
+            .load_texture_handles(device, textures, encoder, hi_dpi)
     }
 }
 
@@ -402,11 +401,12 @@ impl Instance {
 #[derive(Debug, Clone, Copy, AsBytes)]
 struct Uniforms {
     scale: [f32; 2],
+    atlas_scale: [f32; 2],
 }
 
 /// For testing purposes
 const INSTANCES: [Instance; 1] = [Instance {
-    _position: [50.0, 50.0],
+    _position: [100.0, 100.0],
     _size: [200.0, 200.0],
     _atlas_position: [0.0, 0.0],
     _atlas_size: [256.0, 256.0],

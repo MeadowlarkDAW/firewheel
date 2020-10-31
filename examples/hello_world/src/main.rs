@@ -1,6 +1,29 @@
 use baseview::{Event, Window, WindowHandler, WindowScalePolicy};
 use futures::executor::block_on;
-use goldenrod::{Renderer, Size};
+use goldenrod::{Point, Renderer, Size, TextureHandle, TextureSource};
+use std::path::Path;
+
+#[derive(Debug, Copy, Clone)]
+enum Textures {
+    HappyTree,
+}
+
+impl Textures {
+    pub const ALL: [Textures; 1] = [Textures::HappyTree];
+}
+
+impl From<Textures> for TextureHandle {
+    fn from(texture: Textures) -> Self {
+        match texture {
+            Textures::HappyTree => {
+                TextureHandle::from_1x(TextureSource::from_path(
+                    "./happy-tree.png",
+                    Point::ORIGIN,
+                ))
+            }
+        }
+    }
+}
 
 struct HelloWorldExample {
     renderer: Renderer,
@@ -13,12 +36,16 @@ impl HelloWorldExample {
             window.window_info().physical_size().height as f32,
         );
 
-        let renderer = block_on(Renderer::new(
+        let mut renderer = block_on(Renderer::new(
             window,
             physical_size,
             window.window_info().scale(),
         ))
         .unwrap();
+
+        renderer
+            .load_texture_handles(&Textures::ALL, false)
+            .unwrap();
 
         Self { renderer }
     }

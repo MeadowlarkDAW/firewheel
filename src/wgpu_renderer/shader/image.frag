@@ -1,11 +1,11 @@
 #version 450
 
-layout(location=0) in vec2 i_tex_coords;
-layout(location=0) out vec4 o_color;
+layout(location=0) in vec3 i_Uv;
+layout(location=0) out vec4 o_Color;
 
-layout(set = 0, binding = 1) uniform sampler s_diffuse;
-layout(set = 1, binding = 0) uniform texture2D t_diffuse;
+layout(set = 0, binding = 1) uniform sampler u_Sampler;
+layout(set = 1, binding = 0) uniform texture2DArray u_Texture;
 
 void main() {
-    o_color = texture(sampler2D(t_diffuse, s_diffuse), i_tex_coords);
+    o_Color = texture(sampler2DArray(u_Texture, u_Sampler), i_Uv);
 }

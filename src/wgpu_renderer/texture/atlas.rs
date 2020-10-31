@@ -1,5 +1,4 @@
-use crate::texture_source::TextureSourceError;
-use crate::TextureSource;
+use crate::{texture_handle, Point, TextureHandle};
 use image::{ImageBuffer, ImageError};
 use std::collections::HashMap;
 use std::error::Error;
@@ -20,23 +19,19 @@ pub const ATLAS_SIZE: u32 = 2048;
 
 #[derive(Debug)]
 pub enum AtlasError {
-    ImageError(ImageError),
+    ImageError(ImageError, String),
     PixelBufferTooSmall(u32, u32),
-    SourceHasNoData,
     Unkown,
 }
 
 impl fmt::Display for AtlasError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            AtlasError::ImageError(ref e) => {
-                write!(f, "Image Error: {}", e)
+            AtlasError::ImageError(ref e, path) => {
+                write!(f, "Image Error: {}, {}", e, path)
             }
             AtlasError::PixelBufferTooSmall(width, height) => {
                 write!(f, "The pixel buffer is smaller than the given size: width: {}, height: {}", width, height)
-            }
-            AtlasError::SourceHasNoData => {
-                write!(f, "Texture source has no data")
             }
             AtlasError::Unkown => {
                 write!(f, "Unkown error")
@@ -89,35 +84,43 @@ impl Atlas {
         }
     }
 
-    pub fn load_texture_sources(
+    pub fn load_texture_handles<T: Into<TextureHandle> + Copy + Clone>(
         &mut self,
         device: &wgpu::Device,
-        texture_sources: &[TextureSource],
+        textures: &[T],
         encoder: &mut wgpu::CommandEncoder,
         hi_dpi: bool,
     ) -> Result<(), AtlasError> {
-        let mut textures: Vec<(
+        let mut collected_textures: Vec<(
             u64,
             ImageBuffer<image::Bgra<u8>, Vec<u8>>,
             bool,
-        )> = Vec::with_capacity(texture_sources.len());
+            Point,
+        )> = Vec::with_capacity(textures.len());
 
-        for source in texture_sources {
-            match source.load_bgra(hi_dpi) {
-                Ok((data, is_hi_dpi)) => {
-                    textures.push((source.id(), data, is_hi_dpi));
+        for handle in textures {
+            let handle: TextureHandle = (*handle).into();
+
+            match handle.load_bgra(hi_dpi) {
+                Ok((data, is_hi_dpi, rotation_origin)) => {
+                    collected_textures.push((
+                        handle.id(),
+                        data,
+                        is_hi_dpi,
+                        rotation_origin,
+                    ));
                 }
                 Err(e) => match e {
-                    TextureSourceError::ImageError(e) => {
-                        return Err(AtlasError::ImageError(e));
+                    texture_handle::HandleError::ImageError(e, path) => {
+                        return Err(AtlasError::ImageError(e, path));
                     }
-                    TextureSourceError::PixelBufferTooSmall(width, height) => {
+                    texture_handle::HandleError::PixelBufferTooSmall(
+                        width,
+                        height,
+                    ) => {
                         return Err(AtlasError::PixelBufferTooSmall(
                             width, height,
                         ));
-                    }
-                    TextureSourceError::NoData => {
-                        return Err(AtlasError::SourceHasNoData);
                     }
                 },
             }
@@ -126,12 +129,13 @@ impl Atlas {
         // Clear old entries
         self.clear(device);
 
-        for (id, data, is_hi_dpi) in textures {
+        for (id, data, is_hi_dpi, rotation_origin) in collected_textures {
             if let Some(entry) = self.add_new_entry(
                 data.width(),
                 data.height(),
                 data.to_vec().as_slice(),
                 is_hi_dpi,
+                rotation_origin,
                 device,
                 encoder,
             ) {
@@ -193,6 +197,7 @@ impl Atlas {
         height: u32,
         data: &[u8],
         hi_dpi: bool,
+        rotation_origin: Point,
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
     ) -> Option<Entry> {
@@ -200,7 +205,8 @@ impl Atlas {
 
         let entry = {
             let current_size = self.layers.len();
-            let entry = self.allocate(width, height, hi_dpi)?;
+            let entry =
+                self.allocate(width, height, hi_dpi, rotation_origin)?;
 
             // We grow the internal texture after allocating if necessary
             let new_layers = self.layers.len() - current_size;
@@ -238,7 +244,7 @@ impl Atlas {
             });
 
         match &entry {
-            Entry::Contiguous(allocation) => {
+            Entry::Contiguous { allocation, .. } => {
                 self.upload_allocation(
                     &buffer,
                     width,
@@ -294,6 +300,7 @@ impl Atlas {
         width: u32,
         height: u32,
         hi_dpi: bool,
+        rotation_origin: Point,
     ) -> Option<Entry> {
         // Allocate one layer if texture fits perfectly
         if width == ATLAS_SIZE && height == ATLAS_SIZE {
@@ -306,18 +313,21 @@ impl Atlas {
             if let Some((i, layer)) = empty_layers.next() {
                 *layer = Layer::Full;
 
-                return Some(Entry::Contiguous(Allocation::Full {
-                    layer: i,
-                    hi_dpi,
-                }));
+                return Some(Entry::Contiguous {
+                    allocation: Allocation::Full { layer: i, hi_dpi },
+                    rotation_origin,
+                });
             }
 
             self.layers.push(Layer::Full);
 
-            return Some(Entry::Contiguous(Allocation::Full {
-                layer: self.layers.len() - 1,
-                hi_dpi,
-            }));
+            return Some(Entry::Contiguous {
+                allocation: Allocation::Full {
+                    layer: self.layers.len() - 1,
+                    hi_dpi,
+                },
+                rotation_origin,
+            });
         }
 
         // Split big textures across multiple layers
@@ -332,9 +342,10 @@ impl Atlas {
                 while x < width {
                     let width = std::cmp::min(width - x, ATLAS_SIZE);
 
-                    let allocation = self.allocate(width, height, hi_dpi)?;
+                    let allocation =
+                        self.allocate(width, height, hi_dpi, rotation_origin)?;
 
-                    if let Entry::Contiguous(allocation) = allocation {
+                    if let Entry::Contiguous { allocation, .. } = allocation {
                         fragments.push(entry::Fragment {
                             position: (x, y),
                             allocation,
@@ -350,6 +361,7 @@ impl Atlas {
             return Some(Entry::Fragmented {
                 size: (width as f32, height as f32),
                 fragments,
+                rotation_origin,
             });
         }
 
@@ -362,20 +374,26 @@ impl Atlas {
                     if let Some(region) = allocator.allocate(width, height) {
                         *layer = Layer::Busy(allocator);
 
-                        return Some(Entry::Contiguous(Allocation::Partial {
-                            region,
-                            layer: i,
-                            hi_dpi,
-                        }));
+                        return Some(Entry::Contiguous {
+                            allocation: Allocation::Partial {
+                                region,
+                                layer: i,
+                                hi_dpi,
+                            },
+                            rotation_origin,
+                        });
                     }
                 }
                 Layer::Busy(allocator) => {
                     if let Some(region) = allocator.allocate(width, height) {
-                        return Some(Entry::Contiguous(Allocation::Partial {
-                            region,
-                            layer: i,
-                            hi_dpi,
-                        }));
+                        return Some(Entry::Contiguous {
+                            allocation: Allocation::Partial {
+                                region,
+                                layer: i,
+                                hi_dpi,
+                            },
+                            rotation_origin,
+                        });
                     }
                 }
                 _ => {}
@@ -388,11 +406,14 @@ impl Atlas {
         if let Some(region) = allocator.allocate(width, height) {
             self.layers.push(Layer::Busy(allocator));
 
-            return Some(Entry::Contiguous(Allocation::Partial {
-                region,
-                layer: self.layers.len() - 1,
-                hi_dpi,
-            }));
+            return Some(Entry::Contiguous {
+                allocation: Allocation::Partial {
+                    region,
+                    layer: self.layers.len() - 1,
+                    hi_dpi,
+                },
+                rotation_origin,
+            });
         }
 
         // We ran out of memory (?)
