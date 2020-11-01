@@ -5,7 +5,10 @@ use zerocopy::AsBytes;
 
 pub mod atlas;
 
-const ATLAS_SCALE: [f32; 2] = [1.0 / atlas::ATLAS_SIZE as f32, 1.0 / atlas::ATLAS_SIZE as f32];
+const ATLAS_SCALE: [f32; 2] = [
+    1.0 / atlas::ATLAS_SIZE as f32,
+    1.0 / atlas::ATLAS_SIZE as f32,
+];
 
 pub struct Pipeline {
     pipeline: wgpu::RenderPipeline,
@@ -352,6 +355,8 @@ struct Instance {
     _size: [f32; 2],
     _atlas_position: [f32; 2],
     _atlas_size: [f32; 2],
+    _rotation_origin: [f32; 2],
+    _rotation: f32,
     _atlas_layer: u32,
 }
 
@@ -363,33 +368,53 @@ impl Instance {
             stride: mem::size_of::<Instance>() as u64,
             step_mode: wgpu::InputStepMode::Instance,
             attributes: &[
+                // _position: [f32; 2],
                 wgpu::VertexAttributeDescriptor {
                     shader_location: 1,
                     format: wgpu::VertexFormat::Float2,
                     offset: 0,
                 },
+                // _size: [f32; 2],
                 wgpu::VertexAttributeDescriptor {
                     shader_location: 2,
                     format: wgpu::VertexFormat::Float2,
                     offset: std::mem::size_of::<[f32; 2]>()
                         as wgpu::BufferAddress,
                 },
+                // _atlas_position: [f32; 2],
                 wgpu::VertexAttributeDescriptor {
                     shader_location: 3,
                     format: wgpu::VertexFormat::Float2,
                     offset: (std::mem::size_of::<[f32; 2]>() * 2)
                         as wgpu::BufferAddress,
                 },
+                // _atlas_size: [f32; 2],
                 wgpu::VertexAttributeDescriptor {
                     shader_location: 4,
                     format: wgpu::VertexFormat::Float2,
                     offset: (std::mem::size_of::<[f32; 2]>() * 3)
                         as wgpu::BufferAddress,
                 },
+                // _rotation_origin: [f32; 2],
                 wgpu::VertexAttributeDescriptor {
                     shader_location: 5,
-                    format: wgpu::VertexFormat::Uint,
+                    format: wgpu::VertexFormat::Float2,
                     offset: (std::mem::size_of::<[f32; 2]>() * 4)
+                        as wgpu::BufferAddress,
+                },
+                // _rotation: f32,
+                wgpu::VertexAttributeDescriptor {
+                    shader_location: 6,
+                    format: wgpu::VertexFormat::Float,
+                    offset: (std::mem::size_of::<[f32; 2]>() * 5)
+                        as wgpu::BufferAddress,
+                },
+                // _atlas_layer: u32,
+                wgpu::VertexAttributeDescriptor {
+                    shader_location: 7,
+                    format: wgpu::VertexFormat::Uint,
+                    offset: ((std::mem::size_of::<[f32; 2]>() * 5)
+                        + std::mem::size_of::<f32>())
                         as wgpu::BufferAddress,
                 },
             ],
@@ -410,5 +435,7 @@ const INSTANCES: [Instance; 1] = [Instance {
     _size: [200.0, 200.0],
     _atlas_position: [0.0, 0.0],
     _atlas_size: [256.0, 256.0],
+    _rotation_origin: [128.0, 128.0],
+    _rotation: 0.2,
     _atlas_layer: 0,
 }];

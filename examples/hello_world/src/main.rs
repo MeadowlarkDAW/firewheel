@@ -15,12 +15,9 @@ impl Textures {
 impl From<Textures> for TextureHandle {
     fn from(texture: Textures) -> Self {
         match texture {
-            Textures::HappyTree => {
-                TextureHandle::from_1x(TextureSource::from_path(
-                    "./happy-tree.png",
-                    Point::ORIGIN,
-                ))
-            }
+            Textures::HappyTree => TextureHandle::from_1x(
+                TextureSource::from_path("./happy-tree.png", Point::ORIGIN),
+            ),
         }
     }
 }
