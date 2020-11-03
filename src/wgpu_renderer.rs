@@ -5,9 +5,10 @@ use raw_window_handle::HasRawWindowHandle;
 mod texture;
 mod viewport;
 
+pub use texture::atlas;
 pub use viewport::Viewport;
 
-pub struct Renderer {
+pub(crate) struct Renderer {
     instance: wgpu::Instance,
     surface: wgpu::Surface,
     device: wgpu::Device,
@@ -105,6 +106,10 @@ impl Renderer {
             self.device.create_swap_chain(&self.surface, &self.sc_desc);
     }
 
+    pub fn viewport(&self) -> &Viewport {
+        &self.viewport
+    }
+
     pub fn render(&mut self) {
         let frame = self
             .swap_chain
@@ -157,10 +162,9 @@ impl Renderer {
         self.local_pool.run_until_stalled();
     }
 
-    pub fn load_texture_handles<T: Into<TextureHandle> + Copy + Clone>(
+    pub fn replace_texture_atlas(
         &mut self,
-        textures: &[T],
-        hi_dpi: bool,
+        textures: &[TextureHandle],
     ) -> Result<(), texture::atlas::AtlasError> {
         let mut encoder = self.device.create_command_encoder(
             &wgpu::CommandEncoderDescriptor {
@@ -168,9 +172,9 @@ impl Renderer {
             },
         );
 
-        self.texture_pipeline.load_texture_handles(
+        self.texture_pipeline.replace_texture_atlas(
             textures,
-            hi_dpi,
+            self.viewport.is_hi_dpi(),
             &self.device,
             &mut encoder,
         )?;

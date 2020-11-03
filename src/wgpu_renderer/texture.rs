@@ -299,15 +299,15 @@ impl Pipeline {
         }
     }
 
-    pub fn load_texture_handles<T: Into<TextureHandle> + Copy + Clone>(
+    pub fn replace_texture_atlas(
         &mut self,
-        textures: &[T],
+        textures: &[TextureHandle],
         hi_dpi: bool,
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
     ) -> Result<(), atlas::AtlasError> {
         self.texture_atlas
-            .load_texture_handles(device, textures, encoder, hi_dpi)
+            .replace_texture_atlas(device, textures, encoder, hi_dpi)
     }
 }
 

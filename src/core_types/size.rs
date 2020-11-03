@@ -39,3 +39,9 @@ impl From<Size> for [f32; 2] {
         [size.width, size.height]
     }
 }
+
+impl From<Size> for baseview::Size {
+    fn from(size: Size) -> baseview::Size {
+        baseview::Size::new(size.width as f64, size.height as f64)
+    }
+}

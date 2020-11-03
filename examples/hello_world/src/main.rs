@@ -1,7 +1,7 @@
-use baseview::{Event, Window, WindowHandler, WindowScalePolicy};
-use futures::executor::block_on;
-use goldenrod::{Point, Renderer, Size, TextureHandle, TextureSource};
-use std::path::Path;
+use goldenrod::{
+    Application, Canvas, Message, Parent, Point, Runner, Size, TextureHandle,
+    TextureSource, Window, WindowOpenOptions, WindowScalePolicy,
+};
 
 #[derive(Debug, Copy, Clone)]
 enum Textures {
@@ -22,68 +22,38 @@ impl From<Textures> for TextureHandle {
     }
 }
 
-struct HelloWorldExample {
-    renderer: Renderer,
-}
+struct HelloWorldExample {}
 
 impl HelloWorldExample {
-    pub fn build(window: &mut Window) -> Self {
-        let physical_size = Size::new(
-            window.window_info().physical_size().width as f32,
-            window.window_info().physical_size().height as f32,
-        );
+    fn new(canvas: &mut Canvas) -> Self {
+        canvas.replace_texture_atlas(&Textures::ALL).unwrap();
 
-        let mut renderer = block_on(Renderer::new(
-            window,
-            physical_size,
-            window.window_info().scale(),
-        ))
-        .unwrap();
-
-        renderer
-            .load_texture_handles(&Textures::ALL, false)
-            .unwrap();
-
-        Self { renderer }
+        Self {}
     }
 }
 
-impl WindowHandler for HelloWorldExample {
-    type Message = ();
+impl Application for HelloWorldExample {
+    type CustomMessage = ();
 
-    fn on_frame(&mut self) {
-        self.renderer.render();
+    fn on_message(
+        &mut self,
+        message: Message<Self::CustomMessage>,
+        canvas: &mut Canvas,
+    ) {
     }
-
-    fn on_event(&mut self, _window: &mut Window, event: Event) {
-        match event {
-            Event::Mouse(e) => {}
-            Event::Keyboard(e) => {}
-            Event::Window(e) => match e {
-                baseview::WindowEvent::Resized(window_info) => {
-                    let physical_size = Size::new(
-                        window_info.physical_size().width as f32,
-                        window_info.physical_size().height as f32,
-                    );
-
-                    self.renderer.resize(physical_size, window_info.scale());
-                }
-                _ => {}
-            },
-        }
-    }
-
-    fn on_message(&mut self, _window: &mut Window, _message: Self::Message) {}
 }
 
 fn main() {
-    let window_open_options = baseview::WindowOpenOptions {
-        title: "baseview".into(),
-        size: baseview::Size::new(512.0, 512.0),
+    let options = WindowOpenOptions {
+        title: "goldenrod: hello world".into(),
+        size: Size::new(512.0, 512.0).into(),
         scale: WindowScalePolicy::SystemScaleFactor,
-        parent: baseview::Parent::None,
+        parent: Parent::None,
     };
 
-    let handle = Window::open(window_open_options, HelloWorldExample::build);
+    let handle = Runner::open(options, |canvas| -> HelloWorldExample {
+        HelloWorldExample::new(canvas)
+    });
+
     handle.app_run_blocking();
 }

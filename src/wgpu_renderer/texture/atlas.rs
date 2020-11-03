@@ -84,10 +84,10 @@ impl Atlas {
         }
     }
 
-    pub fn load_texture_handles<T: Into<TextureHandle> + Copy + Clone>(
+    pub fn replace_texture_atlas(
         &mut self,
         device: &wgpu::Device,
-        textures: &[T],
+        textures: &[TextureHandle],
         encoder: &mut wgpu::CommandEncoder,
         hi_dpi: bool,
     ) -> Result<(), AtlasError> {
@@ -99,8 +99,6 @@ impl Atlas {
         )> = Vec::with_capacity(textures.len());
 
         for handle in textures {
-            let handle: TextureHandle = (*handle).into();
-
             match handle.load_bgra(hi_dpi) {
                 Ok((data, is_hi_dpi, rotation_origin)) => {
                     collected_textures.push((

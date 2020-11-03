@@ -9,6 +9,4 @@ publish = false
 
 [dependencies]
 goldenrod = { path = "../../" }
-baseview = { git = "https://github.com/RustAudio/baseview.git", branch = "master" }
 raw-window-handle = "0.3"
-futures = "0.3"

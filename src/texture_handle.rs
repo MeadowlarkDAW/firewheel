@@ -11,7 +11,7 @@ pub(crate) enum HandleError {
 }
 
 /// A handle to texture data.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TextureHandle {
     id: u64,
     dpi_sources: DpiTextureSources,

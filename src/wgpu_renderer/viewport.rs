@@ -59,6 +59,11 @@ impl Viewport {
     }
 
     ///
+    pub fn is_hi_dpi(&self) -> bool {
+        self.scale_factor > 1.0
+    }
+
+    ///
     pub fn bounds(&self) -> Rectangle {
         Rectangle {
             x: 0.0,
