@@ -22,7 +22,10 @@ impl Allocator {
 
         self.allocations += 1;
 
-        Some(Region { rectangle })
+        Some(Region {
+            position: [rectangle.min.x as f32, rectangle.min.y as f32],
+            size: [width as f32, height as f32],
+        })
     }
 
     /*
@@ -39,22 +42,8 @@ impl Allocator {
 }
 
 pub struct Region {
-    rectangle: guillotiere::Rectangle,
-}
-
-impl Region {
-    pub fn position(&self) -> [f32; 2] {
-        //let rectangle = &self.allocation.rectangle;
-
-        [self.rectangle.min.x as f32, self.rectangle.min.y as f32]
-    }
-
-    pub fn size(&self) -> [f32; 2] {
-        //let size = self.allocation.rectangle.size();
-        let size = self.rectangle.size();
-
-        [size.width as f32, size.height as f32]
-    }
+    pub position: [f32; 2],
+    pub size: [f32; 2],
 }
 
 impl std::fmt::Debug for Allocator {
@@ -66,7 +55,8 @@ impl std::fmt::Debug for Allocator {
 impl std::fmt::Debug for Region {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Region")
-            .field("rectangle", &self.rectangle)
+            .field("position", &self.position)
+            .field("size", &self.size)
             .finish()
     }
 }

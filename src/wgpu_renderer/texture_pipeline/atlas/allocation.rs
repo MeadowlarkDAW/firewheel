@@ -14,14 +14,14 @@ pub enum Allocation {
 impl Allocation {
     pub fn position(&self) -> [f32; 2] {
         match self {
-            Allocation::Partial { region, .. } => region.position(),
+            Allocation::Partial { region, .. } => region.position,
             Allocation::Full { .. } => [0.0, 0.0],
         }
     }
 
     pub fn size(&self) -> [f32; 2] {
         match self {
-            Allocation::Partial { region, .. } => region.size(),
+            Allocation::Partial { region, .. } => region.size,
             Allocation::Full { .. } => {
                 [super::ATLAS_SIZE as f32, super::ATLAS_SIZE as f32]
             }

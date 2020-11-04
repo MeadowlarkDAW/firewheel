@@ -37,11 +37,6 @@ impl<T: texture::IdGroup> Root<T> {
 
     pub(crate) fn render(&mut self) {
         if self.do_full_redraw {
-            let clear_color = match self.background {
-                Background::SolidColor(color) => Some(color),
-                _ => None,
-            };
-
             self.renderer.render(self.do_full_redraw, &self.background);
 
             self.do_full_redraw = false;

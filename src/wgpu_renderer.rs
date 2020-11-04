@@ -1,4 +1,4 @@
-use crate::{texture, Background, Color, Size};
+use crate::{texture, Background, Color, Point, Size};
 use futures::task::SpawnExt;
 use raw_window_handle::HasRawWindowHandle;
 
@@ -9,6 +9,8 @@ pub use texture_pipeline::atlas;
 pub use viewport::Viewport;
 
 pub(crate) struct Renderer {
+    pub texture_pipeline: texture_pipeline::Pipeline,
+
     instance: wgpu::Instance,
     surface: wgpu::Surface,
     device: wgpu::Device,
@@ -18,8 +20,6 @@ pub(crate) struct Renderer {
     viewport: viewport::Viewport,
     staging_belt: wgpu::util::StagingBelt,
     local_pool: futures::executor::LocalPool,
-
-    texture_pipeline: texture_pipeline::Pipeline,
 }
 
 impl Renderer {
@@ -128,9 +128,9 @@ impl Renderer {
         );
 
         if do_full_redraw {
-            let clear_color = match background {
-                Background::SolidColor(color) => *color,
-                _ => Color::BLACK,
+            let (clear_color, back_texture) = match background {
+                Background::SolidColor(color) => (*color, None),
+                Background::Texture(t) => (Color::BLACK, Some(t)),
             };
 
             let _ = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -151,6 +151,15 @@ impl Renderer {
                 ],
                 depth_stencil_attachment: None,
             });
+
+            if let Some(back_texture) = back_texture {
+                self.texture_pipeline.add_instance(
+                    *back_texture,
+                    Point::ORIGIN,
+                    [1.0, 1.0],
+                    0.0,
+                );
+            }
         }
 
         self.texture_pipeline.render(

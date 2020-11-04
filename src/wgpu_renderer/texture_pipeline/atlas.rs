@@ -228,7 +228,7 @@ impl Atlas {
 
         let mut padded_data = vec![0; padded_data_size];
 
-        for row in 0..height as usize {
+        for row in 0 as usize..height as usize {
             let offset = row * padded_width;
 
             padded_data[offset..offset + 4 * width as usize].copy_from_slice(

@@ -34,7 +34,7 @@ impl Pipeline {
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
+            mag_filter: wgpu::FilterMode::Nearest,
             min_filter: wgpu::FilterMode::Linear,
             mipmap_filter: wgpu::FilterMode::Linear,
             ..Default::default()
@@ -299,6 +299,8 @@ impl Pipeline {
 
             i += Instance::MAX;
         }
+
+        self.instances.clear();
     }
 
     pub fn replace_texture_atlas(
@@ -312,15 +314,11 @@ impl Pipeline {
             .replace_texture_atlas(device, textures, encoder, hi_dpi)
     }
 
-    pub fn clear_instances(&mut self) {
-        self.instances.clear();
-    }
-
     pub fn add_instance<T: texture::IdGroup>(
         &mut self,
         texture: T,
         position: Point,
-        size: [f32; 2],
+        scale: [f32; 2],
         rotation: f32,
     ) {
         if let Some(entry) = self.texture_atlas.get_entry(texture) {
@@ -332,7 +330,7 @@ impl Pipeline {
                 } => {
                     self.instances.push(Instance {
                         _position: position.into(),
-                        _size: size,
+                        _scale: scale,
                         _atlas_position: allocation.position(),
                         _atlas_size: allocation.size(),
                         _rotation_origin: (*rotation_origin).into(),
@@ -358,7 +356,7 @@ impl Pipeline {
                                     position.y + fragment.position[1],
                                 ],
                                 // TODO: add relative scale field to fragment
-                                _size: fragment.allocation.size(),
+                                _scale: scale,
                                 _atlas_position: fragment.allocation.position(),
                                 _atlas_size: fragment.allocation.size(),
                                 _rotation_origin: (*rotation_origin).into(),
@@ -375,7 +373,7 @@ impl Pipeline {
                                     position.y + fragment.position[1],
                                 ],
                                 // TODO: add relative scale field to fragment
-                                _size: fragment.allocation.size(),
+                                _scale: scale,
                                 _atlas_position: fragment.allocation.position(),
                                 _atlas_size: fragment.allocation.size(),
                                 _rotation_origin: [
@@ -435,7 +433,7 @@ const QUAD_VERTICES: [Vertex; 4] = [
 #[derive(Debug, Clone, Copy, AsBytes)]
 struct Instance {
     _position: [f32; 2],
-    _size: [f32; 2],
+    _scale: [f32; 2],
     _atlas_position: [f32; 2],
     _atlas_size: [f32; 2],
     _rotation_origin: [f32; 2],
@@ -458,7 +456,7 @@ impl Instance {
                     format: wgpu::VertexFormat::Float2,
                     offset: 0,
                 },
-                // _size: [f32; 2],
+                // _scale: [f32; 2],
                 wgpu::VertexAttributeDescriptor {
                     shader_location: 2,
                     format: wgpu::VertexFormat::Float2,
