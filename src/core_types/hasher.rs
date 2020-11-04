@@ -1,3 +1,5 @@
+use std::hash::{Hash, Hasher as _};
+
 /// The hasher used to compare items.
 #[derive(Debug)]
 pub struct Hasher(twox_hash::XxHash64);

@@ -1,4 +1,4 @@
-use crate::{Rectangle, TextureHandle};
+use crate::{texture, Point, Rectangle};
 use std::fmt::Debug;
 use std::mem;
 use zerocopy::AsBytes;
@@ -18,14 +18,14 @@ pub struct Pipeline {
     instances_buffer: wgpu::Buffer,
     constants_bind_group: wgpu::BindGroup,
     texture_bind_group: wgpu::BindGroup,
-    texture_layout: wgpu::BindGroupLayout,
     texture_atlas: atlas::Atlas,
+
+    instances: Vec<Instance>,
 }
 
 impl Pipeline {
     pub fn new(
         device: &wgpu::Device,
-        queue: &wgpu::Queue,
         texture_format: wgpu::TextureFormat,
     ) -> Self {
         use wgpu::util::DeviceExt;
@@ -204,8 +204,8 @@ impl Pipeline {
             instances_buffer,
             constants_bind_group,
             texture_bind_group,
-            texture_layout,
             texture_atlas,
+            instances: Vec::with_capacity(Instance::MAX),
         }
     }
 
@@ -218,6 +218,10 @@ impl Pipeline {
         bounds: Rectangle,
         target: &wgpu::TextureView,
     ) {
+        if self.instances.len() == 0 {
+            return;
+        }
+
         // Update uniforms buffer
         {
             let mut uniforms_buffer = staging_belt.write_buffer(
@@ -238,10 +242,8 @@ impl Pipeline {
             );
         }
 
-        let instances = INSTANCES.clone();
-
         let mut i = 0;
-        let total = instances.len();
+        let total = self.instances.len();
         while i < total {
             let end = (i + Instance::MAX).min(total);
             let amount = end - i;
@@ -258,7 +260,7 @@ impl Pipeline {
             );
 
             instances_buffer
-                .copy_from_slice(instances[i..i + amount].as_bytes());
+                .copy_from_slice(self.instances[i..i + amount].as_bytes());
 
             let mut render_pass =
                 encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -301,13 +303,94 @@ impl Pipeline {
 
     pub fn replace_texture_atlas(
         &mut self,
-        textures: &[TextureHandle],
+        textures: &[texture::Handle],
         hi_dpi: bool,
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
     ) -> Result<(), atlas::AtlasError> {
         self.texture_atlas
             .replace_texture_atlas(device, textures, encoder, hi_dpi)
+    }
+
+    pub fn clear_instances(&mut self) {
+        self.instances.clear();
+    }
+
+    pub fn add_instance<T: texture::IdGroup>(
+        &mut self,
+        texture: T,
+        position: Point,
+        size: [f32; 2],
+        rotation: f32,
+    ) {
+        if let Some(entry) = self.texture_atlas.get_entry(texture) {
+            match entry {
+                atlas::Entry::Contiguous {
+                    allocation,
+                    rotation_origin,
+                    hi_dpi,
+                } => {
+                    self.instances.push(Instance {
+                        _position: position.into(),
+                        _size: size,
+                        _atlas_position: allocation.position(),
+                        _atlas_size: allocation.size(),
+                        _rotation_origin: (*rotation_origin).into(),
+                        _rotation: rotation,
+                        _atlas_layer: allocation.layer(),
+                        _is_hi_dpi: (*hi_dpi).into(),
+                    });
+                }
+                atlas::Entry::Fragmented {
+                    fragments,
+                    rotation_origin,
+                    hi_dpi,
+                    ..
+                } => {
+                    let is_hi_dpi: u32 = (*hi_dpi).into();
+
+                    // Don't bother computing rotation origins.
+                    if rotation == 0.0 {
+                        for fragment in fragments {
+                            self.instances.push(Instance {
+                                _position: [
+                                    position.x + fragment.position[0],
+                                    position.y + fragment.position[1],
+                                ],
+                                // TODO: add relative scale field to fragment
+                                _size: fragment.allocation.size(),
+                                _atlas_position: fragment.allocation.position(),
+                                _atlas_size: fragment.allocation.size(),
+                                _rotation_origin: (*rotation_origin).into(),
+                                _rotation: rotation,
+                                _atlas_layer: fragment.allocation.layer(),
+                                _is_hi_dpi: is_hi_dpi,
+                            });
+                        }
+                    } else {
+                        for fragment in fragments {
+                            self.instances.push(Instance {
+                                _position: [
+                                    position.x + fragment.position[0],
+                                    position.y + fragment.position[1],
+                                ],
+                                // TODO: add relative scale field to fragment
+                                _size: fragment.allocation.size(),
+                                _atlas_position: fragment.allocation.position(),
+                                _atlas_size: fragment.allocation.size(),
+                                _rotation_origin: [
+                                    rotation_origin.x + fragment.position[0],
+                                    rotation_origin.y + fragment.position[1],
+                                ],
+                                _rotation: rotation,
+                                _atlas_layer: fragment.allocation.layer(),
+                                _is_hi_dpi: is_hi_dpi,
+                            });
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -358,6 +441,7 @@ struct Instance {
     _rotation_origin: [f32; 2],
     _rotation: f32,
     _atlas_layer: u32,
+    _is_hi_dpi: u32,
 }
 
 impl Instance {
@@ -417,6 +501,15 @@ impl Instance {
                         + std::mem::size_of::<f32>())
                         as wgpu::BufferAddress,
                 },
+                // _is_hi_dpi: u32,
+                wgpu::VertexAttributeDescriptor {
+                    shader_location: 8,
+                    format: wgpu::VertexFormat::Uint,
+                    offset: ((std::mem::size_of::<[f32; 2]>() * 5)
+                        + std::mem::size_of::<f32>()
+                        + std::mem::size_of::<u32>())
+                        as wgpu::BufferAddress,
+                },
             ],
         }
     }
@@ -428,14 +521,3 @@ struct Uniforms {
     scale: [f32; 2],
     atlas_scale: [f32; 2],
 }
-
-/// For testing purposes
-const INSTANCES: [Instance; 1] = [Instance {
-    _position: [100.0, 100.0],
-    _size: [200.0, 200.0],
-    _atlas_position: [0.0, 0.0],
-    _atlas_size: [256.0, 256.0],
-    _rotation_origin: [128.0, 128.0],
-    _rotation: 0.2,
-    _atlas_layer: 0,
-}];

@@ -43,17 +43,17 @@ pub struct Region {
 }
 
 impl Region {
-    pub fn position(&self) -> (f32, f32) {
+    pub fn position(&self) -> [f32; 2] {
         //let rectangle = &self.allocation.rectangle;
 
-        (self.rectangle.min.x as f32, self.rectangle.min.y as f32)
+        [self.rectangle.min.x as f32, self.rectangle.min.y as f32]
     }
 
-    pub fn size(&self) -> (f32, f32) {
+    pub fn size(&self) -> [f32; 2] {
         //let size = self.allocation.rectangle.size();
         let size = self.rectangle.size();
 
-        (size.width as f32, size.height as f32)
+        [size.width as f32, size.height as f32]
     }
 }
 

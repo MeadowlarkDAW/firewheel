@@ -6,16 +6,18 @@ pub enum Entry {
     Contiguous {
         allocation: allocation::Allocation,
         rotation_origin: Point,
+        hi_dpi: u32,
     },
     Fragmented {
-        size: (f32, f32),
+        size: [f32; 2],
         fragments: Vec<Fragment>,
         rotation_origin: Point,
+        hi_dpi: u32,
     },
 }
 
 impl Entry {
-    pub fn size(&self) -> (f32, f32) {
+    pub fn size(&self) -> [f32; 2] {
         match self {
             Entry::Contiguous { allocation, .. } => allocation.size(),
             Entry::Fragmented { size, .. } => *size,
@@ -36,6 +38,6 @@ impl Entry {
 
 #[derive(Debug)]
 pub struct Fragment {
-    pub position: (u32, u32),
+    pub position: [f32; 2],
     pub allocation: allocation::Allocation,
 }

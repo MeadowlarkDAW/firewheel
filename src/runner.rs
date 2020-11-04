@@ -1,24 +1,24 @@
-use crate::{Application, Canvas, Message, Size};
+use crate::{Application, Message, Root, Size};
 use baseview::{Event, Window, WindowHandle, WindowHandler, WindowOpenOptions};
 
 pub struct Runner<A: Application + 'static + Send> {
     user_app: A,
-    canvas: Canvas,
+    root: Root<<A as Application>::TextureIDs>,
 }
 
 impl<A: Application + 'static + Send> Runner<A> {
     /// Open a new window
     pub fn open<B>(settings: WindowOpenOptions, build: B) -> WindowHandle
     where
-        B: FnOnce(&mut Canvas) -> A,
+        B: FnOnce(&mut Root<A::TextureIDs>) -> A,
         B: Send + 'static,
     {
         Window::open(settings, move |window: &mut Window| -> Runner<A> {
-            let mut canvas = Canvas::new(window);
+            let mut root = Root::new(window);
 
-            let user_app = build(&mut canvas);
+            let user_app = build(&mut root);
 
-            Runner { user_app, canvas }
+            Runner { user_app, root }
         })
     }
 }
@@ -27,9 +27,9 @@ impl<A: Application + 'static + Send> WindowHandler for Runner<A> {
     type Message = Message<A::CustomMessage>;
 
     fn on_frame(&mut self) {
-        self.user_app.on_frame(&mut self.canvas);
+        self.user_app.on_frame(&mut self.root);
 
-        self.canvas.renderer.render();
+        self.root.render();
     }
 
     fn on_event(&mut self, _window: &mut Window, event: Event) {
@@ -41,19 +41,18 @@ impl<A: Application + 'static + Send> WindowHandler for Runner<A> {
                         window_info.physical_size().height as f32,
                     );
 
-                    self.canvas
-                        .renderer
-                        .resize(physical_size, window_info.scale());
+                    self.root
+                        .window_resized(physical_size, window_info.scale());
                 }
                 _ => {}
             },
             _ => {}
         }
 
-        self.user_app.on_raw_event(event, &mut self.canvas);
+        self.user_app.on_raw_event(event, &mut self.root);
     }
 
     fn on_message(&mut self, _window: &mut Window, message: Self::Message) {
-        self.user_app.on_message(message, &mut self.canvas);
+        self.user_app.on_message(message, &mut self.root);
     }
 }

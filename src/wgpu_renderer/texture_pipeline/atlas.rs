@@ -1,4 +1,4 @@
-use crate::{texture_handle, Point, TextureHandle};
+use crate::{texture, Point};
 use image::{ImageBuffer, ImageError};
 use std::collections::HashMap;
 use std::error::Error;
@@ -87,7 +87,7 @@ impl Atlas {
     pub fn replace_texture_atlas(
         &mut self,
         device: &wgpu::Device,
-        textures: &[TextureHandle],
+        textures: &[texture::Handle],
         encoder: &mut wgpu::CommandEncoder,
         hi_dpi: bool,
     ) -> Result<(), AtlasError> {
@@ -102,17 +102,17 @@ impl Atlas {
             match handle.load_bgra(hi_dpi) {
                 Ok((data, is_hi_dpi, rotation_origin)) => {
                     collected_textures.push((
-                        handle.id(),
+                        handle.hashed_id(),
                         data,
                         is_hi_dpi,
                         rotation_origin,
                     ));
                 }
                 Err(e) => match e {
-                    texture_handle::HandleError::ImageError(e, path) => {
+                    texture::HandleError::ImageError(e, path) => {
                         return Err(AtlasError::ImageError(e, path));
                     }
-                    texture_handle::HandleError::PixelBufferTooSmall(
+                    texture::HandleError::PixelBufferTooSmall(
                         width,
                         height,
                     ) => {
@@ -126,6 +126,8 @@ impl Atlas {
 
         // Clear old entries
         self.clear(device);
+
+        self.atlas_map.reserve(collected_textures.len());
 
         for (id, data, is_hi_dpi, rotation_origin) in collected_textures {
             if let Some(entry) = self.add_new_entry(
@@ -255,8 +257,9 @@ impl Atlas {
             }
             Entry::Fragmented { fragments, .. } => {
                 for fragment in fragments {
-                    let (x, y) = fragment.position;
-                    let offset = (y * padded_width as u32 + 4 * x) as usize;
+                    let [x, y] = fragment.position;
+                    let offset = (y as u32 * padded_width as u32 + 4 * x as u32)
+                        as usize;
 
                     self.upload_allocation(
                         &buffer,
@@ -274,6 +277,11 @@ impl Atlas {
         //log::info!("Current atlas: {:?}", self);
 
         Some(entry)
+    }
+
+    #[inline]
+    pub fn get_entry<T: texture::IdGroup>(&self, texture: T) -> Option<&Entry> {
+        self.atlas_map.get(&texture.hash_to_u64())
     }
 
     /*
@@ -300,6 +308,8 @@ impl Atlas {
         hi_dpi: bool,
         rotation_origin: Point,
     ) -> Option<Entry> {
+        let hi_dpi_u32: u32 = if hi_dpi { 1 } else { 0 };
+
         // Allocate one layer if texture fits perfectly
         if width == ATLAS_SIZE && height == ATLAS_SIZE {
             let mut empty_layers = self
@@ -312,8 +322,9 @@ impl Atlas {
                 *layer = Layer::Full;
 
                 return Some(Entry::Contiguous {
-                    allocation: Allocation::Full { layer: i, hi_dpi },
+                    allocation: Allocation::Full { layer: i as u32 },
                     rotation_origin,
+                    hi_dpi: hi_dpi_u32,
                 });
             }
 
@@ -321,10 +332,10 @@ impl Atlas {
 
             return Some(Entry::Contiguous {
                 allocation: Allocation::Full {
-                    layer: self.layers.len() - 1,
-                    hi_dpi,
+                    layer: self.layers.len() as u32 - 1,
                 },
                 rotation_origin,
+                hi_dpi: hi_dpi_u32,
             });
         }
 
@@ -345,7 +356,7 @@ impl Atlas {
 
                     if let Entry::Contiguous { allocation, .. } = allocation {
                         fragments.push(entry::Fragment {
-                            position: (x, y),
+                            position: [x as f32, y as f32],
                             allocation,
                         });
                     }
@@ -357,9 +368,10 @@ impl Atlas {
             }
 
             return Some(Entry::Fragmented {
-                size: (width as f32, height as f32),
+                size: [width as f32, height as f32],
                 fragments,
                 rotation_origin,
+                hi_dpi: hi_dpi_u32,
             });
         }
 
@@ -375,10 +387,10 @@ impl Atlas {
                         return Some(Entry::Contiguous {
                             allocation: Allocation::Partial {
                                 region,
-                                layer: i,
-                                hi_dpi,
+                                layer: i as u32,
                             },
                             rotation_origin,
+                            hi_dpi: hi_dpi_u32,
                         });
                     }
                 }
@@ -387,10 +399,10 @@ impl Atlas {
                         return Some(Entry::Contiguous {
                             allocation: Allocation::Partial {
                                 region,
-                                layer: i,
-                                hi_dpi,
+                                layer: i as u32,
                             },
                             rotation_origin,
+                            hi_dpi: hi_dpi_u32,
                         });
                     }
                 }
@@ -407,10 +419,10 @@ impl Atlas {
             return Some(Entry::Contiguous {
                 allocation: Allocation::Partial {
                     region,
-                    layer: self.layers.len() - 1,
-                    hi_dpi,
+                    layer: self.layers.len() as u32 - 1,
                 },
                 rotation_origin,
+                hi_dpi: hi_dpi_u32,
             });
         }
 
@@ -451,8 +463,8 @@ impl Atlas {
         allocation: &Allocation,
         encoder: &mut wgpu::CommandEncoder,
     ) {
-        let (x, y) = allocation.position();
-        let (width, height) = allocation.size();
+        let [x, y] = allocation.position();
+        let [width, height] = allocation.size();
         let layer = allocation.layer();
 
         let extent = wgpu::Extent3d {

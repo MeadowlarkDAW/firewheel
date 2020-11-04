@@ -1,4 +1,5 @@
 mod color;
+mod fill;
 mod font;
 mod hasher;
 mod point;
@@ -7,6 +8,7 @@ mod size;
 mod vector;
 
 pub use color::Color;
+pub use fill::FillMode;
 pub use font::{Font, HAlign, VAlign};
 pub use hasher::Hasher;
 pub use point::Point;

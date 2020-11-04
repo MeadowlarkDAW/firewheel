@@ -1,9 +1,9 @@
 use goldenrod::{
-    Application, Canvas, Message, Parent, Point, Runner, Size, TextureHandle,
-    TextureSource, Window, WindowOpenOptions, WindowScalePolicy,
+    texture, Application, Background, Color, Message, Parent, Point, Root,
+    Runner, Size, WindowOpenOptions, WindowScalePolicy,
 };
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Hash)]
 enum Textures {
     HappyTree,
 }
@@ -12,11 +12,13 @@ impl Textures {
     pub const ALL: [Textures; 1] = [Textures::HappyTree];
 }
 
-impl From<Textures> for TextureHandle {
+impl texture::IdGroup for Textures {}
+
+impl From<Textures> for texture::Handle {
     fn from(texture: Textures) -> Self {
         match texture {
-            Textures::HappyTree => TextureHandle::from_1x(
-                TextureSource::from_path("./happy-tree.png", Point::ORIGIN),
+            Textures::HappyTree => texture::Handle::from_1x_only(
+                texture::Source::from_path("./happy-tree.png", Point::ORIGIN),
             ),
         }
     }
@@ -25,8 +27,10 @@ impl From<Textures> for TextureHandle {
 struct HelloWorldExample {}
 
 impl HelloWorldExample {
-    fn new(canvas: &mut Canvas) -> Self {
-        canvas.replace_texture_atlas(&Textures::ALL).unwrap();
+    fn new(root: &mut Root<Textures>) -> Self {
+        root.replace_texture_atlas(&Textures::ALL).unwrap();
+        //root.set_background(Background::SolidColor(Color::new(0.02, 0.02, 0.025, 1.0)));
+        root.set_background(Background::Texture(Textures::HappyTree));
 
         Self {}
     }
@@ -34,13 +38,9 @@ impl HelloWorldExample {
 
 impl Application for HelloWorldExample {
     type CustomMessage = ();
+    type TextureIDs = Textures;
 
-    fn on_message(
-        &mut self,
-        message: Message<Self::CustomMessage>,
-        canvas: &mut Canvas,
-    ) {
-    }
+    fn on_message(&mut self, message: Message<()>, root: &mut Root<Textures>) {}
 }
 
 fn main() {

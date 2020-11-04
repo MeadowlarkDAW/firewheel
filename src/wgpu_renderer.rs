@@ -1,11 +1,11 @@
-use crate::{Size, TextureHandle};
+use crate::{texture, Background, Color, Size};
 use futures::task::SpawnExt;
 use raw_window_handle::HasRawWindowHandle;
 
-mod texture;
+mod texture_pipeline;
 mod viewport;
 
-pub use texture::atlas;
+pub use texture_pipeline::atlas;
 pub use viewport::Viewport;
 
 pub(crate) struct Renderer {
@@ -19,7 +19,7 @@ pub(crate) struct Renderer {
     staging_belt: wgpu::util::StagingBelt,
     local_pool: futures::executor::LocalPool,
 
-    texture_pipeline: texture::Pipeline,
+    texture_pipeline: texture_pipeline::Pipeline,
 }
 
 impl Renderer {
@@ -73,7 +73,7 @@ impl Renderer {
         let local_pool = futures::executor::LocalPool::new();
 
         let texture_pipeline =
-            texture::Pipeline::new(&device, &queue, sc_desc.format);
+            texture_pipeline::Pipeline::new(&device, sc_desc.format);
 
         Some(Self {
             instance,
@@ -110,7 +110,11 @@ impl Renderer {
         &self.viewport
     }
 
-    pub fn render(&mut self) {
+    pub fn render<T: texture::IdGroup>(
+        &mut self,
+        do_full_redraw: bool,
+        background: &Background<T>,
+    ) {
         let frame = self
             .swap_chain
             .get_current_frame()
@@ -123,22 +127,31 @@ impl Renderer {
             },
         );
 
-        let _ = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
-                attachment: &frame.view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color {
-                        r: 0.0,
-                        g: 0.0,
-                        b: 0.0,
-                        a: 1.0,
-                    }),
-                    store: true,
-                },
-            }],
-            depth_stencil_attachment: None,
-        });
+        if do_full_redraw {
+            let clear_color = match background {
+                Background::SolidColor(color) => *color,
+                _ => Color::BLACK,
+            };
+
+            let _ = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                color_attachments: &[
+                    wgpu::RenderPassColorAttachmentDescriptor {
+                        attachment: &frame.view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color {
+                                r: clear_color.r as f64,
+                                g: clear_color.g as f64,
+                                b: clear_color.b as f64,
+                                a: 1.0,
+                            }),
+                            store: true,
+                        },
+                    },
+                ],
+                depth_stencil_attachment: None,
+            });
+        }
 
         self.texture_pipeline.render(
             &self.device,
@@ -164,8 +177,8 @@ impl Renderer {
 
     pub fn replace_texture_atlas(
         &mut self,
-        textures: &[TextureHandle],
-    ) -> Result<(), texture::atlas::AtlasError> {
+        textures: &[texture::Handle],
+    ) -> Result<(), texture_pipeline::atlas::AtlasError> {
         let mut encoder = self.device.create_command_encoder(
             &wgpu::CommandEncoderDescriptor {
                 label: Some("texture loader encoder"),

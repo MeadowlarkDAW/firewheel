@@ -12,57 +12,56 @@ pub(crate) enum HandleError {
 
 /// A handle to texture data.
 #[derive(Debug, Clone)]
-pub struct TextureHandle {
+pub struct Handle {
     id: u64,
-    dpi_sources: DpiTextureSources,
+    dpi_mode: DpiMode,
 }
 
-impl TextureHandle {
-    /// Creates a new [`TextureHandle`] using only a 1x dpi resolution source.
+impl Handle {
+    /// Creates a new [`Handle`] using only a 1x dpi resolution source.
     /// The texture will be scaled up when using higher dpi resolutions.
     ///
-    /// [`TextureHandle`]: struct.TextureHandle.html
-    pub fn from_1x<T: Into<TextureSource>>(source_1x: T) -> Self {
-        let source_1x: TextureSource = source_1x.into();
-
-        let mut hasher = Hasher::default();
-        source_1x.data().hash(&mut hasher);
+    /// [`Handle`]: struct.Handle.html
+    pub fn from_1x_only<T: Into<Source>>(source_1x: T) -> Self {
+        let source_1x: Source = source_1x.into();
 
         Self {
-            id: hasher.finish(),
-            dpi_sources: DpiTextureSources::Only1x(source_1x),
+            id: 0,
+            dpi_mode: DpiMode::Only1x(source_1x),
         }
     }
 
-    /// Creates a new [`TextureHandle`] with only a 2x hi-dpi resolution source.
+    /// Creates a new [`Handle`] with only a 2x hi-dpi resolution source.
     /// The texture will be scaled down when using lower dpi resolutions.
     ///
-    /// [`TextureHandle`]: struct.TextureHandle.html
-    pub fn from_2x<T: Into<TextureSource>>(source_2x: T) -> Self {
-        let source_2x: TextureSource = source_2x.into();
-
-        let mut hasher = Hasher::default();
-        source_2x.data().hash(&mut hasher);
+    /// [`Handle`]: struct.Handle.html
+    pub fn from_2x_only<T: Into<Source>>(source_2x: T) -> Self {
+        let source_2x: Source = source_2x.into();
 
         Self {
-            id: hasher.finish(),
-            dpi_sources: DpiTextureSources::Only2x(source_2x),
+            id: 0,
+            dpi_mode: DpiMode::Only2x(source_2x),
         }
     }
 
-    /// Creates a new [`TextureHandle`] with both a 1x dpi and 2x hi-dpi resolution source.
+    /// Creates a new [`Handle`] with both a 1x dpi and 2x hi-dpi resolution source.
     ///
-    /// [`TextureHandle`]: struct.TextureHandle.html
-    pub fn from_1x_and_2x<T: Into<TextureSource>>(source_2x: T) -> Self {
-        let source_2x: TextureSource = source_2x.into();
-
-        let mut hasher = Hasher::default();
-        source_2x.data().hash(&mut hasher);
+    /// [`Handle`]: struct.Handle.html
+    pub fn from_1x_and_2x<T: Into<Source>>(source_2x: T) -> Self {
+        let source_2x: Source = source_2x.into();
 
         Self {
-            id: hasher.finish(),
-            dpi_sources: DpiTextureSources::Only2x(source_2x),
+            id: 0,
+            dpi_mode: DpiMode::Only2x(source_2x),
         }
+    }
+
+    pub(crate) fn set_hashed_id(&mut self, id: u64) {
+        self.id = id;
+    }
+
+    pub(crate) fn hashed_id(&self) -> u64 {
+        self.id
     }
 
     pub(crate) fn load_bgra(
@@ -70,14 +69,12 @@ impl TextureHandle {
         hi_dpi: bool,
     ) -> Result<(ImageBuffer<image::Bgra<u8>, Vec<u8>>, bool, Point), HandleError>
     {
-        let (source, is_hi_dpi, rotation_origin) = match &self.dpi_sources {
-            DpiTextureSources::Only1x(source) => {
+        let (source, is_hi_dpi, rotation_origin) = match &self.dpi_mode {
+            DpiMode::Only1x(source) => {
                 (source, false, source.rotation_origin())
             }
-            DpiTextureSources::Only2x(source) => {
-                (source, true, source.rotation_origin())
-            }
-            DpiTextureSources::Both {
+            DpiMode::Only2x(source) => (source, true, source.rotation_origin()),
+            DpiMode::Both {
                 source_1x,
                 source_2x,
             } => {
@@ -91,66 +88,62 @@ impl TextureHandle {
 
         Ok((source.load_bgra()?, is_hi_dpi, rotation_origin))
     }
-
-    pub(crate) fn id(&self) -> u64 {
-        self.id
-    }
 }
 
-/// [`TextureHandle`] sources containing data for 1x and/or 2x hi-dpi resolution
+/// [`Handle`] sources containing data for 1x and/or 2x hi-dpi resolution
 /// sources.
 ///
-/// [`TextureHandle`]: struct.TextureHandle.html
+/// [`Handle`]: struct.Handle.html
 #[derive(Debug, Clone)]
-pub enum DpiTextureSources {
+pub enum DpiMode {
     /// Use only a 1x dpi resolution texture.
     /// The texture will be scaled up when using higher dpi resolutions.
-    Only1x(TextureSource),
+    Only1x(Source),
     /// Use only a 2x hi-dpi resolution texture.
     /// The texture will be scaled down when using lower dpi resolutions.
-    Only2x(TextureSource),
+    Only2x(Source),
     /// Use both a 1x dpi and 2x hi-dpi resolution textures.
     Both {
-        source_1x: TextureSource,
-        source_2x: TextureSource,
+        source_1x: Source,
+        source_2x: Source,
     },
 }
 
-/// A [`TextureHandle`] source.
+/// A [`Handle`] source.
 ///
-/// [`TextureHandle`]: struct.Handle`.html
+/// [`Handle`]: struct.Handle`.html
 #[derive(Debug, Clone)]
-pub struct TextureSource {
+pub struct Source {
     data: Arc<Data>,
     rotation_origin: Point,
 }
 
-impl TextureSource {
-    /// Creates a texture [`TextureSource`] pointing to the image of the given path.
+impl Source {
+    /// Creates a texture [`Source`] pointing to the image of the given path.
     ///
     /// Makes an educated guess about the image format by examining the data in the file.
     ///
-    /// [`TextureSource`]: struct.TextureSource.html
+    /// [`Source`]: struct.Source.html
     pub fn from_path<T: Into<PathBuf>>(
         path: T,
         rotation_origin: Point,
-    ) -> TextureSource {
+    ) -> Source {
         Self::from_data(Data::Path(path.into()), rotation_origin)
     }
 
-    /// Creates a texture [`TextureSource`] containing the image pixels directly. This
+    /// Creates a texture [`Source`] containing the image pixels directly. This
     /// function expects the input data to be provided as a `Vec<u8>` of BGRA
     /// pixels.
     ///
     /// This is useful if you have already decoded your image.
     ///
-    /// [`TextureSource`]: struct.TextureSource.html
+    /// [`Source`]: struct.Source.html
     pub fn from_pixels(
         width: u32,
         height: u32,
         pixels: Vec<u8>,
         rotation_origin: Point,
-    ) -> TextureSource {
+    ) -> Source {
         Self::from_data(
             Data::Pixels {
                 width,
@@ -161,23 +154,20 @@ impl TextureSource {
         )
     }
 
-    /// Creates a texture [`TextureSource`] containing the image data directly.
+    /// Creates a texture [`Source`] containing the image data directly.
     ///
     /// Makes an educated guess about the image format by examining the given data.
     ///
     /// This is useful if you already have your image loaded in-memory, maybe
     /// because you downloaded or generated it procedurally.
     ///
-    /// [`TextureSource`]: struct.TextureSource.html
-    pub fn from_memory(
-        bytes: Vec<u8>,
-        rotation_origin: Point,
-    ) -> TextureSource {
+    /// [`Source`]: struct.Source.html
+    pub fn from_memory(bytes: Vec<u8>, rotation_origin: Point) -> Source {
         Self::from_data(Data::Bytes(bytes), rotation_origin)
     }
 
-    fn from_data(data: Data, rotation_origin: Point) -> TextureSource {
-        TextureSource {
+    fn from_data(data: Data, rotation_origin: Point) -> Source {
+        Source {
             data: Arc::new(data),
             rotation_origin,
         }
@@ -205,7 +195,7 @@ impl TextureSource {
 /// The data of a [`Texture`].
 ///
 /// [`Texture`]: struct.Texture.html
-#[derive(Clone, Hash)]
+#[derive(Clone)]
 pub enum Data {
     /// File data
     Path(PathBuf),
@@ -283,5 +273,13 @@ impl Debug for Data {
                 write!(f, "Pixels({} * {})", width, height)
             }
         }
+    }
+}
+
+pub trait IdGroup: Hash + Copy + Clone + Into<Handle> {
+    fn hash_to_u64(&self) -> u64 {
+        let mut hasher = Hasher::default();
+        self.hash(&mut hasher);
+        hasher.finish()
     }
 }

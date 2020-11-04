@@ -8,6 +8,7 @@ layout(location=4) in vec2 i_Atlas_Size;
 layout(location=5) in vec2 i_Rotate_Origin;
 layout(location=6) in float i_Rotation;
 layout(location=7) in uint i_Atlas_Layer;
+layout(location=8) in uint i_Is_Hi_Dpi;
 
 layout(set = 0, binding = 0) uniform Globals {
     vec2 u_Scale;
