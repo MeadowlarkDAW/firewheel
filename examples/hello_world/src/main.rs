@@ -1,6 +1,6 @@
 use goldenrod::{
-    hash_id, Application, Background, Color, Message, Parent, Root, Runner,
-    Size, Texture, TextureSource, WindowOpenOptions, WindowScalePolicy,
+    hash_id, settings, Application, Background, Color, Message, Parent, Root,
+    Runner, Settings, Size, Texture, TextureSource,
 };
 
 #[derive(Debug, Copy, Clone, Hash)]
@@ -38,15 +38,16 @@ impl Application for HelloWorldExample {
 }
 
 fn main() {
-    let options = WindowOpenOptions {
-        title: "goldenrod: hello world".into(),
-        size: Size::new(512.0, 512.0).into(),
-        scale: WindowScalePolicy::SystemScaleFactor,
-        parent: Parent::None,
+    let settings = Settings {
+        window: settings::Window {
+            title: "goldenrod: hello world".into(),
+            size: Size::new(256, 256),
+            scale: settings::ScalePolicy::SystemScaleFactor,
+        },
     };
 
-    let handle = Runner::open(options, |canvas| -> HelloWorldExample {
-        HelloWorldExample::new(canvas)
+    let handle = Runner::open(settings, |root| -> HelloWorldExample {
+        HelloWorldExample::new(root)
     });
 
     handle.app_run_blocking();

@@ -27,7 +27,7 @@ impl Renderer {
     // Creating some of the wgpu types requires async code
     pub async fn new(
         window: &impl HasRawWindowHandle,
-        physical_size: Size,
+        physical_size: Size<u16>,
         scale_factor: f64,
     ) -> Option<Self> {
         let viewport =
@@ -62,8 +62,8 @@ impl Renderer {
         let sc_desc = wgpu::SwapChainDescriptor {
             usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
             format: wgpu::TextureFormat::Bgra8UnormSrgb,
-            width: viewport.physical_size().width.ceil() as u32,
-            height: viewport.physical_size().height.ceil() as u32,
+            width: u32::from(viewport.physical_size().width),
+            height: u32::from(viewport.physical_size().height),
             present_mode: wgpu::PresentMode::Mailbox,
         };
         let swap_chain = device.create_swap_chain(&surface, &sc_desc);
@@ -88,7 +88,7 @@ impl Renderer {
         })
     }
 
-    pub fn resize(&mut self, new_physical_size: Size, scale_factor: f64) {
+    pub fn resize(&mut self, new_physical_size: Size<u16>, scale_factor: f64) {
         if self.viewport.physical_size() == new_physical_size
             && self.viewport.scale_factor() == scale_factor
         {
@@ -98,8 +98,8 @@ impl Renderer {
         self.viewport =
             Viewport::from_physical_size(new_physical_size, scale_factor);
 
-        self.sc_desc.width = new_physical_size.width.ceil() as u32;
-        self.sc_desc.height = new_physical_size.height.ceil() as u32;
+        self.sc_desc.width = u32::from(new_physical_size.width);
+        self.sc_desc.height = u32::from(new_physical_size.height);
         self.swap_chain =
             self.device.create_swap_chain(&self.surface, &self.sc_desc);
     }
@@ -122,37 +122,49 @@ impl Renderer {
         );
 
         if do_full_redraw {
-            let (clear_color, back_texture) = match background {
-                Background::SolidColor(color) => (*color, None),
-                Background::Texture(t) => (Color::BLACK, Some(t)),
-            };
-
-            let _ = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                color_attachments: &[
-                    wgpu::RenderPassColorAttachmentDescriptor {
-                        attachment: &frame.view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color {
-                                r: clear_color.r as f64,
-                                g: clear_color.g as f64,
-                                b: clear_color.b as f64,
-                                a: 1.0,
-                            }),
-                            store: true,
+            match background {
+                Background::SolidColor(color) => {
+                    let _ = encoder.begin_render_pass(
+                        &wgpu::RenderPassDescriptor {
+                            color_attachments: &[
+                                wgpu::RenderPassColorAttachmentDescriptor {
+                                    attachment: &frame.view,
+                                    resolve_target: None,
+                                    ops: wgpu::Operations {
+                                        load: wgpu::LoadOp::Clear(
+                                            wgpu::Color {
+                                                r: color.r as f64,
+                                                g: color.g as f64,
+                                                b: color.b as f64,
+                                                a: 1.0,
+                                            },
+                                        ),
+                                        store: true,
+                                    },
+                                },
+                            ],
+                            depth_stencil_attachment: None,
                         },
-                    },
-                ],
-                depth_stencil_attachment: None,
-            });
-
-            if let Some(back_texture) = back_texture {
-                self.texture_pipeline.add_instance(
-                    *back_texture,
-                    Point::ORIGIN,
-                    [1.0, 1.0],
-                    0.0,
-                );
+                    );
+                }
+                Background::Texture(id) => {
+                    self.texture_pipeline.add_instance(
+                        *id,
+                        Point::new(0, 0),
+                        [1.0, 1.0],
+                        0.0,
+                    );
+                }
+                Background::MultipleTextures(ids) => {
+                    for (id, position) in ids {
+                        self.texture_pipeline.add_instance(
+                            *id,
+                            *position,
+                            [1.0, 1.0],
+                            0.0,
+                        );
+                    }
+                }
             }
         }
 

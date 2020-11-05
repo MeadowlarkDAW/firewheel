@@ -6,6 +6,7 @@ mod runner;
 mod wgpu_renderer;
 mod widgets;
 
+pub mod settings;
 pub mod texture;
 
 use std::hash::{Hash, Hasher as _};
@@ -15,14 +16,14 @@ pub use core_types::*;
 pub use message::Message;
 pub use root::Root;
 pub use runner::Runner;
+pub use settings::Settings;
 pub use texture::{Texture, TextureSource};
 pub use wgpu_renderer::atlas;
 pub use widgets::*;
 
 pub use baseview::{
     Event, KeyboardEvent, MouseButton, MouseClick, MouseCursor, MouseEvent,
-    Parent, Window, WindowEvent, WindowHandle, WindowInfo, WindowOpenOptions,
-    WindowScalePolicy,
+    Parent, WindowEvent, WindowHandle, WindowInfo,
 };
 
 #[inline]

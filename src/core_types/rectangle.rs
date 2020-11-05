@@ -23,7 +23,7 @@ impl Rectangle {
     /// [`Rectangle`]: struct.Rectangle.html
     /// [`Point`]: struct.Point.html
     /// [`Size`]: struct.Size.html
-    pub fn new(top_left: Point, size: Size) -> Self {
+    pub fn new(top_left: Point<f32>, size: Size<f32>) -> Self {
         Self {
             x: top_left.x,
             y: top_left.y,
@@ -37,7 +37,7 @@ impl Rectangle {
     ///
     /// [`Rectangle`]: struct.Rectangle.html
     /// [`Size`]: struct.Size.html
-    pub fn with_size(size: Size) -> Self {
+    pub fn with_size(size: Size<f32>) -> Self {
         Self {
             x: 0.0,
             y: 0.0,
@@ -50,7 +50,7 @@ impl Rectangle {
     ///
     /// [`Point`]: struct.Point.html
     /// [`Rectangle`]: struct.Rectangle.html
-    pub fn center(&self) -> Point {
+    pub fn center(&self) -> Point<f32> {
         Point::new(self.center_x(), self.center_y())
     }
 
@@ -75,7 +75,7 @@ impl Rectangle {
     /// Returns the position of the top left corner of the [`Rectangle`].
     ///
     /// [`Rectangle`]: struct.Rectangle.html
-    pub fn position(&self) -> Point {
+    pub fn position(&self) -> Point<f32> {
         Point::new(self.x, self.y)
     }
 
@@ -83,7 +83,7 @@ impl Rectangle {
     ///
     /// [`Size`]: struct.Size.html
     /// [`Rectangle`]: struct.Rectangle.html
-    pub fn size(&self) -> Size {
+    pub fn size(&self) -> Size<f32> {
         Size::new(self.width, self.height)
     }
 
@@ -91,7 +91,7 @@ impl Rectangle {
     ///
     /// [`Point`]: struct.Point.html
     /// [`Rectangle`]: struct.Rectangle.html
-    pub fn contains(&self, point: Point) -> bool {
+    pub fn contains(&self, point: Point<f32>) -> bool {
         self.x <= point.x
             && point.x <= self.x + self.width
             && self.y <= point.y
@@ -141,8 +141,8 @@ impl std::ops::Mul<f32> for Rectangle {
 
     fn mul(self, scale: f32) -> Self {
         Self {
-            x: self.x as f32 * scale,
-            y: self.y as f32 * scale,
+            x: self.x * scale,
+            y: self.y * scale,
             width: self.width * scale,
             height: self.height * scale,
         }

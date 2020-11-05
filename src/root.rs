@@ -1,18 +1,19 @@
 use crate::wgpu_renderer::Renderer;
-use crate::{atlas, texture, Background, Color, Size, Texture, Window};
+use crate::{atlas, Background, Color, Size, Texture};
+use baseview::Window;
 use futures::executor::block_on;
 
-pub struct Root {
-    pub(crate) renderer: Renderer,
+pub(crate) struct RootState {
+    pub renderer: Renderer,
     background: Background,
     do_full_redraw: bool,
 }
 
-impl Root {
-    pub(crate) fn new(window: &mut Window) -> Self {
-        let physical_size = Size::new(
-            window.window_info().physical_size().width as f32,
-            window.window_info().physical_size().height as f32,
+impl RootState {
+    pub fn new(window: &mut Window) -> Self {
+        let physical_size = Size::<u16>::new(
+            window.window_info().physical_size().width as u16,
+            window.window_info().physical_size().height as u16,
         );
 
         let renderer = block_on(Renderer::new(
@@ -29,17 +30,31 @@ impl Root {
         }
     }
 
-    pub(crate) fn window_resized(&mut self, physical_size: Size, scale: f64) {
+    pub fn window_resized(&mut self, physical_size: Size<u16>, scale: f64) {
         self.renderer.resize(physical_size, scale);
         self.do_full_redraw = true;
     }
 
-    pub(crate) fn render(&mut self) {
+    pub fn render(&mut self) {
         if self.do_full_redraw {
             self.renderer.render(self.do_full_redraw, &self.background);
 
             self.do_full_redraw = false;
         }
+    }
+}
+
+pub struct Root<'a> {
+    state: &'a mut RootState,
+    window: &'a mut baseview::Window,
+}
+
+impl<'a> Root<'a> {
+    pub(crate) fn new(
+        state: &'a mut RootState,
+        window: &'a mut baseview::Window,
+    ) -> Self {
+        Self { state, window }
     }
 
     /// Replace the current texture atlas with a new one.
@@ -57,12 +72,19 @@ impl Root {
             })
             .collect();
 
-        self.renderer.replace_texture_atlas(textures.as_slice())
+        self.state
+            .renderer
+            .replace_texture_atlas(textures.as_slice())
     }
 
+    /// Set the window background from one or multiple multiple backgrounds.
     pub fn set_background(&mut self, background: Background) {
-        self.background = background;
-        self.do_full_redraw = true;
+        self.state.background = background;
+        self.state.do_full_redraw = true;
+    }
+
+    pub fn fit_window_to_background(&mut self) {
+        // TODO: request window size
     }
 
     // TODO:

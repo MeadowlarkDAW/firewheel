@@ -95,7 +95,7 @@ impl Atlas {
             u64,
             ImageBuffer<image::Bgra<u8>, Vec<u8>>,
             bool,
-            Point,
+            Point<f32>,
         )> = Vec::with_capacity(textures.len());
 
         for (id, texture) in textures {
@@ -197,7 +197,7 @@ impl Atlas {
         height: u32,
         data: &[u8],
         hi_dpi: bool,
-        rotation_origin: Point,
+        rotation_origin: Point<f32>,
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
     ) -> Option<Entry> {
@@ -306,7 +306,7 @@ impl Atlas {
         width: u32,
         height: u32,
         hi_dpi: bool,
-        rotation_origin: Point,
+        rotation_origin: Point<f32>,
     ) -> Option<Entry> {
         let hi_dpi_u32: u32 = if hi_dpi { 1 } else { 0 };
 

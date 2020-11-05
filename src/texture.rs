@@ -57,7 +57,7 @@ impl Texture {
         &self,
         hi_dpi: bool,
     ) -> Result<
-        (ImageBuffer<image::Bgra<u8>, Vec<u8>>, bool, Point),
+        (ImageBuffer<image::Bgra<u8>, Vec<u8>>, bool, Point<f32>),
         TextureError,
     > {
         let (source, is_hi_dpi, rotation_origin) = match &self.dpi_mode {
@@ -97,7 +97,7 @@ enum DpiMode {
 #[derive(Debug, Clone)]
 pub struct TextureSource {
     data: Arc<Data>,
-    rotation_origin: Point,
+    rotation_origin: Point<f32>,
 }
 
 impl TextureSource {
@@ -108,7 +108,7 @@ impl TextureSource {
     /// [`TextureSource`]: struct.TextureSource.html
     pub fn path<T: Into<PathBuf>>(
         path: T,
-        rotation_origin: Option<Point>,
+        rotation_origin: Option<Point<f32>>,
     ) -> TextureSource {
         Self::from_data(Data::Path(path.into()), rotation_origin)
     }
@@ -124,7 +124,7 @@ impl TextureSource {
         width: u32,
         height: u32,
         pixels: Vec<u8>,
-        rotation_origin: Option<Point>,
+        rotation_origin: Option<Point<f32>>,
     ) -> TextureSource {
         Self::from_data(
             Data::Pixels {
@@ -146,15 +146,18 @@ impl TextureSource {
     /// [`TextureSource`]: struct.TextureSource.html
     pub fn memory(
         bytes: Vec<u8>,
-        rotation_origin: Option<Point>,
+        rotation_origin: Option<Point<f32>>,
     ) -> TextureSource {
         Self::from_data(Data::Bytes(bytes), rotation_origin)
     }
 
-    fn from_data(data: Data, rotation_origin: Option<Point>) -> TextureSource {
+    fn from_data(
+        data: Data,
+        rotation_origin: Option<Point<f32>>,
+    ) -> TextureSource {
         TextureSource {
             data: Arc::new(data),
-            rotation_origin: rotation_origin.unwrap_or(Point::ORIGIN),
+            rotation_origin: rotation_origin.unwrap_or(Point::<f32>::ORIGIN),
         }
     }
 
@@ -166,7 +169,7 @@ impl TextureSource {
     }
 
     /// Returns the origin of rotation of the texture.
-    pub fn rotation_origin(&self) -> Point {
+    pub fn rotation_origin(&self) -> Point<f32> {
         self.rotation_origin
     }
 

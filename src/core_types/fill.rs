@@ -2,5 +2,5 @@ use super::Size;
 
 pub enum FillMode {
     Stretch,
-    WithSize(Size),
+    WithSize(Size<u16>),
 }

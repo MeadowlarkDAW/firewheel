@@ -8,7 +8,7 @@ pub trait Application: Sized {
     fn on_message(
         &mut self,
         message: Message<Self::CustomMessage>,
-        gr: &mut Root,
+        root: &mut Root,
     );
 
     /// Process raw events manually if you wish.

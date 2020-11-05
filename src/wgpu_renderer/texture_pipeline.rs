@@ -317,7 +317,7 @@ impl Pipeline {
     pub fn add_instance(
         &mut self,
         texture_id_hash: u64,
-        position: Point,
+        position: Point<u16>,
         scale: [f32; 2],
         rotation: f32,
     ) {
@@ -346,6 +346,7 @@ impl Pipeline {
                     ..
                 } => {
                     let is_hi_dpi: u32 = (*hi_dpi).into();
+                    let position: Point<f32> = position.into();
 
                     // Don't bother computing rotation origins.
                     if rotation == 0.0 {

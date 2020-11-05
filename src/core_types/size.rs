@@ -1,47 +1,53 @@
 /// An amount of space in 2 dimensions.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Size {
+pub struct Size<T> {
     /// The width.
-    pub width: f32,
+    pub width: T,
     /// The height.
-    pub height: f32,
+    pub height: T,
 }
 
-impl Size {
+impl<T> Size<T> {
     /// Creates a new  [`Size`] with the given width and height.
     ///
     /// [`Size`]: struct.Size.html
-    pub const fn new(width: f32, height: f32) -> Self {
+    pub const fn new(width: T, height: T) -> Self {
         Size { width, height }
     }
 }
 
-impl From<[f32; 2]> for Size {
+impl From<[f32; 2]> for Size<f32> {
     fn from([width, height]: [f32; 2]) -> Self {
         Size::new(width, height)
     }
 }
 
-impl From<[u16; 2]> for Size {
+impl From<[u16; 2]> for Size<u16> {
     fn from([width, height]: [u16; 2]) -> Self {
-        Size::new(f32::from(width), f32::from(height))
+        Size::new(width, height)
     }
 }
 
-impl From<[u32; 2]> for Size {
-    fn from([width, height]: [u32; 2]) -> Self {
-        Size::new(width as f32, height as f32)
-    }
-}
-
-impl From<Size> for [f32; 2] {
-    fn from(size: Size) -> [f32; 2] {
+impl From<Size<f32>> for [f32; 2] {
+    fn from(size: Size<f32>) -> [f32; 2] {
         [size.width, size.height]
     }
 }
 
-impl From<Size> for baseview::Size {
-    fn from(size: Size) -> baseview::Size {
-        baseview::Size::new(size.width as f64, size.height as f64)
+impl From<Size<u16>> for [f32; 2] {
+    fn from(size: Size<u16>) -> [f32; 2] {
+        [f32::from(size.width), f32::from(size.height)]
+    }
+}
+
+impl From<Size<f32>> for baseview::Size {
+    fn from(size: Size<f32>) -> baseview::Size {
+        baseview::Size::new(f64::from(size.width), f64::from(size.height))
+    }
+}
+
+impl From<Size<u16>> for baseview::Size {
+    fn from(size: Size<u16>) -> baseview::Size {
+        baseview::Size::new(f64::from(size.width), f64::from(size.height))
     }
 }
