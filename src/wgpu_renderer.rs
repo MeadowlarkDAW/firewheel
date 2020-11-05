@@ -11,7 +11,6 @@ pub use viewport::Viewport;
 pub(crate) struct Renderer {
     pub texture_pipeline: texture_pipeline::Pipeline,
 
-    instance: wgpu::Instance,
     surface: wgpu::Surface,
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -76,7 +75,6 @@ impl Renderer {
             texture_pipeline::Pipeline::new(&device, sc_desc.format);
 
         Some(Self {
-            instance,
             surface,
             device,
             queue,
@@ -110,10 +108,10 @@ impl Renderer {
         &self.viewport
     }
 
-    pub fn render<T: texture::IdGroup>(
+    pub fn render(
         &mut self,
         do_full_redraw: bool,
-        background: &Background<T>,
+        background: &Background,
     ) {
         let frame = self
             .swap_chain
@@ -186,7 +184,7 @@ impl Renderer {
 
     pub fn replace_texture_atlas(
         &mut self,
-        textures: &[texture::Handle],
+        textures: &[(u64, &texture::Texture)],
     ) -> Result<(), texture_pipeline::atlas::AtlasError> {
         let mut encoder = self.device.create_command_encoder(
             &wgpu::CommandEncoderDescriptor {

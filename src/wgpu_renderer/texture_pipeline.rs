@@ -305,7 +305,7 @@ impl Pipeline {
 
     pub fn replace_texture_atlas(
         &mut self,
-        textures: &[texture::Handle],
+        textures: &[(u64, &texture::Texture)],
         hi_dpi: bool,
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
@@ -314,14 +314,14 @@ impl Pipeline {
             .replace_texture_atlas(device, textures, encoder, hi_dpi)
     }
 
-    pub fn add_instance<T: texture::IdGroup>(
+    pub fn add_instance(
         &mut self,
-        texture: T,
+        texture_id_hash: u64,
         position: Point,
         scale: [f32; 2],
         rotation: f32,
     ) {
-        if let Some(entry) = self.texture_atlas.get_entry(texture) {
+        if let Some(entry) = self.texture_atlas.get_entry(texture_id_hash) {
             match entry {
                 atlas::Entry::Contiguous {
                     allocation,

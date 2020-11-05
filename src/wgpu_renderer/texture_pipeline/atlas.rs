@@ -87,7 +87,7 @@ impl Atlas {
     pub fn replace_texture_atlas(
         &mut self,
         device: &wgpu::Device,
-        textures: &[texture::Handle],
+        textures: &[(u64, &texture::Texture)],
         encoder: &mut wgpu::CommandEncoder,
         hi_dpi: bool,
     ) -> Result<(), AtlasError> {
@@ -98,21 +98,21 @@ impl Atlas {
             Point,
         )> = Vec::with_capacity(textures.len());
 
-        for handle in textures {
-            match handle.load_bgra(hi_dpi) {
+        for (id, texture) in textures {
+            match texture.load_bgra(hi_dpi) {
                 Ok((data, is_hi_dpi, rotation_origin)) => {
                     collected_textures.push((
-                        handle.hashed_id(),
+                        *id,
                         data,
                         is_hi_dpi,
                         rotation_origin,
                     ));
                 }
                 Err(e) => match e {
-                    texture::HandleError::ImageError(e, path) => {
+                    texture::TextureError::ImageError(e, path) => {
                         return Err(AtlasError::ImageError(e, path));
                     }
-                    texture::HandleError::PixelBufferTooSmall(
+                    texture::TextureError::PixelBufferTooSmall(
                         width,
                         height,
                     ) => {
@@ -280,8 +280,8 @@ impl Atlas {
     }
 
     #[inline]
-    pub fn get_entry<T: texture::IdGroup>(&self, texture: T) -> Option<&Entry> {
-        self.atlas_map.get(&texture.hash_to_u64())
+    pub fn get_entry(&self, texture_id_hash: u64) -> Option<&Entry> {
+        self.atlas_map.get(&texture_id_hash)
     }
 
     /*

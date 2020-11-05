@@ -1,15 +1,14 @@
 use crate::wgpu_renderer::Renderer;
-use crate::{atlas, texture, Background, Color, Size, Window};
+use crate::{atlas, texture, Texture, Background, Color, Size, Window};
 use futures::executor::block_on;
-use std::collections::HashMap;
 
-pub struct Root<T: texture::IdGroup> {
+pub struct Root {
     pub(crate) renderer: Renderer,
-    background: Background<T>,
+    background: Background,
     do_full_redraw: bool,
 }
 
-impl<T: texture::IdGroup> Root<T> {
+impl Root {
     pub(crate) fn new(window: &mut Window) -> Self {
         let physical_size = Size::new(
             window.window_info().physical_size().width as f32,
@@ -47,24 +46,22 @@ impl<T: texture::IdGroup> Root<T> {
     ///
     /// If this operation fails, the current texture atlas may be corrupt.
     /// Please load your default texture atlas again if an error ocurred.
-    pub fn replace_texture_atlas(
+    pub fn replace_texture_atlas<TexID: std::hash::Hash + Copy + Clone>(
         &mut self,
-        textures: &[T],
+        textures: &[(TexID, Texture)],
     ) -> Result<(), atlas::AtlasError> {
-        let texture_handles: Vec<texture::Handle> = textures
+        let textures: Vec<(u64, &Texture)> = textures
             .iter()
-            .map(|texture| -> texture::Handle {
-                let mut handle: texture::Handle = (*texture).into();
-                handle.set_hashed_id(texture.hash_to_u64());
-                handle
+            .map(|(id, texture)| -> (u64, &Texture) {
+                (crate::hash_id(id), texture)
             })
             .collect();
-
+        
         self.renderer
-            .replace_texture_atlas(texture_handles.as_slice())
+            .replace_texture_atlas(textures.as_slice())
     }
 
-    pub fn set_background(&mut self, background: Background<T>) {
+    pub fn set_background(&mut self, background: Background) {
         self.background = background;
         self.do_full_redraw = true;
     }

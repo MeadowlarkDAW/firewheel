@@ -3,14 +3,14 @@ use baseview::{Event, Window, WindowHandle, WindowHandler, WindowOpenOptions};
 
 pub struct Runner<A: Application + 'static + Send> {
     user_app: A,
-    root: Root<<A as Application>::TextureIDs>,
+    root: Root,
 }
 
 impl<A: Application + 'static + Send> Runner<A> {
     /// Open a new window
     pub fn open<B>(settings: WindowOpenOptions, build: B) -> WindowHandle
     where
-        B: FnOnce(&mut Root<A::TextureIDs>) -> A,
+        B: FnOnce(&mut Root) -> A,
         B: Send + 'static,
     {
         Window::open(settings, move |window: &mut Window| -> Runner<A> {
