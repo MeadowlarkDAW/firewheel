@@ -22,8 +22,8 @@ pub use wgpu_renderer::atlas;
 pub use widgets::*;
 
 pub use baseview::{
-    Event, KeyboardEvent, MouseButton, MouseClick, MouseCursor, MouseEvent,
-    Parent, WindowEvent, WindowHandle, WindowInfo,
+    KeyboardEvent, MouseButton, MouseClick, MouseCursor, MouseEvent, Parent,
+    WindowEvent, WindowHandle, WindowInfo,
 };
 
 #[inline]

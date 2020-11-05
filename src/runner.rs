@@ -71,10 +71,6 @@ impl<A: Application + 'static + Send> WindowHandler for Runner<A> {
             },
             _ => {}
         }
-
-        let mut root = Root::new(&mut self.root_state, window);
-
-        self.user_app.on_raw_event(event, &mut root);
     }
 
     fn on_message(&mut self, window: &mut Window, message: Self::Message) {

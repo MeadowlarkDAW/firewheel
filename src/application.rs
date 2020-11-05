@@ -1,4 +1,4 @@
-use crate::{Event, Message, Root};
+use crate::{Message, Root};
 
 pub trait Application: Sized {
     /// An enum of custom messages if you wish.
@@ -10,10 +10,4 @@ pub trait Application: Sized {
         message: Message<Self::CustomMessage>,
         root: &mut Root,
     );
-
-    /// Process raw events manually if you wish.
-    fn on_raw_event(&mut self, _event: Event, _canvas: &mut Root) {}
-
-    /// Process animations manually if you wish.
-    fn on_frame(&mut self, _canvas: &mut Root) {}
 }

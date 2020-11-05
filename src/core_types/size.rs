@@ -40,12 +40,6 @@ impl From<Size<u16>> for [f32; 2] {
     }
 }
 
-impl From<Size<f32>> for baseview::Size {
-    fn from(size: Size<f32>) -> baseview::Size {
-        baseview::Size::new(f64::from(size.width), f64::from(size.height))
-    }
-}
-
 impl From<Size<u16>> for baseview::Size {
     fn from(size: Size<u16>) -> baseview::Size {
         baseview::Size::new(f64::from(size.width), f64::from(size.height))
