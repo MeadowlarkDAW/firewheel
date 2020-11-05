@@ -41,17 +41,25 @@ impl Texture {
     /// The application will decide which one to load based on the user's display.
     ///
     /// [`Texture`]: struct.Texture.html
-    pub fn dual_res(source_1x: TextureSource, source_2x: TextureSource) -> Self {
+    pub fn dual_res(
+        source_1x: TextureSource,
+        source_2x: TextureSource,
+    ) -> Self {
         Self {
-            dpi_mode: DpiMode::Both { source_1x, source_2x },
+            dpi_mode: DpiMode::Both {
+                source_1x,
+                source_2x,
+            },
         }
     }
 
     pub(crate) fn load_bgra(
         &self,
         hi_dpi: bool,
-    ) -> Result<(ImageBuffer<image::Bgra<u8>, Vec<u8>>, bool, Point), TextureError>
-    {
+    ) -> Result<
+        (ImageBuffer<image::Bgra<u8>, Vec<u8>>, bool, Point),
+        TextureError,
+    > {
         let (source, is_hi_dpi, rotation_origin) = match &self.dpi_mode {
             DpiMode::Only1x(source) => {
                 (source, false, source.rotation_origin())
@@ -136,7 +144,10 @@ impl TextureSource {
     /// because you downloaded or generated it procedurally.
     ///
     /// [`TextureSource`]: struct.TextureSource.html
-    pub fn memory(bytes: Vec<u8>, rotation_origin: Option<Point>) -> TextureSource {
+    pub fn memory(
+        bytes: Vec<u8>,
+        rotation_origin: Option<Point>,
+    ) -> TextureSource {
         Self::from_data(Data::Bytes(bytes), rotation_origin)
     }
 

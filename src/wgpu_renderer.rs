@@ -108,11 +108,7 @@ impl Renderer {
         &self.viewport
     }
 
-    pub fn render(
-        &mut self,
-        do_full_redraw: bool,
-        background: &Background,
-    ) {
+    pub fn render(&mut self, do_full_redraw: bool, background: &Background) {
         let frame = self
             .swap_chain
             .get_current_frame()

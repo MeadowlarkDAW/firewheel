@@ -1,6 +1,6 @@
 use goldenrod::{
-    Texture, TextureSource, hash_id, Application, Background, Color, Message, Parent, Root,
-    Runner, Size, WindowOpenOptions, WindowScalePolicy,
+    hash_id, Application, Background, Color, Message, Parent, Root, Runner,
+    Size, Texture, TextureSource, WindowOpenOptions, WindowScalePolicy,
 };
 
 #[derive(Debug, Copy, Clone, Hash)]
@@ -10,9 +10,10 @@ enum TextureIDs {
 
 impl TextureIDs {
     fn all() -> [(TextureIDs, Texture); 1] {
-        [
-            (TextureIDs::HappyTree, Texture::res_1x(TextureSource::path("./happy-tree.png", None))),
-        ]
+        [(
+            TextureIDs::HappyTree,
+            Texture::res_1x(TextureSource::path("./happy-tree.png", None)),
+        )]
     }
 }
 
@@ -22,7 +23,9 @@ impl HelloWorldExample {
     fn new(root: &mut Root) -> Self {
         root.replace_texture_atlas(&TextureIDs::all()).unwrap();
         //root.set_background(Background::SolidColor(Color::new(0.02, 0.02, 0.025, 1.0)));
-        root.set_background(Background::Texture(hash_id(TextureIDs::HappyTree)));
+        root.set_background(Background::Texture(hash_id(
+            TextureIDs::HappyTree,
+        )));
 
         Self {}
     }

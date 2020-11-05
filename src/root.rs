@@ -1,5 +1,5 @@
 use crate::wgpu_renderer::Renderer;
-use crate::{atlas, texture, Texture, Background, Color, Size, Window};
+use crate::{atlas, texture, Background, Color, Size, Texture, Window};
 use futures::executor::block_on;
 
 pub struct Root {
@@ -56,9 +56,8 @@ impl Root {
                 (crate::hash_id(id), texture)
             })
             .collect();
-        
-        self.renderer
-            .replace_texture_atlas(textures.as_slice())
+
+        self.renderer.replace_texture_atlas(textures.as_slice())
     }
 
     pub fn set_background(&mut self, background: Background) {

@@ -12,12 +12,7 @@ pub trait Application: Sized {
     );
 
     /// Process raw events manually if you wish.
-    fn on_raw_event(
-        &mut self,
-        _event: Event,
-        _canvas: &mut Root,
-    ) {
-    }
+    fn on_raw_event(&mut self, _event: Event, _canvas: &mut Root) {}
 
     /// Process animations manually if you wish.
     fn on_frame(&mut self, _canvas: &mut Root) {}

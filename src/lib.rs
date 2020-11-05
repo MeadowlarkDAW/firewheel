@@ -15,9 +15,9 @@ pub use core_types::*;
 pub use message::Message;
 pub use root::Root;
 pub use runner::Runner;
+pub use texture::{Texture, TextureSource};
 pub use wgpu_renderer::atlas;
 pub use widgets::*;
-pub use texture::{Texture, TextureSource};
 
 pub use baseview::{
     Event, KeyboardEvent, MouseButton, MouseClick, MouseCursor, MouseEvent,
