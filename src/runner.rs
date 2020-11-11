@@ -55,7 +55,7 @@ impl<A: Application + 'static + Send> WindowHandler for Runner<A> {
         self.root_state.render();
     }
 
-    fn on_event(&mut self, window: &mut Window, event: Event) {
+    fn on_event(&mut self, _window: &mut Window, event: Event) {
         match &event {
             Event::Window(e) => match e {
                 baseview::WindowEvent::Resized(window_info) => {

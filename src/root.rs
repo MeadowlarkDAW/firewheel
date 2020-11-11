@@ -83,10 +83,6 @@ impl<'a> Root<'a> {
         self.state.do_full_redraw = true;
     }
 
-    pub fn fit_window_to_background(&mut self) {
-        // TODO: request window size
-    }
-
     // TODO:
     //   - request_scale_factor(&mut self, scale_factor: f64);
 }

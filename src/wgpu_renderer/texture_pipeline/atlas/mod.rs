@@ -47,7 +47,7 @@ pub struct Atlas {
     texture_view: wgpu::TextureView,
     layers: Vec<Layer>,
     atlas_map: HashMap<u64, Entry>,
-    did_load_once: bool,
+    did_clear_once: bool,
 }
 
 impl Atlas {
@@ -80,7 +80,7 @@ impl Atlas {
             texture_view,
             layers: vec![Layer::Empty],
             atlas_map: HashMap::new(),
-            did_load_once: false,
+            did_clear_once: false,
         }
     }
 
@@ -124,7 +124,6 @@ impl Atlas {
             }
         }
 
-        // Clear old entries
         self.clear(device);
 
         self.atlas_map.reserve(collected_textures.len());
@@ -159,36 +158,36 @@ impl Atlas {
 
     fn clear(&mut self, device: &wgpu::Device) {
         // Don't clear if this is the first time loading textures.
-        if self.did_load_once {
-            self.layers = vec![Layer::Empty];
-            self.atlas_map = HashMap::new();
+        if self.did_clear_once {
+            return;
+        }
 
-            // TODO: Clear wgpu texture buffers (?)
+        self.layers = vec![Layer::Empty];
+        self.atlas_map = HashMap::new();
 
-            self.texture = device.create_texture(&wgpu::TextureDescriptor {
-                label: Some("goldenrod::atlas texture atlas"),
-                size: wgpu::Extent3d {
-                    width: ATLAS_SIZE,
-                    height: ATLAS_SIZE,
-                    depth: self.layers.len() as u32,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Bgra8UnormSrgb,
-                usage: wgpu::TextureUsage::COPY_DST
-                    | wgpu::TextureUsage::COPY_SRC
-                    | wgpu::TextureUsage::SAMPLED,
+        self.texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("goldenrod::atlas texture atlas"),
+            size: wgpu::Extent3d {
+                width: ATLAS_SIZE,
+                height: ATLAS_SIZE,
+                depth: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Bgra8UnormSrgb,
+            usage: wgpu::TextureUsage::COPY_DST
+                | wgpu::TextureUsage::COPY_SRC
+                | wgpu::TextureUsage::SAMPLED,
+        });
+
+        self.texture_view =
+            self.texture.create_view(&wgpu::TextureViewDescriptor {
+                dimension: Some(wgpu::TextureViewDimension::D2Array),
+                ..Default::default()
             });
 
-            self.texture_view =
-                self.texture.create_view(&wgpu::TextureViewDescriptor {
-                    dimension: Some(wgpu::TextureViewDimension::D2Array),
-                    ..Default::default()
-                });
-        } else {
-            self.did_load_once = true;
-        }
+        self.did_clear_once = true;
     }
 
     fn add_new_entry(
@@ -214,8 +213,6 @@ impl Atlas {
 
             entry
         };
-
-        //log::info!("Allocated atlas entry: {:?}", entry);
 
         // It is a webgpu requirement that:
         //   BufferCopyView.layout.bytes_per_row % wgpu::COPY_BYTES_PER_ROW_ALIGNMENT == 0
@@ -261,6 +258,8 @@ impl Atlas {
                     let offset = (y as u32 * padded_width as u32 + 4 * x as u32)
                         as usize;
 
+                    println!("upload fragment");
+
                     self.upload_allocation(
                         &buffer,
                         width,
@@ -274,8 +273,6 @@ impl Atlas {
             }
         }
 
-        //log::info!("Current atlas: {:?}", self);
-
         Some(entry)
     }
 
@@ -283,23 +280,6 @@ impl Atlas {
     pub fn get_entry(&self, texture_id_hash: u64) -> Option<&Entry> {
         self.atlas_map.get(&texture_id_hash)
     }
-
-    /*
-    pub fn remove(&mut self, entry: &Entry) {
-        //log::info!("Removing atlas entry: {:?}", entry);
-
-        match entry {
-            Entry::Contiguous(allocation) => {
-                self.deallocate(allocation);
-            }
-            Entry::Fragmented { fragments, .. } => {
-                for fragment in fragments {
-                    self.deallocate(&fragment.allocation);
-                }
-            }
-        }
-    }
-    */
 
     fn allocate(
         &mut self,
@@ -430,29 +410,6 @@ impl Atlas {
         None
     }
 
-    /*
-    fn deallocate(&mut self, allocation: &Allocation) {
-        //log::info!("Deallocating atlas: {:?}", allocation);
-
-        match allocation {
-            Allocation::Full { layer } => {
-                self.layers[*layer] = Layer::Empty;
-            }
-            Allocation::Partial { layer, region } => {
-                let layer = &mut self.layers[*layer];
-
-                if let Layer::Busy(allocator) = layer {
-                    allocator.deallocate(region);
-
-                    if allocator.is_empty() {
-                        *layer = Layer::Empty;
-                    }
-                }
-            }
-        }
-    }
-    */
-
     fn upload_allocation(
         &mut self,
         buffer: &wgpu::Buffer,
@@ -523,6 +480,7 @@ impl Atlas {
 
         let amount_to_copy = self.layers.len() - amount;
 
+        // copy the old texture data to the new texture data
         for (i, layer) in
             self.layers.iter_mut().take(amount_to_copy).enumerate()
         {
@@ -557,6 +515,7 @@ impl Atlas {
             );
         }
 
+        // create new texture view
         self.texture = new_texture;
         self.texture_view =
             self.texture.create_view(&wgpu::TextureViewDescriptor {

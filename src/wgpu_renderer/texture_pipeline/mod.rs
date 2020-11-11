@@ -17,6 +17,7 @@ pub struct Pipeline {
     index_buffer: wgpu::Buffer,
     instances_buffer: wgpu::Buffer,
     constants_bind_group: wgpu::BindGroup,
+    texture_layout: wgpu::BindGroupLayout,
     texture_bind_group: wgpu::BindGroup,
     texture_atlas: atlas::Atlas,
 
@@ -112,11 +113,11 @@ impl Pipeline {
             });
 
         let vs_module = device.create_shader_module(wgpu::include_spirv!(
-            "shader/image.vert.spv"
+            "../shader/image.vert.spv"
         ));
 
         let fs_module = device.create_shader_module(wgpu::include_spirv!(
-            "shader/image.frag.spv"
+            "../shader/image.frag.spv"
         ));
 
         let pipeline =
@@ -203,6 +204,7 @@ impl Pipeline {
             index_buffer,
             instances_buffer,
             constants_bind_group,
+            texture_layout,
             texture_bind_group,
             texture_atlas,
             instances: Vec::with_capacity(Instance::MAX),
@@ -311,7 +313,21 @@ impl Pipeline {
         encoder: &mut wgpu::CommandEncoder,
     ) -> Result<(), atlas::AtlasError> {
         self.texture_atlas
-            .replace_texture_atlas(device, textures, encoder, hi_dpi)
+            .replace_texture_atlas(device, textures, encoder, hi_dpi)?;
+
+        self.texture_bind_group =
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("goldenrod::texture texture atlas bind group"),
+                layout: &self.texture_layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(
+                        &self.texture_atlas.view(),
+                    ),
+                }],
+            });
+
+        Ok(())
     }
 
     pub fn add_instance(
@@ -351,6 +367,17 @@ impl Pipeline {
                     // Don't bother computing rotation origins.
                     if rotation == 0.0 {
                         for fragment in fragments {
+                            //dbg!(fragment.position);
+                            //dbg!(scale);
+                            //dbg!(fragment.allocation.position());
+                            //dbg!(fragment.allocation.size());
+                            //dbg!(*rotation_origin);
+                            //dbg!(fragment.allocation.size());
+                            //dbg!(rotation);
+                            dbg!(fragment.allocation.layer());
+                            //dbg!(is_hi_dpi);
+                            println!("------------------------------------");
+
                             self.instances.push(Instance {
                                 _position: [
                                     position.x + fragment.position[0],

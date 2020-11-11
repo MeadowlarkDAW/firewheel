@@ -1,11 +1,12 @@
 mod color;
 mod fill;
-mod font;
 mod hasher;
 mod point;
 mod rectangle;
 mod size;
 mod vector;
+
+pub(crate) mod font;
 
 pub use color::Color;
 pub use fill::FillMode;

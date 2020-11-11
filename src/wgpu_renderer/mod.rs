@@ -1,7 +1,8 @@
-use crate::{texture, Background, Color, Point, Size};
+use crate::{texture, Background, Point, Size};
 use futures::task::SpawnExt;
 use raw_window_handle::HasRawWindowHandle;
 
+mod text_pipeline;
 mod texture_pipeline;
 mod viewport;
 
@@ -10,6 +11,7 @@ pub use viewport::Viewport;
 
 pub(crate) struct Renderer {
     pub texture_pipeline: texture_pipeline::Pipeline,
+    pub text_pipeline: text_pipeline::Pipeline,
 
     surface: wgpu::Surface,
     device: wgpu::Device,
@@ -74,6 +76,9 @@ impl Renderer {
         let texture_pipeline =
             texture_pipeline::Pipeline::new(&device, sc_desc.format);
 
+        let text_pipeline =
+            text_pipeline::Pipeline::new(&device, sc_desc.format, None);
+
         Some(Self {
             surface,
             device,
@@ -85,6 +90,7 @@ impl Renderer {
             local_pool,
 
             texture_pipeline,
+            text_pipeline,
         })
     }
 
@@ -102,10 +108,6 @@ impl Renderer {
         self.sc_desc.height = u32::from(new_physical_size.height);
         self.swap_chain =
             self.device.create_swap_chain(&self.surface, &self.sc_desc);
-    }
-
-    pub fn viewport(&self) -> &Viewport {
-        &self.viewport
     }
 
     pub fn render(&mut self, do_full_redraw: bool, background: &Background) {
@@ -169,6 +171,15 @@ impl Renderer {
         }
 
         self.texture_pipeline.render(
+            &self.device,
+            &mut self.staging_belt,
+            &mut encoder,
+            self.viewport.projection_scale(),
+            self.viewport.bounds(),
+            &frame.view,
+        );
+
+        self.text_pipeline.render(
             &self.device,
             &mut self.staging_belt,
             &mut encoder,

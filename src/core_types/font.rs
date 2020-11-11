@@ -56,3 +56,8 @@ impl Default for VAlign {
         VAlign::Center
     }
 }
+
+/// A built-in fallback font, for convenience.
+#[cfg(feature = "font-fallback")]
+pub(crate) const FALLBACK: &[u8] =
+    include_bytes!("../../fonts/Lato-Regular.ttf");

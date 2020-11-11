@@ -22,9 +22,14 @@ maintenance = { status = "actively-developed" }
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+default = ["font-fallback"]
+font-fallback = []
+
 [dependencies]
 baseview = { git = "https://github.com/RustAudio/baseview.git", branch = "master" }
 wgpu = "0.6"
+wgpu_glyph = "0.10"
 zerocopy = "0.3"
 image = "0.23"
 twox-hash = "1.6"
