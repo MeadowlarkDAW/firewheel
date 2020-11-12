@@ -1,6 +1,9 @@
-use crate::{font, Font, Rectangle};
+use crate::{font, Color, Font, Point, Rectangle, Size};
 use std::{cell::RefCell, collections::HashMap};
-use wgpu_glyph::{ab_glyph, GlyphBrush, Layout, Section, Text};
+use wgpu_glyph::{
+    ab_glyph, BuiltInLineBreaker, GlyphBrush, HorizontalAlign, Layout, Section,
+    Text, VerticalAlign,
+};
 
 pub struct Pipeline {
     glyph_brush: RefCell<GlyphBrush<()>>,
@@ -45,7 +48,56 @@ impl Pipeline {
         }
     }
 
-    pub fn queue(&mut self, section: wgpu_glyph::Section<'_>) {
+    pub fn add_single_line(
+        &mut self,
+        text: &str,
+        font_color: Color,
+        font_size: f32,
+        font_family: font::Font,
+        position: Point<u16>,
+        scissor_rect: Option<Size<u16>>,
+        h_align: HorizontalAlign,
+        v_align: VerticalAlign,
+    ) {
+        let font_id = self.get_font_id(font_family);
+        let position = (f32::from(position.x), f32::from(position.y));
+
+        let section = if let Some(scissor_rect) = scissor_rect {
+            let bounds = (
+                f32::from(scissor_rect.width),
+                f32::from(scissor_rect.height),
+            );
+
+            Section::new()
+                .with_layout(Layout::SingleLine {
+                    line_breaker: BuiltInLineBreaker::default(),
+                    h_align,
+                    v_align,
+                })
+                .add_text(
+                    Text::new(text)
+                        .with_color(font_color)
+                        .with_scale(font_size)
+                        .with_font_id(font_id),
+                )
+                .with_screen_position(position)
+                .with_bounds(bounds)
+        } else {
+            Section::new()
+                .with_layout(Layout::SingleLine {
+                    line_breaker: BuiltInLineBreaker::default(),
+                    h_align,
+                    v_align,
+                })
+                .add_text(
+                    Text::new(text)
+                        .with_color(font_color)
+                        .with_scale(font_size)
+                        .with_font_id(font_id),
+                )
+                .with_screen_position(position)
+        };
+
         self.glyph_brush.borrow_mut().queue(section);
     }
 
@@ -58,16 +110,6 @@ impl Pipeline {
         bounds: Rectangle,
         target: &wgpu::TextureView,
     ) {
-        let section = Section::new()
-            .with_layout(Layout::default_single_line())
-            .add_text(
-                Text::new("Hello World!")
-                    .with_color([1.0, 1.0, 1.0, 1.0])
-                    .with_scale(20.0),
-            );
-
-        self.queue(section);
-
         self.glyph_brush
             .borrow_mut()
             .draw_queued(

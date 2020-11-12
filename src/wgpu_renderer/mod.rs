@@ -1,13 +1,11 @@
-use crate::{texture, Background, Point, Size};
+use crate::{texture, Background, Point, Size, Viewport};
 use futures::task::SpawnExt;
 use raw_window_handle::HasRawWindowHandle;
 
 mod text_pipeline;
 mod texture_pipeline;
-mod viewport;
 
 pub use texture_pipeline::atlas;
-pub use viewport::Viewport;
 
 pub(crate) struct Renderer {
     pub texture_pipeline: texture_pipeline::Pipeline,
@@ -18,7 +16,7 @@ pub(crate) struct Renderer {
     queue: wgpu::Queue,
     sc_desc: wgpu::SwapChainDescriptor,
     swap_chain: wgpu::SwapChain,
-    viewport: viewport::Viewport,
+    viewport: Viewport,
     staging_belt: wgpu::util::StagingBelt,
     local_pool: futures::executor::LocalPool,
 }
@@ -177,6 +175,17 @@ impl Renderer {
             self.viewport.projection_scale(),
             self.viewport.bounds(),
             &frame.view,
+        );
+
+        self.text_pipeline.add_single_line(
+            "Hello World!",
+            crate::Color::from_rgba(0.8, 0.8, 0.8, 0.9),
+            30.0,
+            crate::Font::default(),
+            crate::Point::new(30, 30),
+            None,
+            wgpu_glyph::HorizontalAlign::Left,
+            wgpu_glyph::VerticalAlign::Center,
         );
 
         self.text_pipeline.render(
