@@ -14,7 +14,7 @@
    version="1.1"
    id="svg8"
    inkscape:version="1.0.1 (3bc2e813f5, 2020-09-07)"
-   sodipodi:docname="drawing.svg">
+   sodipodi:docname="rigida.svg">
   <defs
      id="defs2">
     <linearGradient
@@ -364,8 +364,8 @@
      inkscape:pageopacity="0"
      inkscape:pageshadow="2"
      inkscape:zoom="1"
-     inkscape:cx="264.59196"
-     inkscape:cy="134.63031"
+     inkscape:cx="313.34033"
+     inkscape:cy="159.72089"
      inkscape:document-units="px"
      inkscape:current-layer="layer2"
      showgrid="false"
@@ -395,7 +395,7 @@
         <dc:format>image/svg+xml</dc:format>
         <dc:type
            rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-        <dc:title></dc:title>
+        <dc:title />
       </cc:Work>
     </rdf:RDF>
   </metadata>
@@ -470,13 +470,13 @@
        xml:space="preserve"
        style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:7.05556px;line-height:1.25;font-family:'URW Gothic';-inkscape-font-specification:'URW Gothic, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;fill:#f7ede9;fill-opacity:0.608812;stroke:none;stroke-width:0.264583"
        x="2.6469972"
-       y="71.61734"
+       y="72.146507"
        id="text2191"><tspan
          sodipodi:role="line"
          x="2.6469972"
-         y="71.61734"
+         y="72.146507"
          style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:7.05556px;font-family:'URW Gothic';-inkscape-font-specification:'URW Gothic, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;fill:#f7ede9;fill-opacity:0.608812;stroke-width:0.264583"
-         id="tspan2261">Rigida</tspan></text>
+         id="tspan2261">Petal Drive</tspan></text>
     <rect
        style="fill:url(#linearGradient2205);fill-opacity:1;stroke:none;stroke-width:1.47822704;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;paint-order:stroke fill markers"
        id="rect2193"
