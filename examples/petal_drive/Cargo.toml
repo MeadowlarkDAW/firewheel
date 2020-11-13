@@ -1,5 +1,5 @@
 [package]
-name = "hello_world"
+name = "petal_drive"
 version = "0.1.0"
 authors = ["Billy Messenger <BillyDM@protonmail.com>"]
 edition = "2018"

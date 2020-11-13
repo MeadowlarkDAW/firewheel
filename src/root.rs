@@ -2,6 +2,7 @@ use crate::wgpu_renderer::Renderer;
 use crate::{atlas, Background, Color, Size, Texture};
 use baseview::Window;
 use futures::executor::block_on;
+use std::collections::HashSet;
 
 pub(crate) struct RootState {
     pub renderer: Renderer,
@@ -61,10 +62,27 @@ impl<'a> Root<'a> {
     ///
     /// If this operation fails, the current texture atlas may be corrupt.
     /// Please load your default texture atlas again if an error ocurred.
-    pub fn replace_texture_atlas<TexID: std::hash::Hash + Copy + Clone>(
+    pub fn replace_texture_atlas<TexID>(
         &mut self,
         textures: &[(TexID, Texture)],
-    ) -> Result<(), atlas::AtlasError> {
+    ) -> Result<(), atlas::AtlasError>
+    where
+        TexID:
+            std::hash::Hash + std::fmt::Debug + Eq + PartialEq + Copy + Clone,
+    {
+        // check for duplicate ids
+        {
+            let mut ids = HashSet::new();
+            for (id, _) in textures {
+                if !ids.insert(*id) {
+                    return Err(atlas::AtlasError::IdNotUnique(format!(
+                        "{:?}",
+                        *id
+                    )));
+                }
+            }
+        }
+
         let textures: Vec<(u64, &Texture)> = textures
             .iter()
             .map(|(id, texture)| -> (u64, &Texture) {

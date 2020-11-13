@@ -5,13 +5,13 @@ use crate::Point;
 pub enum Entry {
     Contiguous {
         allocation: allocation::Allocation,
-        rotation_origin: Point<f32>,
+        center: Point<f32>,
         hi_dpi: u32,
     },
     Fragmented {
         size: [f32; 2],
         fragments: Vec<Fragment>,
-        rotation_origin: Point<f32>,
+        center: Point<f32>,
         hi_dpi: u32,
     },
 }
@@ -24,14 +24,10 @@ impl Entry {
         }
     }
 
-    pub fn rotation_origin(&self) -> Point<f32> {
+    pub fn center(&self) -> Point<f32> {
         match self {
-            Entry::Contiguous {
-                rotation_origin, ..
-            } => *rotation_origin,
-            Entry::Fragmented {
-                rotation_origin, ..
-            } => *rotation_origin,
+            Entry::Contiguous { center, .. } => *center,
+            Entry::Fragmented { center, .. } => *center,
         }
     }
 }

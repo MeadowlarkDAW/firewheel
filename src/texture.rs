@@ -60,24 +60,22 @@ impl Texture {
         (ImageBuffer<image::Bgra<u8>, Vec<u8>>, bool, Point<f32>),
         TextureError,
     > {
-        let (source, is_hi_dpi, rotation_origin) = match &self.dpi_mode {
-            DpiMode::Only1x(source) => {
-                (source, false, source.rotation_origin())
-            }
-            DpiMode::Only2x(source) => (source, true, source.rotation_origin()),
+        let (source, is_hi_dpi, center) = match &self.dpi_mode {
+            DpiMode::Only1x(source) => (source, false, source.center()),
+            DpiMode::Only2x(source) => (source, true, source.center()),
             DpiMode::Both {
                 source_1x,
                 source_2x,
             } => {
                 if hi_dpi {
-                    (source_2x, true, source_2x.rotation_origin())
+                    (source_2x, true, source_2x.center())
                 } else {
-                    (source_1x, false, source_1x.rotation_origin())
+                    (source_1x, false, source_1x.center())
                 }
             }
         };
 
-        Ok((source.load_bgra()?, is_hi_dpi, rotation_origin))
+        Ok((source.load_bgra()?, is_hi_dpi, center))
     }
 }
 
@@ -97,7 +95,7 @@ enum DpiMode {
 #[derive(Debug, Clone)]
 pub struct TextureSource {
     data: Arc<Data>,
-    rotation_origin: Point<f32>,
+    center: Point<f32>,
 }
 
 impl TextureSource {
@@ -108,9 +106,9 @@ impl TextureSource {
     /// [`TextureSource`]: struct.TextureSource.html
     pub fn path<T: Into<PathBuf>>(
         path: T,
-        rotation_origin: Option<Point<f32>>,
+        center: Point<f32>,
     ) -> TextureSource {
-        Self::from_data(Data::Path(path.into()), rotation_origin)
+        Self::from_data(Data::Path(path.into()), center)
     }
 
     /// Creates a texture [`TextureSource`] containing the image pixels directly. This
@@ -124,7 +122,7 @@ impl TextureSource {
         width: u32,
         height: u32,
         pixels: Vec<u8>,
-        rotation_origin: Option<Point<f32>>,
+        center: Point<f32>,
     ) -> TextureSource {
         Self::from_data(
             Data::Pixels {
@@ -132,7 +130,7 @@ impl TextureSource {
                 height,
                 pixels,
             },
-            rotation_origin,
+            center,
         )
     }
 
@@ -144,20 +142,14 @@ impl TextureSource {
     /// because you downloaded or generated it procedurally.
     ///
     /// [`TextureSource`]: struct.TextureSource.html
-    pub fn memory(
-        bytes: Vec<u8>,
-        rotation_origin: Option<Point<f32>>,
-    ) -> TextureSource {
-        Self::from_data(Data::Bytes(bytes), rotation_origin)
+    pub fn memory(bytes: Vec<u8>, center: Point<f32>) -> TextureSource {
+        Self::from_data(Data::Bytes(bytes), center)
     }
 
-    fn from_data(
-        data: Data,
-        rotation_origin: Option<Point<f32>>,
-    ) -> TextureSource {
+    fn from_data(data: Data, center: Point<f32>) -> TextureSource {
         TextureSource {
             data: Arc::new(data),
-            rotation_origin: rotation_origin.unwrap_or(Point::<f32>::ORIGIN),
+            center,
         }
     }
 
@@ -169,8 +161,8 @@ impl TextureSource {
     }
 
     /// Returns the origin of rotation of the texture.
-    pub fn rotation_origin(&self) -> Point<f32> {
-        self.rotation_origin
+    pub fn center(&self) -> Point<f32> {
+        self.center
     }
 
     pub(crate) fn load_bgra(

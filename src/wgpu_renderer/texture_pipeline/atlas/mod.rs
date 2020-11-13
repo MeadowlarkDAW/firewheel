@@ -21,6 +21,7 @@ pub const ATLAS_SIZE: u32 = 2048;
 pub enum AtlasError {
     ImageError(ImageError, String),
     PixelBufferTooSmall(u32, u32),
+    IdNotUnique(String),
     Unkown,
 }
 
@@ -32,6 +33,9 @@ impl fmt::Display for AtlasError {
             }
             AtlasError::PixelBufferTooSmall(width, height) => {
                 write!(f, "The pixel buffer is smaller than the given size: width: {}, height: {}", width, height)
+            }
+            AtlasError::IdNotUnique(id) => {
+                write!(f, "The ID {} was defined for multiple textures", id)
             }
             AtlasError::Unkown => {
                 write!(f, "Unkown error")
@@ -100,13 +104,8 @@ impl Atlas {
 
         for (id, texture) in textures {
             match texture.load_bgra(hi_dpi) {
-                Ok((data, is_hi_dpi, rotation_origin)) => {
-                    collected_textures.push((
-                        *id,
-                        data,
-                        is_hi_dpi,
-                        rotation_origin,
-                    ));
+                Ok((data, is_hi_dpi, center)) => {
+                    collected_textures.push((*id, data, is_hi_dpi, center));
                 }
                 Err(e) => match e {
                     texture::TextureError::ImageError(e, path) => {
@@ -128,13 +127,13 @@ impl Atlas {
 
         self.atlas_map.reserve(collected_textures.len());
 
-        for (id, data, is_hi_dpi, rotation_origin) in collected_textures {
+        for (id, data, is_hi_dpi, center) in collected_textures {
             if let Some(entry) = self.add_new_entry(
                 data.width(),
                 data.height(),
                 data.to_vec().as_slice(),
                 is_hi_dpi,
-                rotation_origin,
+                center,
                 device,
                 encoder,
             ) {
@@ -196,7 +195,7 @@ impl Atlas {
         height: u32,
         data: &[u8],
         hi_dpi: bool,
-        rotation_origin: Point<f32>,
+        center: Point<f32>,
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
     ) -> Option<Entry> {
@@ -204,8 +203,7 @@ impl Atlas {
 
         let entry = {
             let current_size = self.layers.len();
-            let entry =
-                self.allocate(width, height, hi_dpi, rotation_origin)?;
+            let entry = self.allocate(width, height, hi_dpi, center)?;
 
             // We grow the internal texture after allocating if necessary
             let new_layers = self.layers.len() - current_size;
@@ -286,7 +284,7 @@ impl Atlas {
         width: u32,
         height: u32,
         hi_dpi: bool,
-        rotation_origin: Point<f32>,
+        center: Point<f32>,
     ) -> Option<Entry> {
         let hi_dpi_u32: u32 = if hi_dpi { 1 } else { 0 };
 
@@ -303,7 +301,7 @@ impl Atlas {
 
                 return Some(Entry::Contiguous {
                     allocation: Allocation::Full { layer: i as u32 },
-                    rotation_origin,
+                    center,
                     hi_dpi: hi_dpi_u32,
                 });
             }
@@ -314,7 +312,7 @@ impl Atlas {
                 allocation: Allocation::Full {
                     layer: self.layers.len() as u32 - 1,
                 },
-                rotation_origin,
+                center,
                 hi_dpi: hi_dpi_u32,
             });
         }
@@ -332,7 +330,7 @@ impl Atlas {
                     let width = std::cmp::min(width - x, ATLAS_SIZE);
 
                     let allocation =
-                        self.allocate(width, height, hi_dpi, rotation_origin)?;
+                        self.allocate(width, height, hi_dpi, center)?;
 
                     if let Entry::Contiguous { allocation, .. } = allocation {
                         fragments.push(entry::Fragment {
@@ -350,7 +348,7 @@ impl Atlas {
             return Some(Entry::Fragmented {
                 size: [width as f32, height as f32],
                 fragments,
-                rotation_origin,
+                center,
                 hi_dpi: hi_dpi_u32,
             });
         }
@@ -369,7 +367,7 @@ impl Atlas {
                                 region,
                                 layer: i as u32,
                             },
-                            rotation_origin,
+                            center,
                             hi_dpi: hi_dpi_u32,
                         });
                     }
@@ -381,7 +379,7 @@ impl Atlas {
                                 region,
                                 layer: i as u32,
                             },
-                            rotation_origin,
+                            center,
                             hi_dpi: hi_dpi_u32,
                         });
                     }
@@ -401,7 +399,7 @@ impl Atlas {
                     region,
                     layer: self.layers.len() as u32 - 1,
                 },
-                rotation_origin,
+                center,
                 hi_dpi: hi_dpi_u32,
             });
         }

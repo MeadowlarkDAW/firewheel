@@ -177,17 +177,6 @@ impl Renderer {
             &frame.view,
         );
 
-        self.text_pipeline.add_single_line(
-            "Hello World!",
-            crate::Color::from_rgba(0.8, 0.8, 0.8, 0.9),
-            30.0,
-            crate::Font::default(),
-            crate::Point::new(30, 30),
-            None,
-            wgpu_glyph::HorizontalAlign::Left,
-            wgpu_glyph::VerticalAlign::Center,
-        );
-
         self.text_pipeline.render(
             &self.device,
             &mut self.staging_belt,

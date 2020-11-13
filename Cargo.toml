@@ -14,7 +14,7 @@ readme = "README.md"
 
 [workspace]
 members = [
-    "examples/hello_world",
+    "examples/petal_drive"
 ]
 
 [badges]

@@ -341,7 +341,7 @@ impl Pipeline {
             match entry {
                 atlas::Entry::Contiguous {
                     allocation,
-                    rotation_origin,
+                    center,
                     hi_dpi,
                 } => {
                     self.instances.push(Instance {
@@ -349,7 +349,7 @@ impl Pipeline {
                         _scale: scale,
                         _atlas_position: allocation.position(),
                         _atlas_size: allocation.size(),
-                        _rotation_origin: (*rotation_origin).into(),
+                        _center: (*center).into(),
                         _rotation: rotation,
                         _atlas_layer: allocation.layer(),
                         _is_hi_dpi: (*hi_dpi).into(),
@@ -357,7 +357,7 @@ impl Pipeline {
                 }
                 atlas::Entry::Fragmented {
                     fragments,
-                    rotation_origin,
+                    center,
                     hi_dpi,
                     ..
                 } => {
@@ -371,7 +371,7 @@ impl Pipeline {
                             //dbg!(scale);
                             //dbg!(fragment.allocation.position());
                             //dbg!(fragment.allocation.size());
-                            //dbg!(*rotation_origin);
+                            //dbg!(*center);
                             //dbg!(fragment.allocation.size());
                             //dbg!(rotation);
                             dbg!(fragment.allocation.layer());
@@ -387,7 +387,7 @@ impl Pipeline {
                                 _scale: scale,
                                 _atlas_position: fragment.allocation.position(),
                                 _atlas_size: fragment.allocation.size(),
-                                _rotation_origin: (*rotation_origin).into(),
+                                _center: (*center).into(),
                                 _rotation: rotation,
                                 _atlas_layer: fragment.allocation.layer(),
                                 _is_hi_dpi: is_hi_dpi,
@@ -404,9 +404,9 @@ impl Pipeline {
                                 _scale: scale,
                                 _atlas_position: fragment.allocation.position(),
                                 _atlas_size: fragment.allocation.size(),
-                                _rotation_origin: [
-                                    rotation_origin.x + fragment.position[0],
-                                    rotation_origin.y + fragment.position[1],
+                                _center: [
+                                    center.x + fragment.position[0],
+                                    center.y + fragment.position[1],
                                 ],
                                 _rotation: rotation,
                                 _atlas_layer: fragment.allocation.layer(),
@@ -464,7 +464,7 @@ struct Instance {
     _scale: [f32; 2],
     _atlas_position: [f32; 2],
     _atlas_size: [f32; 2],
-    _rotation_origin: [f32; 2],
+    _center: [f32; 2],
     _rotation: f32,
     _atlas_layer: u32,
     _is_hi_dpi: u32,
@@ -505,7 +505,7 @@ impl Instance {
                     offset: (std::mem::size_of::<[f32; 2]>() * 3)
                         as wgpu::BufferAddress,
                 },
-                // _rotation_origin: [f32; 2],
+                // _center: [f32; 2],
                 wgpu::VertexAttributeDescriptor {
                     shader_location: 5,
                     format: wgpu::VertexFormat::Float2,
