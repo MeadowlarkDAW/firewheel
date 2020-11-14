@@ -42,20 +42,18 @@ impl BackgroundRenderer {
         frame_view: &wgpu::TextureView,
     ) {
         if self.do_full_redraw {
-            // Don't need this
+            // Redraw areas are irrelevant when doing a full redraw.
             self.redraw_areas.clear();
-            self.do_full_redraw = false;
 
             self.full_redraw(pipeline, encoder, frame_view);
 
+            self.do_full_redraw = false;
             return;
         }
 
         if self.redraw_areas.is_empty() {
             return;
         }
-
-        self.full_redraw(pipeline, encoder, frame_view);
 
         match &self.background {
             Background::SolidColor(color) => {

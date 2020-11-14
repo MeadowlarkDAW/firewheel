@@ -123,7 +123,7 @@ impl Renderer {
 
     pub fn render(&mut self) {
         // Only render when something has changed.
-        if !self.background_renderer.changed() && false {
+        if !self.background_renderer.changed() {
             return;
         }
 
@@ -140,13 +140,6 @@ impl Renderer {
                 label: Some("goldenrod: render encoder"),
             },
         );
-
-        self.background_renderer.queue_redraw_area(Rectangle {
-            x: 40.0,
-            y: 40.0,
-            width: 50.0,
-            height: 50.0,
-        });
 
         self.background_renderer.render(
             &mut self.texture_pipeline,
