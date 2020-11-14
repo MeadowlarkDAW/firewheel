@@ -1,15 +1,20 @@
-use crate::{texture, Background, Point, Size, Viewport};
+use crate::{texture, Background, Rectangle, Size, Viewport};
 use futures::task::SpawnExt;
 use raw_window_handle::HasRawWindowHandle;
 
+mod background;
 mod text_pipeline;
 mod texture_pipeline;
+
+use background::BackgroundRenderer;
 
 pub use texture_pipeline::atlas;
 
 pub(crate) struct Renderer {
     pub texture_pipeline: texture_pipeline::Pipeline,
     pub text_pipeline: text_pipeline::Pipeline,
+
+    background_renderer: BackgroundRenderer,
 
     surface: wgpu::Surface,
     device: wgpu::Device,
@@ -87,9 +92,15 @@ impl Renderer {
             staging_belt,
             local_pool,
 
+            background_renderer: BackgroundRenderer::new(),
+
             texture_pipeline,
             text_pipeline,
         })
+    }
+
+    pub fn set_background(&mut self, background: Background) {
+        self.background_renderer.set_background(background);
     }
 
     pub fn resize(&mut self, new_physical_size: Size<u16>, scale_factor: f64) {
@@ -106,67 +117,42 @@ impl Renderer {
         self.sc_desc.height = u32::from(new_physical_size.height);
         self.swap_chain =
             self.device.create_swap_chain(&self.surface, &self.sc_desc);
+
+        self.background_renderer.queue_full_redraw();
     }
 
-    pub fn render(&mut self, do_full_redraw: bool, background: &Background) {
-        let frame = self
-            .swap_chain
-            .get_current_frame()
-            .expect("Timeout getting next frame")
-            .output;
+    pub fn render(&mut self) {
+        // Only render when something has changed.
+        if !self.background_renderer.changed() && false {
+            return;
+        }
+
+        let frame = match self.swap_chain.get_current_frame() {
+            Ok(frame) => frame.output,
+            Err(_) => {
+                // Missed frame. Try again next frame.
+                return;
+            }
+        };
 
         let mut encoder = self.device.create_command_encoder(
             &wgpu::CommandEncoderDescriptor {
-                label: Some("render encoder"),
+                label: Some("goldenrod: render encoder"),
             },
         );
 
-        if do_full_redraw {
-            match background {
-                Background::SolidColor(color) => {
-                    let _ = encoder.begin_render_pass(
-                        &wgpu::RenderPassDescriptor {
-                            color_attachments: &[
-                                wgpu::RenderPassColorAttachmentDescriptor {
-                                    attachment: &frame.view,
-                                    resolve_target: None,
-                                    ops: wgpu::Operations {
-                                        load: wgpu::LoadOp::Clear(
-                                            wgpu::Color {
-                                                r: color.r as f64,
-                                                g: color.g as f64,
-                                                b: color.b as f64,
-                                                a: 1.0,
-                                            },
-                                        ),
-                                        store: true,
-                                    },
-                                },
-                            ],
-                            depth_stencil_attachment: None,
-                        },
-                    );
-                }
-                Background::Texture(id) => {
-                    self.texture_pipeline.add_instance(
-                        *id,
-                        Point::new(0, 0),
-                        [1.0, 1.0],
-                        0.0,
-                    );
-                }
-                Background::MultipleTextures(ids) => {
-                    for (id, position) in ids {
-                        self.texture_pipeline.add_instance(
-                            *id,
-                            *position,
-                            [1.0, 1.0],
-                            0.0,
-                        );
-                    }
-                }
-            }
-        }
+        self.background_renderer.queue_redraw_area(Rectangle {
+            x: 40.0,
+            y: 40.0,
+            width: 50.0,
+            height: 50.0,
+        });
+
+        self.background_renderer.render(
+            &mut self.texture_pipeline,
+            &mut encoder,
+            &frame.view,
+        );
 
         self.texture_pipeline.render(
             &self.device,
@@ -205,7 +191,7 @@ impl Renderer {
     ) -> Result<(), texture_pipeline::atlas::AtlasError> {
         let mut encoder = self.device.create_command_encoder(
             &wgpu::CommandEncoderDescriptor {
-                label: Some("texture loader encoder"),
+                label: Some("goldenrod: texture loader encoder"),
             },
         );
 
@@ -217,6 +203,8 @@ impl Renderer {
         )?;
 
         self.queue.submit(Some(encoder.finish()));
+
+        self.background_renderer.queue_full_redraw();
 
         Ok(())
     }

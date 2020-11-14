@@ -117,8 +117,8 @@ impl Pipeline {
                 staging_belt,
                 encoder,
                 target,
-                bounds.width.round() as u32,
-                bounds.height.round() as u32,
+                bounds.width as u32,
+                bounds.height as u32,
             )
             .expect("Error rendering text");
     }

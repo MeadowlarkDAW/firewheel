@@ -9,6 +9,8 @@ mod widgets;
 pub mod settings;
 pub mod texture;
 
+pub(crate) mod primitive;
+
 use std::hash::{Hash, Hasher as _};
 
 pub use application::Application;

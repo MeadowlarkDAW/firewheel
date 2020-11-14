@@ -84,32 +84,24 @@ impl From<Point<f32>> for Point<i16> {
     }
 }
 
-impl std::ops::Add<Vector> for Point<f32> {
+impl std::ops::Add<Point<f32>> for Point<f32> {
     type Output = Self;
 
-    fn add(self, vector: Vector) -> Self {
+    fn add(self, rhs: Point<f32>) -> Self {
         Self {
-            x: self.x + vector.x,
-            y: self.y + vector.y,
-        }
-    }
-}
-
-impl std::ops::Sub<Vector> for Point<f32> {
-    type Output = Self;
-
-    fn sub(self, vector: Vector) -> Self {
-        Self {
-            x: self.x - vector.x,
-            y: self.y - vector.y,
+            x: self.x + rhs.x,
+            y: self.y + rhs.y,
         }
     }
 }
 
 impl std::ops::Sub<Point<f32>> for Point<f32> {
-    type Output = Vector;
+    type Output = Self;
 
-    fn sub(self, point: Point<f32>) -> Vector {
-        Vector::new(self.x - point.x, self.y - point.y)
+    fn sub(self, rhs: Point<f32>) -> Self {
+        Self {
+            x: self.x - rhs.x,
+            y: self.y - rhs.y,
+        }
     }
 }

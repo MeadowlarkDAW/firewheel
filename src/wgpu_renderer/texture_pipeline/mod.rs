@@ -287,10 +287,10 @@ impl Pipeline {
             render_pass.set_vertex_buffer(1, self.instances_buffer.slice(..));
 
             render_pass.set_scissor_rect(
-                bounds.x.round() as u32,
-                bounds.y.round() as u32,
-                bounds.width.round() as u32,
-                bounds.height.round() as u32,
+                bounds.x as u32,
+                bounds.y as u32,
+                bounds.width as u32,
+                bounds.height as u32,
             );
 
             render_pass.draw_indexed(
@@ -334,7 +334,6 @@ impl Pipeline {
         &mut self,
         texture_id_hash: u64,
         position: Point<u16>,
-        scale: [f32; 2],
         rotation: f32,
     ) {
         if let Some(entry) = self.texture_atlas.get_entry(texture_id_hash) {
@@ -346,7 +345,6 @@ impl Pipeline {
                 } => {
                     self.instances.push(Instance {
                         _position: position.into(),
-                        _scale: scale,
                         _atlas_position: allocation.position(),
                         _atlas_size: allocation.size(),
                         _center: (*center).into(),
@@ -367,24 +365,11 @@ impl Pipeline {
                     // Don't bother computing rotation origins.
                     if rotation == 0.0 {
                         for fragment in fragments {
-                            //dbg!(fragment.position);
-                            //dbg!(scale);
-                            //dbg!(fragment.allocation.position());
-                            //dbg!(fragment.allocation.size());
-                            //dbg!(*center);
-                            //dbg!(fragment.allocation.size());
-                            //dbg!(rotation);
-                            dbg!(fragment.allocation.layer());
-                            //dbg!(is_hi_dpi);
-                            println!("------------------------------------");
-
                             self.instances.push(Instance {
                                 _position: [
                                     position.x + fragment.position[0],
                                     position.y + fragment.position[1],
                                 ],
-                                // TODO: add relative scale field to fragment
-                                _scale: scale,
                                 _atlas_position: fragment.allocation.position(),
                                 _atlas_size: fragment.allocation.size(),
                                 _center: (*center).into(),
@@ -400,8 +385,6 @@ impl Pipeline {
                                     position.x + fragment.position[0],
                                     position.y + fragment.position[1],
                                 ],
-                                // TODO: add relative scale field to fragment
-                                _scale: scale,
                                 _atlas_position: fragment.allocation.position(),
                                 _atlas_size: fragment.allocation.size(),
                                 _center: [
@@ -409,6 +392,80 @@ impl Pipeline {
                                     center.y + fragment.position[1],
                                 ],
                                 _rotation: rotation,
+                                _atlas_layer: fragment.allocation.layer(),
+                                _is_hi_dpi: is_hi_dpi,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn add_clipped_instance(
+        &mut self,
+        texture_id_hash: u64,
+        position: Point<u16>,
+        clip_area: Rectangle,
+    ) {
+        if let Some(entry) = self.texture_atlas.get_entry(texture_id_hash) {
+            let position: Point<f32> = position.into();
+            let clip_area = clip_area - position;
+
+            match entry {
+                atlas::Entry::Contiguous {
+                    allocation, hi_dpi, ..
+                } => {
+                    let area = Rectangle {
+                        x: 0.0,
+                        y: 0.0,
+                        width: allocation.area().width,
+                        height: allocation.area().height,
+                    };
+
+                    if let Some(clipped_area) = clip_area.intersection(&area) {
+                        self.instances.push(Instance {
+                            _position: (position + clipped_area.position())
+                                .into(),
+                            _atlas_position: (allocation.area().position()
+                                + clipped_area.position())
+                            .into(),
+                            _atlas_size: clipped_area.size().into(),
+                            _center: [0.0, 0.0],
+                            _rotation: 0.0,
+                            _atlas_layer: allocation.layer(),
+                            _is_hi_dpi: (*hi_dpi).into(),
+                        });
+                    }
+                }
+                atlas::Entry::Fragmented {
+                    fragments, hi_dpi, ..
+                } => {
+                    let is_hi_dpi: u32 = (*hi_dpi).into();
+
+                    for fragment in fragments {
+                        let area = Rectangle {
+                            x: fragment.position[0],
+                            y: fragment.position[1],
+                            width: fragment.allocation.area().width,
+                            height: fragment.allocation.area().width,
+                        };
+
+                        if let Some(clipped_area) =
+                            clip_area.intersection(&area)
+                        {
+                            self.instances.push(Instance {
+                                _position: (position + clipped_area.position())
+                                    .into(),
+                                _atlas_position: (fragment
+                                    .allocation
+                                    .area()
+                                    .position()
+                                    + clipped_area.position())
+                                .into(),
+                                _atlas_size: clipped_area.size().into(),
+                                _center: [0.0, 0.0],
+                                _rotation: 0.0,
                                 _atlas_layer: fragment.allocation.layer(),
                                 _is_hi_dpi: is_hi_dpi,
                             });
@@ -461,7 +518,6 @@ const QUAD_VERTICES: [Vertex; 4] = [
 #[derive(Debug, Clone, Copy, AsBytes)]
 struct Instance {
     _position: [f32; 2],
-    _scale: [f32; 2],
     _atlas_position: [f32; 2],
     _atlas_size: [f32; 2],
     _center: [f32; 2],
@@ -484,54 +540,47 @@ impl Instance {
                     format: wgpu::VertexFormat::Float2,
                     offset: 0,
                 },
-                // _scale: [f32; 2],
+                // _atlas_position: [f32; 2],
                 wgpu::VertexAttributeDescriptor {
                     shader_location: 2,
                     format: wgpu::VertexFormat::Float2,
-                    offset: std::mem::size_of::<[f32; 2]>()
+                    offset: (std::mem::size_of::<[f32; 2]>() * 1)
                         as wgpu::BufferAddress,
                 },
-                // _atlas_position: [f32; 2],
+                // _atlas_size: [f32; 2],
                 wgpu::VertexAttributeDescriptor {
                     shader_location: 3,
                     format: wgpu::VertexFormat::Float2,
                     offset: (std::mem::size_of::<[f32; 2]>() * 2)
                         as wgpu::BufferAddress,
                 },
-                // _atlas_size: [f32; 2],
+                // _center: [f32; 2],
                 wgpu::VertexAttributeDescriptor {
                     shader_location: 4,
                     format: wgpu::VertexFormat::Float2,
                     offset: (std::mem::size_of::<[f32; 2]>() * 3)
                         as wgpu::BufferAddress,
                 },
-                // _center: [f32; 2],
-                wgpu::VertexAttributeDescriptor {
-                    shader_location: 5,
-                    format: wgpu::VertexFormat::Float2,
-                    offset: (std::mem::size_of::<[f32; 2]>() * 4)
-                        as wgpu::BufferAddress,
-                },
                 // _rotation: f32,
                 wgpu::VertexAttributeDescriptor {
-                    shader_location: 6,
+                    shader_location: 5,
                     format: wgpu::VertexFormat::Float,
-                    offset: (std::mem::size_of::<[f32; 2]>() * 5)
+                    offset: (std::mem::size_of::<[f32; 2]>() * 4)
                         as wgpu::BufferAddress,
                 },
                 // _atlas_layer: u32,
                 wgpu::VertexAttributeDescriptor {
-                    shader_location: 7,
+                    shader_location: 6,
                     format: wgpu::VertexFormat::Uint,
-                    offset: ((std::mem::size_of::<[f32; 2]>() * 5)
+                    offset: ((std::mem::size_of::<[f32; 2]>() * 4)
                         + std::mem::size_of::<f32>())
                         as wgpu::BufferAddress,
                 },
                 // _is_hi_dpi: u32,
                 wgpu::VertexAttributeDescriptor {
-                    shader_location: 8,
+                    shader_location: 7,
                     format: wgpu::VertexFormat::Uint,
-                    offset: ((std::mem::size_of::<[f32; 2]>() * 5)
+                    offset: ((std::mem::size_of::<[f32; 2]>() * 4)
                         + std::mem::size_of::<f32>()
                         + std::mem::size_of::<u32>())
                         as wgpu::BufferAddress,

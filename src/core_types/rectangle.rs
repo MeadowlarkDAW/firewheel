@@ -1,4 +1,4 @@
-use super::{Point, Size, Vector};
+use super::{Point, Size};
 
 /// A rectangle.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -23,12 +23,12 @@ impl Rectangle {
     /// [`Rectangle`]: struct.Rectangle.html
     /// [`Point`]: struct.Point.html
     /// [`Size`]: struct.Size.html
-    pub fn new(top_left: Point<f32>, size: Size<f32>) -> Self {
+    pub fn new(top_left: Point<u16>, size: Size<u16>) -> Self {
         Self {
-            x: top_left.x,
-            y: top_left.y,
-            width: size.width,
-            height: size.height,
+            x: f32::from(top_left.x),
+            y: f32::from(top_left.y),
+            width: f32::from(size.width),
+            height: f32::from(size.height),
         }
     }
 
@@ -37,12 +37,12 @@ impl Rectangle {
     ///
     /// [`Rectangle`]: struct.Rectangle.html
     /// [`Size`]: struct.Size.html
-    pub fn with_size(size: Size<f32>) -> Self {
+    pub fn with_size(size: Size<u16>) -> Self {
         Self {
             x: 0.0,
             y: 0.0,
-            width: size.width,
-            height: size.height,
+            width: f32::from(size.width),
+            height: f32::from(size.height),
         }
     }
 
@@ -122,41 +122,30 @@ impl Rectangle {
             None
         }
     }
-
-    /// Snaps the [`Rectangle`] to __unsigned__ integer coordinates.
-    ///
-    /// [`Rectangle`]: struct.Rectangle.html
-    pub fn snap(self) -> Rectangle {
-        Rectangle {
-            x: self.x.round(),
-            y: self.y.round(),
-            width: self.width.ceil(),
-            height: self.height.ceil(),
-        }
-    }
 }
 
-impl std::ops::Mul<f32> for Rectangle {
-    type Output = Self;
-
-    fn mul(self, scale: f32) -> Self {
-        Self {
-            x: self.x * scale,
-            y: self.y * scale,
-            width: self.width * scale,
-            height: self.height * scale,
-        }
-    }
-}
-
-impl std::ops::Add<Vector> for Rectangle {
+impl std::ops::Add<Point<f32>> for Rectangle {
     type Output = Rectangle;
 
-    fn add(self, translation: Vector) -> Self {
+    fn add(self, rhs: Point<f32>) -> Self::Output {
         Rectangle {
-            x: self.x + translation.x,
-            y: self.y + translation.y,
-            ..self
+            x: self.x + rhs.x,
+            y: self.y + rhs.y,
+            width: self.width,
+            height: self.height,
+        }
+    }
+}
+
+impl std::ops::Sub<Point<f32>> for Rectangle {
+    type Output = Rectangle;
+
+    fn sub(self, rhs: Point<f32>) -> Self::Output {
+        Rectangle {
+            x: self.x - rhs.x,
+            y: self.y - rhs.y,
+            width: self.width,
+            height: self.height,
         }
     }
 }

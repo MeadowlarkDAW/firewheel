@@ -6,8 +6,6 @@ use std::collections::HashSet;
 
 pub(crate) struct RootState {
     pub renderer: Renderer,
-    background: Background,
-    do_full_redraw: bool,
 }
 
 impl RootState {
@@ -24,24 +22,15 @@ impl RootState {
         ))
         .unwrap();
 
-        Self {
-            renderer,
-            background: Background::SolidColor(Color::BLACK),
-            do_full_redraw: true,
-        }
+        Self { renderer }
     }
 
     pub fn window_resized(&mut self, physical_size: Size<u16>, scale: f64) {
         self.renderer.resize(physical_size, scale);
-        self.do_full_redraw = true;
     }
 
     pub fn render(&mut self) {
-        if self.do_full_redraw {
-            self.renderer.render(self.do_full_redraw, &self.background);
-
-            self.do_full_redraw = false;
-        }
+        self.renderer.render();
     }
 }
 
@@ -97,8 +86,7 @@ impl<'a> Root<'a> {
 
     /// Set the window background from one or multiple multiple backgrounds.
     pub fn set_background(&mut self, background: Background) {
-        self.state.background = background;
-        self.state.do_full_redraw = true;
+        self.state.renderer.set_background(background);
     }
 
     // TODO:

@@ -1,3 +1,4 @@
+use crate::Rectangle;
 use guillotiere::{SimpleAtlasAllocator, Size};
 
 pub struct Allocator {
@@ -23,8 +24,12 @@ impl Allocator {
         self.allocations += 1;
 
         Some(Region {
-            position: [rectangle.min.x as f32, rectangle.min.y as f32],
-            size: [width as f32, height as f32],
+            area: Rectangle {
+                x: rectangle.min.x as f32,
+                y: rectangle.min.y as f32,
+                width: width as f32,
+                height: height as f32,
+            },
         })
     }
 
@@ -42,8 +47,7 @@ impl Allocator {
 }
 
 pub struct Region {
-    pub position: [f32; 2],
-    pub size: [f32; 2],
+    pub area: Rectangle,
 }
 
 impl std::fmt::Debug for Allocator {
@@ -54,9 +58,6 @@ impl std::fmt::Debug for Allocator {
 
 impl std::fmt::Debug for Region {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Region")
-            .field("position", &self.position)
-            .field("size", &self.size)
-            .finish()
+        f.debug_struct("Region").field("area", &self.area).finish()
     }
 }

@@ -46,9 +46,9 @@ impl TextureID {
     }
 }
 
-struct HelloWorldExample {}
+struct PetalDriveGUI {}
 
-impl HelloWorldExample {
+impl PetalDriveGUI {
     fn new(root: &mut Root) -> Self {
         root.replace_texture_atlas(&TextureID::all()).unwrap();
         root.set_background(Background::Texture(hash_id(TextureID::Back)));
@@ -57,7 +57,7 @@ impl HelloWorldExample {
     }
 }
 
-impl Application for HelloWorldExample {
+impl Application for PetalDriveGUI {
     type CustomMessage = ();
 
     fn on_message(&mut self, message: Message<()>, root: &mut Root) {}
@@ -72,8 +72,8 @@ fn main() {
         },
     };
 
-    let handle = Runner::open(settings, |root| -> HelloWorldExample {
-        HelloWorldExample::new(root)
+    let handle = Runner::open(settings, |root| -> PetalDriveGUI {
+        PetalDriveGUI::new(root)
     });
 
     handle.app_run_blocking();

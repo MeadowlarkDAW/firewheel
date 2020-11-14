@@ -70,11 +70,6 @@ impl Viewport {
 
     ///
     pub fn bounds(&self) -> Rectangle {
-        Rectangle {
-            x: 0.0,
-            y: 0.0,
-            width: f32::from(self.logical_size.width),
-            height: f32::from(self.logical_size.height),
-        }
+        Rectangle::with_size(self.logical_size)
     }
 }
