@@ -255,11 +255,3 @@ impl Debug for Data {
         }
     }
 }
-
-pub trait IdGroup: Hash + Copy + Clone + PartialEq {
-    fn hash_to_u64(&self) -> u64 {
-        let mut hasher = Hasher::default();
-        self.hash(&mut hasher);
-        hasher.finish()
-    }
-}

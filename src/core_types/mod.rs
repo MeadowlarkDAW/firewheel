@@ -1,3 +1,4 @@
+mod bounds;
 mod color;
 mod fill;
 mod hasher;
@@ -8,6 +9,7 @@ mod viewport;
 
 pub(crate) mod font;
 
+pub use bounds::Bounds;
 pub use color::Color;
 pub use fill::FillMode;
 pub use font::{Font, HAlign, VAlign};

@@ -1,63 +1,50 @@
 use crate::wgpu_renderer::Renderer;
-use crate::{atlas, Background, Size, Texture};
+use crate::widgets::WidgetTree;
+use crate::{atlas, Background, IdGroup, Size, Texture};
 use baseview::Window;
-use futures::executor::block_on;
 use std::collections::HashSet;
 
-pub(crate) struct RootState {
-    pub renderer: Renderer,
+pub(crate) struct RootState<TexID: IdGroup, WidgetID: IdGroup> {
+    widget_tree: WidgetTree<TexID, WidgetID>,
 }
 
-impl RootState {
-    pub fn new(window: &mut Window) -> Self {
-        let physical_size = Size::<u16>::new(
-            window.window_info().physical_size().width as u16,
-            window.window_info().physical_size().height as u16,
-        );
-
-        let renderer = block_on(Renderer::new(
-            window,
-            physical_size,
-            window.window_info().scale(),
-        ))
-        .unwrap();
-
-        Self { renderer }
-    }
-
-    pub fn window_resized(&mut self, physical_size: Size<u16>, scale: f64) {
-        self.renderer.resize(physical_size, scale);
-    }
-
-    pub fn render(&mut self) {
-        self.renderer.render();
+impl<TexID: IdGroup, WidgetID: IdGroup> RootState<TexID, WidgetID> {
+    pub fn new() -> Self {
+        Self {
+            widget_tree: WidgetTree::new(),
+        }
     }
 }
 
-pub struct Root<'a> {
-    state: &'a mut RootState,
+pub struct Root<'a, TexID: IdGroup, WidgetID: IdGroup> {
+    state: &'a mut RootState<TexID, WidgetID>,
     window: &'a mut baseview::Window,
+    renderer: &'a mut Renderer,
 }
 
-impl<'a> Root<'a> {
+impl<'a, TexID: IdGroup, WidgetID: IdGroup> Root<'a, TexID, WidgetID> {
     pub(crate) fn new(
-        state: &'a mut RootState,
+        state: &'a mut RootState<TexID, WidgetID>,
         window: &'a mut baseview::Window,
+        renderer: &'a mut Renderer,
     ) -> Self {
-        Self { state, window }
+        Self {
+            state,
+            window,
+            renderer,
+        }
     }
 
     /// Replace the current texture atlas with a new one.
     ///
     /// If this operation fails, the current texture atlas may be corrupt.
     /// Please load your default texture atlas again if an error ocurred.
-    pub fn replace_texture_atlas<TexID>(
+    pub fn replace_texture_atlas(
         &mut self,
         textures: &[(TexID, Texture)],
     ) -> Result<(), atlas::AtlasError>
     where
-        TexID:
-            std::hash::Hash + std::fmt::Debug + Eq + PartialEq + Copy + Clone,
+        TexID: crate::IdGroup,
     {
         // check for duplicate ids
         {
@@ -75,18 +62,16 @@ impl<'a> Root<'a> {
         let textures: Vec<(u64, &Texture)> = textures
             .iter()
             .map(|(id, texture)| -> (u64, &Texture) {
-                (crate::hash_id(id), texture)
+                (id.hash_to_u64(), texture)
             })
             .collect();
 
-        self.state
-            .renderer
-            .replace_texture_atlas(textures.as_slice())
+        self.renderer.replace_texture_atlas(textures.as_slice())
     }
 
     /// Set the window background from one or multiple multiple backgrounds.
-    pub fn set_background(&mut self, background: Background) {
-        self.state.renderer.set_background(background);
+    pub fn set_background(&mut self, background: Background<TexID>) {
+        self.renderer.set_background(background.hash_to_u64());
     }
 
     // TODO:

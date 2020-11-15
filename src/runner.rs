@@ -1,21 +1,24 @@
 use crate::{
-    root::RootState, settings, Application, Message, Root, Settings, Size,
+    root::RootState, settings, wgpu_renderer::Renderer, Application, Message,
+    Root, Settings, Size,
 };
 use baseview::{
     Event, Parent, Window, WindowHandle, WindowHandler, WindowOpenOptions,
     WindowScalePolicy,
 };
+use futures::executor::block_on;
 
 pub struct Runner<A: Application + 'static + Send> {
     user_app: A,
-    root_state: RootState,
+    root_state: RootState<A::TextureIDs, A::WidgetIDs>,
+    renderer: Renderer,
 }
 
 impl<A: Application + 'static + Send> Runner<A> {
     /// Open a new window
     pub fn open<B>(settings: Settings, build: B) -> WindowHandle
     where
-        B: FnOnce(&mut Root) -> A,
+        B: FnOnce(&mut Root<A::TextureIDs, A::WidgetIDs>) -> A,
         B: Send + 'static,
     {
         let scale_policy = match settings.window.scale {
@@ -35,14 +38,27 @@ impl<A: Application + 'static + Send> Runner<A> {
         };
 
         Window::open(window_options, move |window: &mut Window| -> Runner<A> {
-            let mut root_state = RootState::new(window);
-            let mut root = Root::new(&mut root_state, window);
+            let physical_size = Size::<u16>::new(
+                window.window_info().physical_size().width as u16,
+                window.window_info().physical_size().height as u16,
+            );
+
+            let mut renderer = block_on(Renderer::new(
+                window,
+                physical_size,
+                window.window_info().scale(),
+            ))
+            .unwrap();
+
+            let mut root_state = RootState::new();
+            let mut root = Root::new(&mut root_state, window, &mut renderer);
 
             let user_app = build(&mut root);
 
             Runner {
                 user_app,
                 root_state,
+                renderer,
             }
         })
     }
@@ -52,7 +68,7 @@ impl<A: Application + 'static + Send> WindowHandler for Runner<A> {
     type Message = Message<A::CustomMessage>;
 
     fn on_frame(&mut self) {
-        self.root_state.render();
+        self.renderer.render();
     }
 
     fn on_event(&mut self, _window: &mut Window, event: Event) {
@@ -64,8 +80,7 @@ impl<A: Application + 'static + Send> WindowHandler for Runner<A> {
                         window_info.physical_size().height as u16,
                     );
 
-                    self.root_state
-                        .window_resized(physical_size, window_info.scale());
+                    self.renderer.resize(physical_size, window_info.scale());
                 }
                 _ => {}
             },
@@ -74,7 +89,8 @@ impl<A: Application + 'static + Send> WindowHandler for Runner<A> {
     }
 
     fn on_message(&mut self, window: &mut Window, message: Self::Message) {
-        let mut root = Root::new(&mut self.root_state, window);
+        let mut root =
+            Root::new(&mut self.root_state, window, &mut self.renderer);
 
         self.user_app.on_message(message, &mut root);
     }

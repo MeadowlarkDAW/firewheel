@@ -1,5 +1,5 @@
 use goldenrod::{
-    hash_id, settings, Application, Background, Color, Message, Parent, Point,
+    settings, Application, Background, Color, IdGroup, Message, Parent, Point,
     Root, Runner, Settings, Size, Texture, TextureSource,
 };
 
@@ -10,6 +10,8 @@ enum TextureID {
     TestVSlider,
     TestHSlider,
 }
+
+impl IdGroup for TextureID {}
 
 impl TextureID {
     fn all() -> [(TextureID, Texture); 4] {
@@ -46,21 +48,36 @@ impl TextureID {
     }
 }
 
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
+enum WidgetID {
+    Test,
+}
+
+impl IdGroup for WidgetID {}
+
 struct PetalDriveGUI {}
 
 impl PetalDriveGUI {
-    fn new(root: &mut Root) -> Self {
+    fn new(root: &mut Root<TextureID, WidgetID>) -> Self {
         root.replace_texture_atlas(&TextureID::all()).unwrap();
-        root.set_background(Background::Texture(hash_id(TextureID::Back)));
+        root.set_background(Background::Texture(TextureID::Back));
 
         Self {}
     }
 }
 
 impl Application for PetalDriveGUI {
+    type TextureIDs = TextureID;
+    type WidgetIDs = WidgetID;
+
     type CustomMessage = ();
 
-    fn on_message(&mut self, message: Message<()>, root: &mut Root) {}
+    fn on_message(
+        &mut self,
+        message: Message<()>,
+        root: &mut Root<TextureID, WidgetID>,
+    ) {
+    }
 }
 
 fn main() {

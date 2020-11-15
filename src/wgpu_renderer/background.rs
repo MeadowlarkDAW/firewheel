@@ -2,7 +2,7 @@ use crate::wgpu_renderer::texture_pipeline::Pipeline;
 use crate::{Background, Color, Point, Rectangle};
 
 pub struct BackgroundRenderer {
-    background: Background,
+    background: Background<u64>,
     redraw_areas: Vec<Rectangle>,
 
     do_full_redraw: bool,
@@ -18,7 +18,7 @@ impl BackgroundRenderer {
         }
     }
 
-    pub fn set_background(&mut self, background: Background) {
+    pub fn set_background(&mut self, background: Background<u64>) {
         self.background = background;
         self.do_full_redraw = true;
     }

@@ -99,7 +99,7 @@ impl Renderer {
         })
     }
 
-    pub fn set_background(&mut self, background: Background) {
+    pub fn set_background(&mut self, background: Background<u64>) {
         self.background_renderer.set_background(background);
     }
 
