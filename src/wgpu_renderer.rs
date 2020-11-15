@@ -1,4 +1,4 @@
-use crate::{texture, Background, Rectangle, Size, Viewport};
+use crate::{texture, Background, Size, Viewport};
 use futures::task::SpawnExt;
 use raw_window_handle::HasRawWindowHandle;
 

@@ -1,5 +1,5 @@
 use crate::wgpu_renderer::Renderer;
-use crate::{atlas, Background, Color, Size, Texture};
+use crate::{atlas, Background, Size, Texture};
 use baseview::Window;
 use futures::executor::block_on;
 use std::collections::HashSet;

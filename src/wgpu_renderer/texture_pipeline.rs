@@ -113,11 +113,11 @@ impl Pipeline {
             });
 
         let vs_module = device.create_shader_module(wgpu::include_spirv!(
-            "../shader/image.vert.spv"
+            "./shader/image.vert.spv"
         ));
 
         let fs_module = device.create_shader_module(wgpu::include_spirv!(
-            "../shader/image.frag.spv"
+            "./shader/image.frag.spv"
         ));
 
         let pipeline =
@@ -362,40 +362,22 @@ impl Pipeline {
                     let is_hi_dpi: u32 = (*hi_dpi).into();
                     let position: Point<f32> = position.into();
 
-                    // Don't bother computing rotation origins.
-                    if rotation == 0.0 {
-                        for fragment in fragments {
-                            self.instances.push(Instance {
-                                _position: [
-                                    position.x + fragment.position[0],
-                                    position.y + fragment.position[1],
-                                ],
-                                _atlas_position: fragment.allocation.position(),
-                                _atlas_size: fragment.allocation.size(),
-                                _center: (*center).into(),
-                                _rotation: rotation,
-                                _atlas_layer: fragment.allocation.layer(),
-                                _is_hi_dpi: is_hi_dpi,
-                            });
-                        }
-                    } else {
-                        for fragment in fragments {
-                            self.instances.push(Instance {
-                                _position: [
-                                    position.x + fragment.position[0],
-                                    position.y + fragment.position[1],
-                                ],
-                                _atlas_position: fragment.allocation.position(),
-                                _atlas_size: fragment.allocation.size(),
-                                _center: [
-                                    center.x + fragment.position[0],
-                                    center.y + fragment.position[1],
-                                ],
-                                _rotation: rotation,
-                                _atlas_layer: fragment.allocation.layer(),
-                                _is_hi_dpi: is_hi_dpi,
-                            });
-                        }
+                    for fragment in fragments {
+                        self.instances.push(Instance {
+                            _position: [
+                                position.x + fragment.position[0],
+                                position.y + fragment.position[1],
+                            ],
+                            _atlas_position: fragment.allocation.position(),
+                            _atlas_size: fragment.allocation.size(),
+                            _center: [
+                                center.x + fragment.position[0],
+                                center.y + fragment.position[1],
+                            ],
+                            _rotation: rotation,
+                            _atlas_layer: fragment.allocation.layer(),
+                            _is_hi_dpi: is_hi_dpi,
+                        });
                     }
                 }
             }

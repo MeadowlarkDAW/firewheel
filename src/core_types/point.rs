@@ -1,5 +1,3 @@
-use super::Vector;
-
 /// A 2D point.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Point<T> {
