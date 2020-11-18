@@ -1,7 +1,6 @@
-use crate::{Hasher, Point};
+use crate::Point;
 use image::{ImageBuffer, ImageError};
 use std::fmt::Debug;
-use std::hash::{Hash, Hasher as _};
 use std::path::PathBuf;
 use std::sync::Arc;
 

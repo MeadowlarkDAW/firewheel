@@ -1,4 +1,4 @@
-use crate::{texture, Background, Size, Viewport};
+use crate::{texture, Background, IdGroup, Size, Viewport};
 use futures::task::SpawnExt;
 use raw_window_handle::HasRawWindowHandle;
 
@@ -10,11 +10,11 @@ use background::BackgroundRenderer;
 
 pub use texture_pipeline::atlas;
 
-pub(crate) struct Renderer {
-    pub texture_pipeline: texture_pipeline::Pipeline,
+pub(crate) struct Renderer<TexID: IdGroup> {
+    pub texture_pipeline: texture_pipeline::Pipeline<TexID>,
     pub text_pipeline: text_pipeline::Pipeline,
 
-    background_renderer: BackgroundRenderer,
+    background_renderer: BackgroundRenderer<TexID>,
 
     surface: wgpu::Surface,
     device: wgpu::Device,
@@ -26,7 +26,7 @@ pub(crate) struct Renderer {
     local_pool: futures::executor::LocalPool,
 }
 
-impl Renderer {
+impl<TexID: IdGroup> Renderer<TexID> {
     const CHUNK_SIZE: u64 = 10 * 1024;
 
     // Creating some of the wgpu types requires async code
@@ -99,7 +99,7 @@ impl Renderer {
         })
     }
 
-    pub fn set_background(&mut self, background: Background<u64>) {
+    pub fn set_background(&mut self, background: Background<TexID>) {
         self.background_renderer.set_background(background);
     }
 
@@ -180,7 +180,7 @@ impl Renderer {
 
     pub fn replace_texture_atlas(
         &mut self,
-        textures: &[(u64, &texture::Texture)],
+        textures: &[(TexID, texture::Texture)],
     ) -> Result<(), texture_pipeline::atlas::AtlasError> {
         let mut encoder = self.device.create_command_encoder(
             &wgpu::CommandEncoderDescriptor {
@@ -200,5 +200,9 @@ impl Renderer {
         self.background_renderer.queue_full_redraw();
 
         Ok(())
+    }
+
+    pub fn needs_full_redraw(&self) -> bool {
+        self.background_renderer.needs_full_redraw()
     }
 }

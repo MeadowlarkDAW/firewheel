@@ -1,6 +1,6 @@
-use crate::{texture, Point};
+use crate::{texture, IdGroup, Point};
+use fnv::FnvHashMap;
 use image::{ImageBuffer, ImageError};
-use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::{self, Debug};
 
@@ -46,15 +46,15 @@ impl fmt::Display for AtlasError {
 
 impl Error for AtlasError {}
 
-pub struct Atlas {
+pub struct Atlas<TexID: IdGroup> {
     texture: wgpu::Texture,
     texture_view: wgpu::TextureView,
     layers: Vec<Layer>,
-    atlas_map: HashMap<u64, Entry>,
+    atlas_map: FnvHashMap<TexID, Entry>,
     did_clear_once: bool,
 }
 
-impl Atlas {
+impl<TexID: IdGroup> Atlas<TexID> {
     pub fn new(device: &wgpu::Device) -> Self {
         let extent = wgpu::Extent3d {
             width: ATLAS_SIZE,
@@ -83,7 +83,7 @@ impl Atlas {
             texture,
             texture_view,
             layers: vec![Layer::Empty],
-            atlas_map: HashMap::new(),
+            atlas_map: FnvHashMap::default(),
             did_clear_once: false,
         }
     }
@@ -91,12 +91,12 @@ impl Atlas {
     pub fn replace_texture_atlas(
         &mut self,
         device: &wgpu::Device,
-        textures: &[(u64, &texture::Texture)],
+        textures: &[(TexID, texture::Texture)],
         encoder: &mut wgpu::CommandEncoder,
         hi_dpi: bool,
     ) -> Result<(), AtlasError> {
         let mut collected_textures: Vec<(
-            u64,
+            TexID,
             ImageBuffer<image::Bgra<u8>, Vec<u8>>,
             bool,
             Point<f32>,
@@ -125,7 +125,10 @@ impl Atlas {
 
         self.clear(device);
 
-        self.atlas_map.reserve(collected_textures.len());
+        if self.atlas_map.len() < collected_textures.len() {
+            self.atlas_map
+                .reserve(collected_textures.len() - self.atlas_map.len());
+        }
 
         for (id, data, is_hi_dpi, center) in collected_textures {
             if let Some(entry) = self.add_new_entry(
@@ -162,7 +165,7 @@ impl Atlas {
         }
 
         self.layers = vec![Layer::Empty];
-        self.atlas_map = HashMap::new();
+        self.atlas_map.clear();
 
         self.texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("goldenrod::atlas texture atlas"),
@@ -275,8 +278,8 @@ impl Atlas {
     }
 
     #[inline]
-    pub fn get_entry(&self, texture_id_hash: u64) -> Option<&Entry> {
-        self.atlas_map.get(&texture_id_hash)
+    pub fn get_entry(&self, id: TexID) -> Option<&Entry> {
+        self.atlas_map.get(&id)
     }
 
     fn allocate(

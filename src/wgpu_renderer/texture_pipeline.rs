@@ -1,4 +1,4 @@
-use crate::{texture, Point, Rectangle};
+use crate::{texture, IdGroup, Point, Rectangle};
 use std::fmt::Debug;
 use std::mem;
 use zerocopy::AsBytes;
@@ -10,7 +10,7 @@ const ATLAS_SCALE: [f32; 2] = [
     1.0 / atlas::ATLAS_SIZE as f32,
 ];
 
-pub struct Pipeline {
+pub struct Pipeline<TexID: IdGroup> {
     pipeline: wgpu::RenderPipeline,
     uniforms_buffer: wgpu::Buffer,
     vertex_buffer: wgpu::Buffer,
@@ -19,12 +19,12 @@ pub struct Pipeline {
     constants_bind_group: wgpu::BindGroup,
     texture_layout: wgpu::BindGroupLayout,
     texture_bind_group: wgpu::BindGroup,
-    texture_atlas: atlas::Atlas,
+    texture_atlas: atlas::Atlas<TexID>,
 
     instances: Vec<Instance>,
 }
 
-impl Pipeline {
+impl<TexID: IdGroup> Pipeline<TexID> {
     pub fn new(
         device: &wgpu::Device,
         texture_format: wgpu::TextureFormat,
@@ -112,13 +112,7 @@ impl Pipeline {
                 bind_group_layouts: &[&constants_layout, &texture_layout],
             });
 
-        let vs_module = device.create_shader_module(wgpu::include_spirv!(
-            "./shader/image.vert.spv"
-        ));
-
-        let fs_module = device.create_shader_module(wgpu::include_spirv!(
-            "./shader/image.frag.spv"
-        ));
+        let (vs_module, fs_module) = get_shaders(device);
 
         let pipeline =
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -307,7 +301,7 @@ impl Pipeline {
 
     pub fn replace_texture_atlas(
         &mut self,
-        textures: &[(u64, &texture::Texture)],
+        textures: &[(TexID, texture::Texture)],
         hi_dpi: bool,
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
@@ -332,11 +326,11 @@ impl Pipeline {
 
     pub fn add_instance(
         &mut self,
-        texture_id_hash: u64,
+        texture_id: TexID,
         position: Point<u16>,
         rotation: f32,
     ) {
-        if let Some(entry) = self.texture_atlas.get_entry(texture_id_hash) {
+        if let Some(entry) = self.texture_atlas.get_entry(texture_id) {
             match entry {
                 atlas::Entry::Contiguous {
                     allocation,
@@ -386,11 +380,11 @@ impl Pipeline {
 
     pub fn add_clipped_instance(
         &mut self,
-        texture_id_hash: u64,
+        texture_id: TexID,
         position: Point<u16>,
         clip_area: Rectangle,
     ) {
-        if let Some(entry) = self.texture_atlas.get_entry(texture_id_hash) {
+        if let Some(entry) = self.texture_atlas.get_entry(texture_id) {
             let position: Point<f32> = position.into();
             let clip_area = clip_area - position;
 
@@ -577,4 +571,19 @@ impl Instance {
 struct Uniforms {
     scale: [f32; 2],
     atlas_scale: [f32; 2],
+}
+
+/// Prevent recompiling shaders every time.
+#[inline(never)]
+fn get_shaders(
+    device: &wgpu::Device,
+) -> (wgpu::ShaderModule, wgpu::ShaderModule) {
+    (
+        device.create_shader_module(wgpu::include_spirv!(
+            "./shader/image.vert.spv"
+        )),
+        device.create_shader_module(wgpu::include_spirv!(
+            "./shader/image.frag.spv"
+        )),
+    )
 }

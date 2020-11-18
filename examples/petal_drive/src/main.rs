@@ -1,6 +1,6 @@
 use goldenrod::{
     settings, Application, Background, Color, IdGroup, Message, Parent, Point,
-    Root, Runner, Settings, Size, Texture, TextureSource,
+    Root, Runner, Settings, Size, Texture, TextureSource, Tree,
 };
 
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
@@ -58,7 +58,7 @@ impl IdGroup for WidgetID {}
 struct PetalDriveGUI {}
 
 impl PetalDriveGUI {
-    fn new(root: &mut Root<TextureID, WidgetID>) -> Self {
+    fn new(root: &mut Root<TextureID>) -> Self {
         root.replace_texture_atlas(&TextureID::all()).unwrap();
         root.set_background(Background::Texture(TextureID::Back));
 
@@ -72,12 +72,10 @@ impl Application for PetalDriveGUI {
 
     type CustomMessage = ();
 
-    fn on_message(
-        &mut self,
-        message: Message<()>,
-        root: &mut Root<TextureID, WidgetID>,
-    ) {
+    fn on_message(&mut self, message: Message<()>, root: &mut Root<TextureID>) {
     }
+
+    fn view(&self, tree: &mut Tree<TextureID, WidgetID>) {}
 }
 
 fn main() {

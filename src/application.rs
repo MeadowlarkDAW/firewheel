@@ -1,4 +1,4 @@
-use crate::{IdGroup, Message, Root};
+use crate::{IdGroup, Message, Root, Tree};
 
 pub trait Application: Sized {
     type TextureIDs: IdGroup;
@@ -11,6 +11,9 @@ pub trait Application: Sized {
     fn on_message(
         &mut self,
         message: Message<Self::CustomMessage>,
-        root: &mut Root<Self::TextureIDs, Self::WidgetIDs>,
+        root: &mut Root<Self::TextureIDs>,
     );
+
+    /// Construct your current widgets.
+    fn view(&self, tree: &mut Tree<Self::TextureIDs, Self::WidgetIDs>);
 }

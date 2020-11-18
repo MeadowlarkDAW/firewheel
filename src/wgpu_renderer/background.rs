@@ -1,14 +1,14 @@
 use crate::wgpu_renderer::texture_pipeline::Pipeline;
-use crate::{Background, Color, Point, Rectangle};
+use crate::{Background, Color, IdGroup, Point, Rectangle};
 
-pub struct BackgroundRenderer {
-    background: Background<u64>,
+pub struct BackgroundRenderer<TexID: IdGroup> {
+    background: Background<TexID>,
     redraw_areas: Vec<Rectangle>,
 
     do_full_redraw: bool,
 }
 
-impl BackgroundRenderer {
+impl<TexID: IdGroup> BackgroundRenderer<TexID> {
     pub fn new() -> Self {
         Self {
             background: Background::SolidColor(Color::BLACK),
@@ -18,7 +18,7 @@ impl BackgroundRenderer {
         }
     }
 
-    pub fn set_background(&mut self, background: Background<u64>) {
+    pub fn set_background(&mut self, background: Background<TexID>) {
         self.background = background;
         self.do_full_redraw = true;
     }
@@ -31,13 +31,14 @@ impl BackgroundRenderer {
         self.do_full_redraw = true;
     }
 
+    #[inline]
     pub fn queue_redraw_area(&mut self, area: Rectangle) {
         self.redraw_areas.push(area);
     }
 
     pub fn render(
         &mut self,
-        pipeline: &mut Pipeline,
+        pipeline: &mut Pipeline<TexID>,
         encoder: &mut wgpu::CommandEncoder,
         frame_view: &wgpu::TextureView,
     ) {
@@ -76,7 +77,7 @@ impl BackgroundRenderer {
 
     fn full_redraw(
         &self,
-        pipeline: &mut Pipeline,
+        pipeline: &mut Pipeline<TexID>,
         encoder: &mut wgpu::CommandEncoder,
         frame_view: &wgpu::TextureView,
     ) {
@@ -115,5 +116,9 @@ impl BackgroundRenderer {
             }
             _ => {}
         }
+    }
+
+    pub fn needs_full_redraw(&self) -> bool {
+        self.do_full_redraw
     }
 }

@@ -1,6 +1,6 @@
 use crate::{
-    root::RootState, settings, wgpu_renderer::Renderer, Application, Message,
-    Root, Settings, Size,
+    settings, wgpu_renderer::Renderer, Application, Message, Root, Settings,
+    Size, Tree,
 };
 use baseview::{
     Event, Parent, Window, WindowHandle, WindowHandler, WindowOpenOptions,
@@ -10,15 +10,15 @@ use futures::executor::block_on;
 
 pub struct Runner<A: Application + 'static + Send> {
     user_app: A,
-    root_state: RootState<A::TextureIDs, A::WidgetIDs>,
-    renderer: Renderer,
+    widget_tree: Tree<A::TextureIDs, A::WidgetIDs>,
+    renderer: Renderer<A::TextureIDs>,
 }
 
 impl<A: Application + 'static + Send> Runner<A> {
     /// Open a new window
     pub fn open<B>(settings: Settings, build: B) -> WindowHandle
     where
-        B: FnOnce(&mut Root<A::TextureIDs, A::WidgetIDs>) -> A,
+        B: FnOnce(&mut Root<A::TextureIDs>) -> A,
         B: Send + 'static,
     {
         let scale_policy = match settings.window.scale {
@@ -50,14 +50,13 @@ impl<A: Application + 'static + Send> Runner<A> {
             ))
             .unwrap();
 
-            let mut root_state = RootState::new();
-            let mut root = Root::new(&mut root_state, window, &mut renderer);
+            let mut root = Root::new(window, &mut renderer);
 
             let user_app = build(&mut root);
 
             Runner {
                 user_app,
-                root_state,
+                widget_tree: Tree::new(),
                 renderer,
             }
         })
@@ -68,6 +67,17 @@ impl<A: Application + 'static + Send> WindowHandler for Runner<A> {
     type Message = Message<A::CustomMessage>;
 
     fn on_frame(&mut self) {
+        // Construct the current widget tree.
+        self.widget_tree.start_tree_construction();
+        self.user_app.view(&mut self.widget_tree);
+
+        // TODO: Check for duplicate widgets with the same id.
+
+        // Retrieve any rendering changes.
+        let render_info = self
+            .widget_tree
+            .get_render_info(self.renderer.needs_full_redraw());
+
         self.renderer.render();
     }
 
@@ -89,8 +99,7 @@ impl<A: Application + 'static + Send> WindowHandler for Runner<A> {
     }
 
     fn on_message(&mut self, window: &mut Window, message: Self::Message) {
-        let mut root =
-            Root::new(&mut self.root_state, window, &mut self.renderer);
+        let mut root = Root::new(window, &mut self.renderer);
 
         self.user_app.on_message(message, &mut root);
     }
