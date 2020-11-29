@@ -28,18 +28,4 @@ font-fallback = []
 
 [dependencies]
 baseview = { git = "https://github.com/RustAudio/baseview.git", branch = "master" }
-wgpu = "0.6"
-wgpu_glyph = "0.10"
-zerocopy = "0.3"
 image = "0.23"
-fnv = "1.0.7"
-anyhow = "1.0"
-futures = "0.3"
-raw-window-handle = "0.3"
-guillotiere = "0.6.0"
-
-[build-dependencies]
-anyhow = "1.0"
-fs_extra = "1.2"
-glob = "0.3"
-shaderc = "0.6"
