@@ -143,6 +143,12 @@ impl Renderer {
 
 impl Drop for Renderer {
     fn drop(&mut self) {
+        unsafe {
+            // Delete buffers.
+            self.gl.DeleteVertexArrays(1, &self.vao);
+            self.gl.DeleteBuffers(1, &self.vbo);
+        }
+        
         self.shader_program.delete(&self.gl);
         self.device.destroy_context(&mut self.context).unwrap();
     }
