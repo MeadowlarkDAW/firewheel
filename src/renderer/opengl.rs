@@ -1,11 +1,11 @@
-use gl32::types::{GLchar, GLfloat, GLint, GLuint, GLvoid};
+use gl32::types::{GLfloat, GLuint, GLvoid};
 use raw_window_handle::RawWindowHandle;
 use std::mem::size_of;
 use surfman::{
     Connection, Context, ContextAttributeFlags, ContextAttributes, Device,
     GLVersion,
 };
-use surfman::{Surface, SurfaceAccess, SurfaceType};
+use surfman::{SurfaceAccess, SurfaceType};
 
 mod shader;
 
