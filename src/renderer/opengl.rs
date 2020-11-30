@@ -7,31 +7,14 @@ use surfman::{
 };
 use surfman::{Surface, SurfaceAccess, SurfaceType};
 
-struct Buffer {
-    pub object: GLuint,
-}
+mod shader;
 
-impl Buffer {
-    pub fn from_data(gl: &gl32::Gl, data: &[u8]) -> Buffer {
-        unsafe {
-            let mut buffer = 0;
-            gl.GenBuffers(1, &mut buffer);
-            gl.BindBuffer(gl32::ARRAY_BUFFER, buffer);
-            gl.BufferData(
-                gl32::ARRAY_BUFFER,
-                data.len() as isize,
-                data.as_ptr() as *const GLvoid,
-                gl32::STATIC_DRAW,
-            );
-            Buffer { object: buffer }
-        }
-    }
-}
+use shader::{Shader, ShaderProgram};
 
 pub struct Renderer {
     device: Device,
     context: Context,
-    shader_program: GLuint,
+    shader_program: ShaderProgram,
     vbo: GLuint,
     vao: GLuint,
     gl: gl32::Gl,
@@ -67,120 +50,32 @@ impl Renderer {
 
         let gl = gl32::Gl::load_with(|s| device.get_proc_address(&context, s));
 
+        let shader_program = {
+            let vertex_shader = Shader::new(
+                include_str!("../shaders/vertex.glsl"),
+                gl32::VERTEX_SHADER,
+                &gl,
+            )
+            .unwrap();
+
+            let fragment_shader = Shader::new(
+                include_str!("../shaders/fragment.glsl"),
+                gl32::FRAGMENT_SHADER,
+                &gl,
+            )
+            .unwrap();
+
+            ShaderProgram::new(vertex_shader, fragment_shader, &gl).unwrap()
+        };
+
         unsafe {
-            // compile vertex shader
-            let vertex_shader = gl.CreateShader(gl32::VERTEX_SHADER);
-            gl.ShaderSource(
-                vertex_shader,
-                1,
-                &(VERTEX_SHADER.as_bytes().as_ptr() as *const GLchar),
-                &(VERTEX_SHADER.len() as GLint),
-            );
-            gl.CompileShader(vertex_shader);
-            let mut compile_status = 0;
-            gl.GetShaderiv(
-                vertex_shader,
-                gl32::COMPILE_STATUS,
-                &mut compile_status,
-            );
-            if compile_status != gl32::TRUE as GLint {
-                let mut info_log_length = 0;
-                gl.GetShaderiv(
-                    vertex_shader,
-                    gl32::INFO_LOG_LENGTH,
-                    &mut info_log_length,
-                );
-                let mut info_log = vec![0; info_log_length as usize + 1];
-                gl.GetShaderInfoLog(
-                    vertex_shader,
-                    info_log_length,
-                    std::ptr::null_mut(),
-                    info_log.as_mut_ptr() as *mut _,
-                );
-                gl.DeleteShader(vertex_shader);
-                eprintln!(
-                    "Failed to compile shader:\n{}",
-                    String::from_utf8_lossy(&info_log)
-                );
-                panic!("Shader compilation failed!");
-            }
-
-            // compile fragment shader
-            let fragment_shader = gl.CreateShader(gl32::FRAGMENT_SHADER);
-            gl.ShaderSource(
-                fragment_shader,
-                1,
-                &(FRAGMENT_SHADER.as_ptr() as *const GLchar),
-                &(FRAGMENT_SHADER.len() as GLint),
-            );
-            gl.CompileShader(fragment_shader);
-            let mut compile_status = 0;
-            gl.GetShaderiv(
-                fragment_shader,
-                gl32::COMPILE_STATUS,
-                &mut compile_status,
-            );
-            if compile_status != gl32::TRUE as GLint {
-                let mut info_log_length = 0;
-                gl.GetShaderiv(
-                    fragment_shader,
-                    gl32::INFO_LOG_LENGTH,
-                    &mut info_log_length,
-                );
-                let mut info_log = vec![0; info_log_length as usize + 1];
-                gl.GetShaderInfoLog(
-                    fragment_shader,
-                    info_log_length,
-                    std::ptr::null_mut(),
-                    info_log.as_mut_ptr() as *mut _,
-                );
-                gl.DeleteShader(fragment_shader);
-                eprintln!(
-                    "Failed to compile shader:\n{}",
-                    String::from_utf8_lossy(&info_log)
-                );
-                panic!("Shader compilation failed!");
-            }
-
-            // link shaders
-            let shader_program = gl.CreateProgram();
-            gl.AttachShader(shader_program, vertex_shader);
-            gl.AttachShader(shader_program, fragment_shader);
-            gl.LinkProgram(shader_program);
-            let mut status = 0;
-            gl.GetProgramiv(shader_program, gl32::LINK_STATUS, &mut status);
-            if status != gl32::TRUE as GLint {
-                let mut info_log_length = 0;
-                gl.GetProgramiv(
-                    shader_program,
-                    gl32::INFO_LOG_LENGTH,
-                    &mut info_log_length,
-                );
-                let mut info_log = vec![0; info_log_length as usize + 1];
-                gl.GetProgramInfoLog(
-                    shader_program,
-                    info_log_length,
-                    std::ptr::null_mut(),
-                    info_log.as_mut_ptr() as *mut _,
-                );
-                gl.DeleteProgram(shader_program);
-                eprintln!(
-                    "Failed to create shader program:\n{}",
-                    String::from_utf8_lossy(&info_log)
-                );
-                panic!("Shader program creation failed!");
-            }
-            gl.DeleteShader(vertex_shader);
-            gl.DeleteShader(fragment_shader);
-
             let mut vao = 0;
             gl.GenVertexArrays(1, &mut vao);
             let mut vbo = 0;
             gl.GenBuffers(1, &mut vbo);
 
-            // Bind the Vertex Array Object first, then bind and set vertex buffer(s), and then configure vertex attributes(s).
+            // Bind the Vertex Array Object first, then bind and set vertex buffer(s).
             gl.BindVertexArray(vao);
-
             gl.BindBuffer(gl32::ARRAY_BUFFER, vbo);
             gl.BufferData(
                 gl32::ARRAY_BUFFER,
@@ -189,24 +84,18 @@ impl Renderer {
                 gl32::STATIC_DRAW,
             );
 
-            let position_attrib = gl.GetAttribLocation(
-                shader_program,
-                "position".as_ptr() as *const GLchar,
-            );
-            gl.VertexAttribPointer(
-                position_attrib as u32,
-                2,
+            // Set up shader attributes.
+            shader_program.vertex_attrib(
+                "position",
                 gl32::FLOAT,
-                gl32::FALSE,
-                (2 * size_of::<GLfloat>()) as GLint,
-                std::ptr::null(),
+                size_of::<GLfloat>(),
+                2,
+                &gl,
             );
-            gl.EnableVertexAttribArray(position_attrib as u32);
 
+            // Unbind buffers.
             gl.BindBuffer(gl32::ARRAY_BUFFER, 0);
             gl.BindVertexArray(0);
-
-            //gl.BindFragDataLocation(shader_program, 0, "outColor".as_ptr() as *const GLchar);
 
             Self {
                 device,
@@ -231,7 +120,7 @@ impl Renderer {
             self.gl.ClearColor(0.12, 0.12, 0.12, 1.0); // Set background color
             self.gl.Clear(gl32::COLOR_BUFFER_BIT); // Clear the color buffer
 
-            self.gl.UseProgram(self.shader_program);
+            self.gl.UseProgram(self.shader_program.object);
             self.gl.BindVertexArray(self.vao);
             self.gl.DrawArrays(gl32::TRIANGLES, 0, 3);
         }
@@ -254,11 +143,9 @@ impl Renderer {
 
 impl Drop for Renderer {
     fn drop(&mut self) {
+        self.shader_program.delete(&self.gl);
         self.device.destroy_context(&mut self.context).unwrap();
     }
 }
 
 static VERTICES: [f32; 6] = [0.0, 0.5, 0.5, -0.5, -0.5, -0.5];
-
-static VERTEX_SHADER: &'static str = include_str!("../shaders/vertex.glsl");
-static FRAGMENT_SHADER: &'static str = include_str!("../shaders/fragment.glsl");

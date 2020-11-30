@@ -23,7 +23,7 @@ maintenance = { status = "actively-developed" }
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["font-fallback", "gl-renderer", "textures"]
+default = ["font-fallback", "gl-renderer"]
 font-fallback = []
 gl-renderer = ["surfman", "gl32"]
 textures = ["image"]
