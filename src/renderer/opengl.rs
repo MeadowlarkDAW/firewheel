@@ -22,6 +22,7 @@ pub struct Renderer {
 
 impl Renderer {
     pub fn new(raw_handle: RawWindowHandle) -> Self {
+        // Setup connection to OpenGL and create a device.
         let connection = Connection::new().unwrap();
         let native_widget = connection
             .create_native_widget_from_rwh(raw_handle)
@@ -29,6 +30,7 @@ impl Renderer {
         let adapter = connection.create_low_power_adapter().unwrap();
         let mut device = connection.create_device(&adapter).unwrap();
 
+        // Setup context settings.
         let context_attributes = ContextAttributes {
             version: GLVersion::new(3, 2),
             flags: ContextAttributeFlags::ALPHA,
@@ -37,6 +39,7 @@ impl Renderer {
             .create_context_descriptor(&context_attributes)
             .unwrap();
 
+        // Create the context and bind it to the device.
         let surface_type = SurfaceType::Widget { native_widget };
         let mut context =
             device.create_context(&context_descriptor, None).unwrap();
@@ -48,8 +51,10 @@ impl Renderer {
             .unwrap();
         device.make_context_current(&context).unwrap();
 
+        // Load OpenGL 3.2 core functions.
         let gl = gl32::Gl::load_with(|s| device.get_proc_address(&context, s));
 
+        // Create the shader program.
         let shader_program = {
             let vertex_shader = Shader::new(
                 include_str!("../shaders/vertex.glsl"),
@@ -69,6 +74,7 @@ impl Renderer {
         };
 
         unsafe {
+            // Create the vertex buffers.
             let mut vao = 0;
             gl.GenVertexArrays(1, &mut vao);
             let mut vbo = 0;
@@ -110,21 +116,28 @@ impl Renderer {
 
     pub fn render(&mut self, present: bool) {
         unsafe {
+            // Get the current Frame Buffer Object and set it as the target buffer.
             let fbo = match self.device.context_surface_info(&self.context) {
                 Ok(Some(surface_info)) => surface_info.framebuffer_object,
                 _ => 0,
             };
-
             self.gl.BindFramebuffer(gl32::FRAMEBUFFER, fbo);
 
+            // Clear the frame buffer.
             self.gl.ClearColor(0.12, 0.12, 0.12, 1.0); // Set background color
             self.gl.Clear(gl32::COLOR_BUFFER_BIT); // Clear the color buffer
 
+            // Use the shader program.
             self.gl.UseProgram(self.shader_program.object);
+
+            // Bind the current vao.
             self.gl.BindVertexArray(self.vao);
+
+            // Draw the vao.
             self.gl.DrawArrays(gl32::TRIANGLES, 0, 3);
         }
 
+        // Present the updated fbo to the screen.
         if present {
             let mut surface = self
                 .device
@@ -142,13 +155,14 @@ impl Renderer {
 }
 
 impl Drop for Renderer {
+    // Clear allocated data when window is closed.
     fn drop(&mut self) {
         unsafe {
             // Delete buffers.
             self.gl.DeleteVertexArrays(1, &self.vao);
             self.gl.DeleteBuffers(1, &self.vbo);
         }
-        
+
         self.shader_program.delete(&self.gl);
         self.device.destroy_context(&mut self.context).unwrap();
     }
