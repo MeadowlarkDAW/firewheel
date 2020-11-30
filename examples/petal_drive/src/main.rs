@@ -1,3 +1,5 @@
+use goldenrod::Runner;
+
 fn main() {
-    println!("Second try!");
+    Runner::run();
 }

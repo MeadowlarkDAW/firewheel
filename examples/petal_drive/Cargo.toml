@@ -9,4 +9,3 @@ publish = false
 
 [dependencies]
 goldenrod = { path = "../../" }
-raw-window-handle = "0.3"
