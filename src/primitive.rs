@@ -1,6 +1,4 @@
-use crate::{
-    Color, Font, HorizontalAlign, IdGroup, Point, Size, VerticalAlign,
-};
+use crate::{Color, Font, HAlign, IdGroup, Point, Size, VAlign};
 
 pub enum Primitive<TexID: IdGroup> {
     Texture(Texture<TexID>),
@@ -20,6 +18,6 @@ pub struct SingleLineText {
     pub font_family: Font,
     pub position: Point,
     pub scissor_rect: Option<Size>,
-    pub h_align: HorizontalAlign,
-    pub v_align: VerticalAlign,
+    pub h_align: HAlign,
+    pub v_align: VAlign,
 }

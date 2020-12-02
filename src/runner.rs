@@ -1,6 +1,6 @@
 use crate::{
-    settings, settings::ScalePolicy, wgpu_renderer::Renderer, Application,
-    Message, PhySize, Root, Settings, Size, Tree,
+    renderer::Renderer, settings, settings::ScalePolicy, Application, Message,
+    PhySize, Root, Settings, Size, Tree,
 };
 use baseview::{
     Event, Parent, Window, WindowHandle, WindowHandler, WindowOpenOptions,

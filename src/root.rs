@@ -1,4 +1,4 @@
-use crate::wgpu_renderer::Renderer;
+use crate::renderer::Renderer;
 use crate::{atlas, Background, IdGroup, Texture};
 use fnv::FnvHashSet;
 

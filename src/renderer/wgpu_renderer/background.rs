@@ -1,5 +1,5 @@
-use crate::wgpu_renderer::texture_pipeline::Pipeline;
-use crate::{Background, Color, IdGroup, Point, Rect};
+use super::texture_pipeline::Pipeline;
+use crate::{Background, Color, IdGroup, Point};
 
 pub struct BackgroundRenderer<TexID: IdGroup> {
     background: Background<TexID>,

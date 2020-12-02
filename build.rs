@@ -3,6 +3,7 @@ use glob::glob;
 use std::fs::{read_to_string, write};
 use std::path::PathBuf;
 
+#[cfg(feature = "wgpu-renderer")]
 struct ShaderData {
     src: String,
     src_path: PathBuf,
@@ -10,6 +11,7 @@ struct ShaderData {
     kind: shaderc::ShaderKind,
 }
 
+#[cfg(feature = "wgpu-renderer")]
 impl ShaderData {
     pub fn load(src_path: PathBuf) -> Result<Self> {
         let extension = src_path
@@ -36,12 +38,17 @@ impl ShaderData {
     }
 }
 
+#[cfg(feature = "wgpu-renderer")]
 fn main() -> Result<()> {
+    // This tells cargo to rerun this script if something in /src/ changes.
+    println!("cargo:rerun-if-changed=src/shader/image.vert");
+    println!("cargo:rerun-if-changed=src/shader/image.frag");
+
     // Collect all shaders recursively within /src/
     let mut shader_paths = [
-        glob("./src/wgpu_renderer/shader/*.vert")?,
-        glob("./src/wgpu_renderer/shader/*.frag")?,
-        glob("./src/wgpu_renderer/shader/*.comp")?,
+        glob("./src/shader/*.vert")?,
+        glob("./src/shader/*.frag")?,
+        glob("./src/shader/*.comp")?,
     ];
 
     // This could be parallelized
@@ -62,9 +69,6 @@ fn main() -> Result<()> {
     // be better just to only compile shaders that have been changed
     // recently.
     for shader in shaders {
-        // This tells cargo to rerun this script if something in /src/ changes.
-        println!("cargo:rerun-if-changed={:?}", shader.src_path);
-
         let compiled = compiler.compile_into_spirv(
             &shader.src,
             shader.kind,

@@ -505,10 +505,10 @@ fn get_shaders(
 ) -> (wgpu::ShaderModule, wgpu::ShaderModule) {
     (
         device.create_shader_module(wgpu::include_spirv!(
-            "./shader/image.vert.spv"
+            "../../shader/image.vert.spv"
         )),
         device.create_shader_module(wgpu::include_spirv!(
-            "./shader/image.frag.spv"
+            "../../shader/image.frag.spv"
         )),
     )
 }
