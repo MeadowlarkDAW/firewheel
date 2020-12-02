@@ -2,14 +2,14 @@ use crate::wgpu_renderer::Renderer;
 use crate::{atlas, Background, IdGroup, Texture};
 use fnv::FnvHashSet;
 
-pub struct Root<'a, TexID: IdGroup> {
-    window: &'a mut baseview::Window,
+pub struct Root<'a, 'b, TexID: IdGroup> {
+    window: &'a mut baseview::Window<'b>,
     renderer: &'a mut Renderer<TexID>,
 }
 
-impl<'a, TexID: IdGroup> Root<'a, TexID> {
+impl<'a, 'b, TexID: IdGroup> Root<'a, 'b, TexID> {
     pub(crate) fn new(
-        window: &'a mut baseview::Window,
+        window: &'a mut baseview::Window<'b>,
         renderer: &'a mut Renderer<TexID>,
     ) -> Self {
         Self { window, renderer }

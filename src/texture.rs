@@ -210,7 +210,7 @@ impl Data {
                         ))
                     }
                 };
-                Ok(img.to_bgra())
+                Ok(img.to_bgra8())
             }
             Data::Bytes(bytes) => {
                 let img = match image::load_from_memory(bytes.as_slice()) {
@@ -222,7 +222,7 @@ impl Data {
                         ))
                     }
                 };
-                Ok(img.to_bgra())
+                Ok(img.to_bgra8())
             }
             Data::Pixels {
                 width,

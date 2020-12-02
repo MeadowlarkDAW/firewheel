@@ -7,7 +7,7 @@ pub struct Settings {
 }
 
 /// The dpi scaling policy of the window
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum ScalePolicy {
     /// Use the system's dpi scale factor
     SystemScaleFactor,
@@ -24,7 +24,7 @@ pub struct Window {
     ///
     /// These dimensions will be scaled by the scaling policy specified in `scale`. Mouse
     /// position will be passed back as logical coordinates.
-    pub size: Size<u16>,
+    pub logical_size: Size<u16>,
 
     /// The dpi scaling policy
     pub scale: ScalePolicy,

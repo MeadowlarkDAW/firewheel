@@ -1,6 +1,6 @@
 use crate::{
-    settings, wgpu_renderer::Renderer, Application, Message, Root, Settings,
-    Size, Tree,
+    settings, settings::ScalePolicy, wgpu_renderer::Renderer, Application,
+    Message, Root, Settings, Size, Tree,
 };
 use baseview::{
     Event, Parent, Window, WindowHandle, WindowHandler, WindowOpenOptions,
@@ -21,45 +21,54 @@ impl<A: Application + 'static + Send> Runner<A> {
         B: FnOnce(&mut Root<A::TextureIDs>) -> A,
         B: Send + 'static,
     {
-        let scale_policy = match settings.window.scale {
-            settings::ScalePolicy::SystemScaleFactor => {
-                WindowScalePolicy::SystemScaleFactor
-            }
-            settings::ScalePolicy::ScaleFactor(scale) => {
-                WindowScalePolicy::ScaleFactor(scale)
-            }
-        };
+        let scale_policy = settings.window.scale;
+
+        let logical_width = settings.window.logical_size.width as f64;
+        let logical_height = settings.window.logical_size.height as f64;
 
         let window_options = WindowOpenOptions {
             title: settings.window.title,
-            size: settings.window.size.into(),
-            scale: scale_policy,
+            size: settings.window.logical_size.into(),
+            scale: match settings.window.scale {
+                settings::ScalePolicy::SystemScaleFactor => {
+                    WindowScalePolicy::SystemScaleFactor
+                }
+                settings::ScalePolicy::ScaleFactor(scale) => {
+                    WindowScalePolicy::ScaleFactor(scale)
+                }
+            },
             parent: Parent::None,
         };
 
-        Window::open(window_options, move |window: &mut Window| -> Runner<A> {
-            let physical_size = Size::<u16>::new(
-                window.window_info().physical_size().width as u16,
-                window.window_info().physical_size().height as u16,
-            );
+        Window::open(
+            window_options,
+            move |window: &mut Window<'_>| -> Runner<A> {
+                // Assume scale for now until there is an event with a new one.
+                let scale = match scale_policy {
+                    ScalePolicy::ScaleFactor(scale) => scale,
+                    ScalePolicy::SystemScaleFactor => 1.0,
+                };
 
-            let mut renderer = block_on(Renderer::new(
-                window,
-                physical_size,
-                window.window_info().scale(),
-            ))
-            .unwrap();
+                let physical_size = Size::<u16>::new(
+                    (logical_width * scale) as u16,
+                    (logical_height * scale) as u16,
+                );
 
-            let mut root = Root::new(window, &mut renderer);
+                let mut renderer =
+                    block_on(Renderer::new(window, physical_size, scale))
+                        .unwrap();
 
-            let user_app = build(&mut root);
+                let mut root = Root::new(window, &mut renderer);
 
-            Runner {
-                user_app,
-                widget_tree: Tree::new(),
-                renderer,
-            }
-        })
+                let user_app = build(&mut root);
+
+                Runner {
+                    user_app,
+                    widget_tree: Tree::new(),
+                    renderer,
+                }
+            },
+        )
     }
 }
 
