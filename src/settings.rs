@@ -24,7 +24,7 @@ pub struct Window {
     ///
     /// These dimensions will be scaled by the scaling policy specified in `scale`. Mouse
     /// position will be passed back as logical coordinates.
-    pub logical_size: Size<u16>,
+    pub logical_size: Size,
 
     /// The dpi scaling policy
     pub scale: ScalePolicy,

@@ -99,7 +99,7 @@ impl<TexID: IdGroup> Atlas<TexID> {
             TexID,
             ImageBuffer<image::Bgra<u8>, Vec<u8>>,
             bool,
-            Point<f32>,
+            Point,
         )> = Vec::with_capacity(textures.len());
 
         for (id, texture) in textures {
@@ -198,7 +198,7 @@ impl<TexID: IdGroup> Atlas<TexID> {
         height: u32,
         data: &[u8],
         hi_dpi: bool,
-        center: Point<f32>,
+        center: Point,
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
     ) -> Option<Entry> {
@@ -287,7 +287,7 @@ impl<TexID: IdGroup> Atlas<TexID> {
         width: u32,
         height: u32,
         hi_dpi: bool,
-        center: Point<f32>,
+        center: Point,
     ) -> Option<Entry> {
         let hi_dpi_u32: u32 = if hi_dpi { 1 } else { 0 };
 

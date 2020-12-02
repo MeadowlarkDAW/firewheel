@@ -1,4 +1,4 @@
-use crate::{texture, IdGroup, Point, Rectangle};
+use crate::{texture, IdGroup, Point, Rect};
 use std::fmt::Debug;
 use std::mem;
 use zerocopy::AsBytes;
@@ -211,7 +211,7 @@ impl<TexID: IdGroup> Pipeline<TexID> {
         staging_belt: &mut wgpu::util::StagingBelt,
         encoder: &mut wgpu::CommandEncoder,
         projection_scale: [f32; 2],
-        bounds: Rectangle,
+        bounds: Rect,
         target: &wgpu::TextureView,
     ) {
         if self.instances.len() == 0 {
@@ -281,10 +281,10 @@ impl<TexID: IdGroup> Pipeline<TexID> {
             render_pass.set_vertex_buffer(1, self.instances_buffer.slice(..));
 
             render_pass.set_scissor_rect(
-                bounds.x as u32,
-                bounds.y as u32,
-                bounds.width as u32,
-                bounds.height as u32,
+                bounds.top_left.x as u32,
+                bounds.top_left.y as u32,
+                bounds.size.width() as u32,
+                bounds.size.height() as u32,
             );
 
             render_pass.draw_indexed(
@@ -327,7 +327,7 @@ impl<TexID: IdGroup> Pipeline<TexID> {
     pub fn add_instance(
         &mut self,
         texture_id: TexID,
-        position: Point<u16>,
+        position: Point,
         rotation: f32,
     ) {
         if let Some(entry) = self.texture_atlas.get_entry(texture_id) {
@@ -354,7 +354,6 @@ impl<TexID: IdGroup> Pipeline<TexID> {
                     ..
                 } => {
                     let is_hi_dpi: u32 = (*hi_dpi).into();
-                    let position: Point<f32> = position.into();
 
                     for fragment in fragments {
                         self.instances.push(Instance {
@@ -372,80 +371,6 @@ impl<TexID: IdGroup> Pipeline<TexID> {
                             _atlas_layer: fragment.allocation.layer(),
                             _is_hi_dpi: is_hi_dpi,
                         });
-                    }
-                }
-            }
-        }
-    }
-
-    pub fn add_clipped_instance(
-        &mut self,
-        texture_id: TexID,
-        position: Point<u16>,
-        clip_area: Rectangle,
-    ) {
-        if let Some(entry) = self.texture_atlas.get_entry(texture_id) {
-            let position: Point<f32> = position.into();
-            let clip_area = clip_area - position;
-
-            match entry {
-                atlas::Entry::Contiguous {
-                    allocation, hi_dpi, ..
-                } => {
-                    let area = Rectangle {
-                        x: 0.0,
-                        y: 0.0,
-                        width: allocation.area().width,
-                        height: allocation.area().height,
-                    };
-
-                    if let Some(clipped_area) = clip_area.intersection(&area) {
-                        self.instances.push(Instance {
-                            _position: (position + clipped_area.position())
-                                .into(),
-                            _atlas_position: (allocation.area().position()
-                                + clipped_area.position())
-                            .into(),
-                            _atlas_size: clipped_area.size().into(),
-                            _center: [0.0, 0.0],
-                            _rotation: 0.0,
-                            _atlas_layer: allocation.layer(),
-                            _is_hi_dpi: (*hi_dpi).into(),
-                        });
-                    }
-                }
-                atlas::Entry::Fragmented {
-                    fragments, hi_dpi, ..
-                } => {
-                    let is_hi_dpi: u32 = (*hi_dpi).into();
-
-                    for fragment in fragments {
-                        let area = Rectangle {
-                            x: fragment.position[0],
-                            y: fragment.position[1],
-                            width: fragment.allocation.area().width,
-                            height: fragment.allocation.area().width,
-                        };
-
-                        if let Some(clipped_area) =
-                            clip_area.intersection(&area)
-                        {
-                            self.instances.push(Instance {
-                                _position: (position + clipped_area.position())
-                                    .into(),
-                                _atlas_position: (fragment
-                                    .allocation
-                                    .area()
-                                    .position()
-                                    + clipped_area.position())
-                                .into(),
-                                _atlas_size: clipped_area.size().into(),
-                                _center: [0.0, 0.0],
-                                _rotation: 0.0,
-                                _atlas_layer: fragment.allocation.layer(),
-                                _is_hi_dpi: is_hi_dpi,
-                            });
-                        }
                     }
                 }
             }

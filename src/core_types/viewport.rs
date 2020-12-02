@@ -1,9 +1,9 @@
-use crate::{Rectangle, Size};
+use crate::{PhyPoint, PhySize, Point, Rect, Size};
 
 #[derive(Debug)]
 pub struct Viewport {
-    physical_size: Size<u16>,
-    logical_size: Size<u16>,
+    physical_size: PhySize,
+    logical_size: Size,
     scale_factor: f64,
     projection_scale: [f32; 2],
 }
@@ -14,17 +14,17 @@ impl Viewport {
     ///
     /// [`Viewport`]: struct.Viewport.html
     pub fn from_physical_size(
-        physical_size: Size<u16>,
+        physical_size: PhySize,
         scale_factor: f64,
     ) -> Self {
-        let logical_size = Size::<u16>::new(
-            (f64::from(physical_size.width) / scale_factor).round() as u16,
-            (f64::from(physical_size.height) / scale_factor).round() as u16,
+        let logical_size = Size::new(
+            physical_size.width as f32 / scale_factor as f32,
+            physical_size.height as f32 / scale_factor as f32,
         );
 
         let projection_scale = [
-            2.0 / f32::from(logical_size.width),
-            -2.0 / f32::from(logical_size.height),
+            2.0 / f32::from(logical_size.width()),
+            -2.0 / f32::from(logical_size.height()),
         ];
 
         Self {
@@ -38,14 +38,14 @@ impl Viewport {
     /// Returns the physical size of the [`Viewport`].
     ///
     /// [`Viewport`]: struct.Viewport.html
-    pub fn physical_size(&self) -> Size<u16> {
+    pub fn physical_size(&self) -> PhySize {
         self.physical_size
     }
 
     /// Returns the logical size of the [`Viewport`].
     ///
     /// [`Viewport`]: struct.Viewport.html
-    pub fn logical_size(&self) -> Size<u16> {
+    pub fn logical_size(&self) -> Size {
         self.logical_size
     }
 
@@ -69,7 +69,7 @@ impl Viewport {
     }
 
     ///
-    pub fn bounds(&self) -> Rectangle {
-        Rectangle::with_size(self.logical_size)
+    pub fn bounds(&self) -> Rect {
+        Rect::new(Point::ORIGIN, self.logical_size)
     }
 }

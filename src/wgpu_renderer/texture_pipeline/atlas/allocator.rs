@@ -1,5 +1,5 @@
-use crate::Rectangle;
-use guillotiere::{SimpleAtlasAllocator, Size};
+use crate::{Point, Rect, Size};
+use guillotiere::SimpleAtlasAllocator;
 
 pub struct Allocator {
     raw: SimpleAtlasAllocator,
@@ -8,8 +8,10 @@ pub struct Allocator {
 
 impl Allocator {
     pub fn new(size: u32) -> Allocator {
-        let raw =
-            SimpleAtlasAllocator::new(Size::new(size as i32, size as i32));
+        let raw = SimpleAtlasAllocator::new(guillotiere::Size::new(
+            size as i32,
+            size as i32,
+        ));
 
         Allocator {
             raw,
@@ -18,17 +20,19 @@ impl Allocator {
     }
 
     pub fn allocate(&mut self, width: u32, height: u32) -> Option<Region> {
-        let rectangle =
-            self.raw.allocate(Size::new(width as i32, height as i32))?;
+        let rectangle = self
+            .raw
+            .allocate(guillotiere::Size::new(width as i32, height as i32))?;
 
         self.allocations += 1;
 
         Some(Region {
-            area: Rectangle {
-                x: rectangle.min.x as f32,
-                y: rectangle.min.y as f32,
-                width: width as f32,
-                height: height as f32,
+            area: Rect {
+                top_left: Point::new(
+                    rectangle.min.x as f32,
+                    rectangle.min.y as f32,
+                ),
+                size: Size::new(width as f32, height as f32),
             },
         })
     }
@@ -47,7 +51,7 @@ impl Allocator {
 }
 
 pub struct Region {
-    pub area: Rectangle,
+    pub area: Rect,
 }
 
 impl std::fmt::Debug for Allocator {

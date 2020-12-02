@@ -1,4 +1,4 @@
-use crate::{font, Color, Font, Point, Rectangle, Size};
+use crate::{font, Color, Font, Point, Rect, Size};
 use std::{cell::RefCell, collections::HashMap};
 use wgpu_glyph::{
     ab_glyph, BuiltInLineBreaker, GlyphBrush, HorizontalAlign, Layout, Section,
@@ -54,8 +54,8 @@ impl Pipeline {
         font_color: Color,
         font_size: f32,
         font_family: font::Font,
-        position: Point<u16>,
-        scissor_rect: Option<Size<u16>>,
+        position: Point,
+        scissor_rect: Option<Size>,
         h_align: HorizontalAlign,
         v_align: VerticalAlign,
     ) {
@@ -63,10 +63,7 @@ impl Pipeline {
         let position = (f32::from(position.x), f32::from(position.y));
 
         let section = if let Some(scissor_rect) = scissor_rect {
-            let bounds = (
-                f32::from(scissor_rect.width),
-                f32::from(scissor_rect.height),
-            );
+            let bounds = (scissor_rect.width(), scissor_rect.height());
 
             Section::new()
                 .with_layout(Layout::SingleLine {
@@ -107,7 +104,7 @@ impl Pipeline {
         staging_belt: &mut wgpu::util::StagingBelt,
         encoder: &mut wgpu::CommandEncoder,
         projection_scale: [f32; 2],
-        bounds: Rectangle,
+        bounds: Rect,
         target: &wgpu::TextureView,
     ) {
         self.glyph_brush
@@ -117,8 +114,8 @@ impl Pipeline {
                 staging_belt,
                 encoder,
                 target,
-                bounds.width as u32,
-                bounds.height as u32,
+                bounds.size.width() as u32,
+                bounds.size.height() as u32,
             )
             .expect("Error rendering text");
     }

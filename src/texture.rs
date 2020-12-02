@@ -56,7 +56,7 @@ impl Texture {
         &self,
         hi_dpi: bool,
     ) -> Result<
-        (ImageBuffer<image::Bgra<u8>, Vec<u8>>, bool, Point<f32>),
+        (ImageBuffer<image::Bgra<u8>, Vec<u8>>, bool, Point),
         TextureError,
     > {
         let (source, is_hi_dpi, center) = match &self.dpi_mode {
@@ -94,7 +94,7 @@ enum DpiMode {
 #[derive(Debug, Clone)]
 pub struct TextureSource {
     data: Arc<Data>,
-    center: Point<f32>,
+    center: Point,
 }
 
 impl TextureSource {
@@ -103,10 +103,7 @@ impl TextureSource {
     /// Makes an educated guess about the image format by examining the data in the file.
     ///
     /// [`TextureSource`]: struct.TextureSource.html
-    pub fn path<T: Into<PathBuf>>(
-        path: T,
-        center: Point<f32>,
-    ) -> TextureSource {
+    pub fn path<T: Into<PathBuf>>(path: T, center: Point) -> TextureSource {
         Self::from_data(Data::Path(path.into()), center)
     }
 
@@ -121,7 +118,7 @@ impl TextureSource {
         width: u32,
         height: u32,
         pixels: Vec<u8>,
-        center: Point<f32>,
+        center: Point,
     ) -> TextureSource {
         Self::from_data(
             Data::Pixels {
@@ -141,11 +138,11 @@ impl TextureSource {
     /// because you downloaded or generated it procedurally.
     ///
     /// [`TextureSource`]: struct.TextureSource.html
-    pub fn memory(bytes: Vec<u8>, center: Point<f32>) -> TextureSource {
+    pub fn memory(bytes: Vec<u8>, center: Point) -> TextureSource {
         Self::from_data(Data::Bytes(bytes), center)
     }
 
-    fn from_data(data: Data, center: Point<f32>) -> TextureSource {
+    fn from_data(data: Data, center: Point) -> TextureSource {
         TextureSource {
             data: Arc::new(data),
             center,
@@ -160,7 +157,7 @@ impl TextureSource {
     }
 
     /// Returns the origin of rotation of the texture.
-    pub fn center(&self) -> Point<f32> {
+    pub fn center(&self) -> Point {
         self.center
     }
 

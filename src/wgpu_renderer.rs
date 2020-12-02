@@ -1,4 +1,4 @@
-use crate::{texture, Background, IdGroup, Size, Viewport};
+use crate::{texture, viewport::Viewport, Background, IdGroup, PhySize, Size};
 use futures::task::SpawnExt;
 use raw_window_handle::HasRawWindowHandle;
 
@@ -32,7 +32,7 @@ impl<TexID: IdGroup> Renderer<TexID> {
     // Creating some of the wgpu types requires async code
     pub async fn new(
         window: &impl HasRawWindowHandle,
-        physical_size: Size<u16>,
+        physical_size: PhySize,
         scale_factor: f64,
     ) -> Option<Self> {
         let viewport =
@@ -67,8 +67,8 @@ impl<TexID: IdGroup> Renderer<TexID> {
         let sc_desc = wgpu::SwapChainDescriptor {
             usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
             format: wgpu::TextureFormat::Bgra8UnormSrgb,
-            width: u32::from(viewport.physical_size().width),
-            height: u32::from(viewport.physical_size().height),
+            width: viewport.physical_size().width as u32,
+            height: viewport.physical_size().height as u32,
             present_mode: wgpu::PresentMode::Mailbox,
         };
         let swap_chain = device.create_swap_chain(&surface, &sc_desc);
@@ -103,7 +103,7 @@ impl<TexID: IdGroup> Renderer<TexID> {
         self.background_renderer.set_background(background);
     }
 
-    pub fn resize(&mut self, new_physical_size: Size<u16>, scale_factor: f64) {
+    pub fn resize(&mut self, new_physical_size: PhySize, scale_factor: f64) {
         if self.viewport.physical_size() == new_physical_size
             && self.viewport.scale_factor() == scale_factor
         {
@@ -113,20 +113,13 @@ impl<TexID: IdGroup> Renderer<TexID> {
         self.viewport =
             Viewport::from_physical_size(new_physical_size, scale_factor);
 
-        self.sc_desc.width = u32::from(new_physical_size.width);
-        self.sc_desc.height = u32::from(new_physical_size.height);
+        self.sc_desc.width = new_physical_size.width as u32;
+        self.sc_desc.height = new_physical_size.height as u32;
         self.swap_chain =
             self.device.create_swap_chain(&self.surface, &self.sc_desc);
-
-        self.background_renderer.queue_full_redraw();
     }
 
     pub fn render(&mut self) {
-        // Only render when something has changed.
-        if !self.background_renderer.changed() {
-            return;
-        }
-
         let frame = match self.swap_chain.get_current_frame() {
             Ok(frame) => frame.output,
             Err(_) => {
@@ -197,12 +190,6 @@ impl<TexID: IdGroup> Renderer<TexID> {
 
         self.queue.submit(Some(encoder.finish()));
 
-        self.background_renderer.queue_full_redraw();
-
         Ok(())
-    }
-
-    pub fn needs_full_redraw(&self) -> bool {
-        self.background_renderer.needs_full_redraw()
     }
 }

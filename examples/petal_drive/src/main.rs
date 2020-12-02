@@ -82,7 +82,7 @@ fn main() {
     let settings = Settings {
         window: settings::Window {
             title: "goldenrod: petal_drive".into(),
-            logical_size: Size::new(485, 285),
+            logical_size: Size::new(485.0, 285.0),
             scale: settings::ScalePolicy::SystemScaleFactor,
         },
     };

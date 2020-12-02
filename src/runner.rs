@@ -1,6 +1,6 @@
 use crate::{
     settings, settings::ScalePolicy, wgpu_renderer::Renderer, Application,
-    Message, Root, Settings, Size, Tree,
+    Message, PhySize, Root, Settings, Size, Tree,
 };
 use baseview::{
     Event, Parent, Window, WindowHandle, WindowHandler, WindowOpenOptions,
@@ -12,6 +12,7 @@ pub struct Runner<A: Application + 'static + Send> {
     user_app: A,
     widget_tree: Tree<A::TextureIDs, A::WidgetIDs>,
     renderer: Renderer<A::TextureIDs>,
+    scale_policy: ScalePolicy,
 }
 
 impl<A: Application + 'static + Send> Runner<A> {
@@ -23,12 +24,12 @@ impl<A: Application + 'static + Send> Runner<A> {
     {
         let scale_policy = settings.window.scale;
 
-        let logical_width = settings.window.logical_size.width as f64;
-        let logical_height = settings.window.logical_size.height as f64;
+        let logical_width = settings.window.logical_size.width() as f64;
+        let logical_height = settings.window.logical_size.height() as f64;
 
         let window_options = WindowOpenOptions {
             title: settings.window.title,
-            size: settings.window.logical_size.into(),
+            size: baseview::Size::new(logical_width, logical_height),
             scale: match settings.window.scale {
                 settings::ScalePolicy::SystemScaleFactor => {
                     WindowScalePolicy::SystemScaleFactor
@@ -49,9 +50,9 @@ impl<A: Application + 'static + Send> Runner<A> {
                     ScalePolicy::SystemScaleFactor => 1.0,
                 };
 
-                let physical_size = Size::<u16>::new(
-                    (logical_width * scale) as u16,
-                    (logical_height * scale) as u16,
+                let physical_size = PhySize::new(
+                    (logical_width * scale) as i32,
+                    (logical_height * scale) as i32,
                 );
 
                 let mut renderer =
@@ -66,6 +67,7 @@ impl<A: Application + 'static + Send> Runner<A> {
                     user_app,
                     widget_tree: Tree::new(),
                     renderer,
+                    scale_policy,
                 }
             },
         )
@@ -83,9 +85,7 @@ impl<A: Application + 'static + Send> WindowHandler for Runner<A> {
         // TODO: Check for duplicate widgets with the same id.
 
         // Retrieve any rendering changes.
-        let render_info = self
-            .widget_tree
-            .get_render_info(self.renderer.needs_full_redraw());
+        let render_info = self.widget_tree.get_render_info();
 
         self.renderer.render();
     }
@@ -94,12 +94,17 @@ impl<A: Application + 'static + Send> WindowHandler for Runner<A> {
         match &event {
             Event::Window(e) => match e {
                 baseview::WindowEvent::Resized(window_info) => {
-                    let physical_size = Size::<u16>::new(
-                        window_info.physical_size().width as u16,
-                        window_info.physical_size().height as u16,
+                    let physical_size = PhySize::new(
+                        window_info.physical_size().width as i32,
+                        window_info.physical_size().height as i32,
                     );
 
-                    self.renderer.resize(physical_size, window_info.scale());
+                    let scale = match self.scale_policy {
+                        ScalePolicy::ScaleFactor(scale) => scale,
+                        ScalePolicy::SystemScaleFactor => window_info.scale(),
+                    };
+
+                    self.renderer.resize(physical_size, scale);
                 }
                 _ => {}
             },

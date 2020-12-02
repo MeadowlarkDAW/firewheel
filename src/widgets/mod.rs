@@ -1,4 +1,4 @@
-use crate::{Bounds, IdGroup, Primitive};
+use crate::{IdGroup, Primitive, Rect};
 
 mod tree;
 mod v_slider;
@@ -13,7 +13,7 @@ pub trait Widget {
 
     fn needs_redraw(&self) -> bool;
 
-    fn render_bounds(&self) -> Bounds;
+    fn render_bounds(&self) -> Rect;
 
     fn primitives<'a>(&self) -> &'a [&'a Primitive<Self::TextureIDs>];
 }
