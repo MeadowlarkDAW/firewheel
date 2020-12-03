@@ -1,12 +1,12 @@
-use crate::{Color, Font, HAlign, IdGroup, Point, Size, VAlign};
+use crate::{texture, Color, Font, HAlign, Point, Size, VAlign};
 
-pub enum Primitive<TexID: IdGroup> {
-    Texture(Texture<TexID>),
+pub enum Primitive {
+    Texture(Texture),
     SingleLineText(SingleLineText),
 }
 
-pub struct Texture<TexID: IdGroup> {
-    pub texture_id: TexID,
+pub struct Texture {
+    pub handle: texture::Handle,
     pub center_position: Point,
     pub rotation: f32,
 }

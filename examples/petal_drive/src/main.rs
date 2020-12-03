@@ -1,81 +1,64 @@
 use goldenrod::{
-    settings, Application, Background, Color, IdGroup, Message, Parent, Point,
-    Root, Runner, Settings, Size, Texture, TextureSource, Tree,
+    settings, texture, Application, Background, Message, Point, Root, Runner,
+    Settings, Size,
 };
 
-#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
-enum TextureID {
-    Back,
-    Knob,
-    TestVSlider,
-    TestHSlider,
+#[derive(Default)]
+struct PetalDriveGUI {
+    tex_back: texture::Handle,
+    tex_knob: texture::Handle,
+    tex_vslider: texture::Handle,
+    tex_hslider: texture::Handle,
 }
 
-impl IdGroup for TextureID {}
+impl PetalDriveGUI {
+    fn new(root: &mut Root) -> Self {
+        let mut gui = Self::default();
 
-impl TextureID {
-    fn all() -> [(TextureID, Texture); 4] {
-        [
-            (
-                TextureID::Back,
-                Texture::res_1x(TextureSource::path(
+        root.new_texture_atlas(&mut gui.load_textures()).unwrap();
+        root.set_background(Background::Texture(gui.tex_back.clone()));
+
+        gui
+    }
+
+    fn load_textures(&mut self) -> Vec<texture::Loader> {
+        vec![
+            texture::Loader::res_1x(
+                &mut self.tex_back,
+                texture::Source::path(
                     "./examples/petal_drive/images/1x/back.png",
                     Point::ORIGIN,
-                )),
+                ),
             ),
-            (
-                TextureID::Knob,
-                Texture::res_1x(TextureSource::path(
+            texture::Loader::res_1x(
+                &mut self.tex_knob,
+                texture::Source::path(
                     "./examples/petal_drive/images/1x/knob.png",
                     Point::new(40.0, 40.0),
-                )),
+                ),
             ),
-            (
-                TextureID::TestVSlider,
-                Texture::res_1x(TextureSource::path(
+            texture::Loader::res_1x(
+                &mut self.tex_vslider,
+                texture::Source::path(
                     "./examples/petal_drive/images/1x/test_v_slider.png",
                     Point::new(10.0, 22.0),
-                )),
+                ),
             ),
-            (
-                TextureID::TestHSlider,
-                Texture::res_1x(TextureSource::path(
+            texture::Loader::res_1x(
+                &mut self.tex_hslider,
+                texture::Source::path(
                     "./examples/petal_drive/images/1x/test_h_slider.png",
                     Point::new(22.0, 10.0),
-                )),
+                ),
             ),
         ]
     }
 }
 
-#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
-enum WidgetID {
-    Test,
-}
-
-impl IdGroup for WidgetID {}
-
-struct PetalDriveGUI {}
-
-impl PetalDriveGUI {
-    fn new(root: &mut Root<TextureID>) -> Self {
-        root.replace_texture_atlas(&TextureID::all()).unwrap();
-        root.set_background(Background::Texture(TextureID::Back));
-
-        Self {}
-    }
-}
-
 impl Application for PetalDriveGUI {
-    type TextureIDs = TextureID;
-    type WidgetIDs = WidgetID;
-
     type CustomMessage = ();
 
-    fn on_message(&mut self, message: Message<()>, root: &mut Root<TextureID>) {
-    }
-
-    fn view(&self, tree: &mut Tree<TextureID, WidgetID>) {}
+    fn on_message(&mut self, _message: Message<()>, _root: &mut Root) {}
 }
 
 fn main() {

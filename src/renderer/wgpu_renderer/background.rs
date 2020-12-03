@@ -1,24 +1,24 @@
 use super::texture_pipeline::Pipeline;
-use crate::{Background, Color, IdGroup, Point};
+use crate::{Background, Color, Point};
 
-pub struct BackgroundRenderer<TexID: IdGroup> {
-    background: Background<TexID>,
+pub struct BackgroundRenderer {
+    background: Background,
 }
 
-impl<TexID: IdGroup> BackgroundRenderer<TexID> {
+impl BackgroundRenderer {
     pub fn new() -> Self {
         Self {
             background: Background::SolidColor(Color::BLACK),
         }
     }
 
-    pub fn set_background(&mut self, background: Background<TexID>) {
+    pub fn set_background(&mut self, background: Background) {
         self.background = background;
     }
 
     pub fn render(
         &self,
-        pipeline: &mut Pipeline<TexID>,
+        pipeline: &mut Pipeline,
         encoder: &mut wgpu::CommandEncoder,
         frame_view: &wgpu::TextureView,
     ) {
@@ -47,8 +47,8 @@ impl<TexID: IdGroup> BackgroundRenderer<TexID> {
         });
 
         match &self.background {
-            Background::Texture(id) => {
-                pipeline.add_instance(*id, Point::ORIGIN, 0.0);
+            Background::Texture(handle) => {
+                pipeline.add_instance(handle, Point::ORIGIN, 0.0);
             }
             _ => {}
         }

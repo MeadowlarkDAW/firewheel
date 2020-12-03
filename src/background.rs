@@ -1,6 +1,6 @@
-use crate::{Color, IdGroup};
+use crate::{texture, Color};
 
-pub enum Background<ID: IdGroup> {
+pub enum Background {
     SolidColor(Color),
-    Texture(ID),
+    Texture(texture::Handle),
 }

@@ -4,61 +4,69 @@ use std::fmt::Debug;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-pub(crate) enum TextureError {
+pub use crate::atlas::Handle;
+
+pub(crate) enum Error {
     ImageError(ImageError, String),
     PixelBufferTooSmall(u32, u32),
 }
 
-/// Texture data.
-#[derive(Debug, Clone)]
-pub struct Texture {
+/// Instructions for loading texture data.
+pub struct Loader<'a> {
     dpi_mode: DpiMode,
+    handle: &'a mut Handle,
 }
 
-impl Texture {
-    /// Creates a new [`Texture`] using only a 1x dpi resolution source.
+impl<'a> Loader<'a> {
+    /// Creates a new [`Loader`] using only a 1x dpi resolution source.
     /// The texture will be scaled up when using higher dpi resolutions.
     ///
-    /// [`Texture`]: struct.Texture.html
-    pub fn res_1x(source_1x: TextureSource) -> Self {
+    /// [`Loader`]: struct.Texture.html
+    pub fn res_1x(handle: &'a mut Handle, source_1x: Source) -> Self {
         Self {
             dpi_mode: DpiMode::Only1x(source_1x),
+            handle,
         }
     }
 
-    /// Creates a new [`Texture`] with only a 2x hi-dpi resolution source.
+    /// Creates a new [`Loader`] with only a 2x hi-dpi resolution source.
     /// The texture will be scaled down when using lower dpi resolutions.
     ///
-    /// [`Texture`]: struct.Texture.html
-    pub fn res_2x(source_2x: TextureSource) -> Self {
+    /// [`Loader`]: struct.Texture.html
+    pub fn res_2x(handle: &'a mut Handle, source_2x: Source) -> Self {
         Self {
             dpi_mode: DpiMode::Only2x(source_2x),
+            handle,
         }
     }
 
-    /// Creates a new [`Texture`] with both a 1x dpi and 2x hi-dpi resolution source.
+    /// Creates a new [`Loader`] with both a 1x dpi and 2x hi-dpi resolution source.
     /// The application will decide which one to load based on the user's display.
     ///
-    /// [`Texture`]: struct.Texture.html
+    /// [`Loader`]: struct.Texture.html
     pub fn dual_res(
-        source_1x: TextureSource,
-        source_2x: TextureSource,
+        handle: &'a mut Handle,
+        source_1x: Source,
+        source_2x: Source,
     ) -> Self {
         Self {
             dpi_mode: DpiMode::Both {
                 source_1x,
                 source_2x,
             },
+            handle,
         }
+    }
+
+    pub(crate) fn handle(&mut self) -> &mut Handle {
+        self.handle
     }
 
     pub(crate) fn load_bgra(
         &self,
         hi_dpi: bool,
-    ) -> Result<
-        (ImageBuffer<image::Bgra<u8>, Vec<u8>>, bool, Point),
-        TextureError,
-    > {
+    ) -> Result<(ImageBuffer<image::Bgra<u8>, Vec<u8>>, bool, Point), Error>
+    {
         let (source, is_hi_dpi, center) = match &self.dpi_mode {
             DpiMode::Only1x(source) => (source, false, source.center()),
             DpiMode::Only2x(source) => (source, true, source.center()),
@@ -80,46 +88,46 @@ impl Texture {
 
 #[derive(Debug, Clone)]
 enum DpiMode {
-    Only1x(TextureSource),
-    Only2x(TextureSource),
+    Only1x(Source),
+    Only2x(Source),
     Both {
-        source_1x: TextureSource,
-        source_2x: TextureSource,
+        source_1x: Source,
+        source_2x: Source,
     },
 }
 
-/// A [`Texture`] source.
+/// A [`Loader`] source.
 ///
-/// [`Texture`]: struct.Texture`.html
+/// [`Loader`]: struct.Texture`.html
 #[derive(Debug, Clone)]
-pub struct TextureSource {
+pub struct Source {
     data: Arc<Data>,
     center: Point,
 }
 
-impl TextureSource {
-    /// Creates a texture [`TextureSource`] pointing to the image of the given path.
+impl Source {
+    /// Creates a texture [`Source`] pointing to the image of the given path.
     ///
     /// Makes an educated guess about the image format by examining the data in the file.
     ///
-    /// [`TextureSource`]: struct.TextureSource.html
-    pub fn path<T: Into<PathBuf>>(path: T, center: Point) -> TextureSource {
+    /// [`Source`]: struct.Source.html
+    pub fn path<T: Into<PathBuf>>(path: T, center: Point) -> Source {
         Self::from_data(Data::Path(path.into()), center)
     }
 
-    /// Creates a texture [`TextureSource`] containing the image pixels directly. This
+    /// Creates a texture [`Source`] containing the image pixels directly. This
     /// function expects the input data to be provided as a `Vec<u8>` of BGRA
     /// pixels.
     ///
     /// This is useful if you have already decoded your image.
     ///
-    /// [`TextureSource`]: struct.TextureSource.html
+    /// [`Source`]: struct.Source.html
     pub fn pixels(
         width: u32,
         height: u32,
         pixels: Vec<u8>,
         center: Point,
-    ) -> TextureSource {
+    ) -> Source {
         Self::from_data(
             Data::Pixels {
                 width,
@@ -130,20 +138,20 @@ impl TextureSource {
         )
     }
 
-    /// Creates a texture [`TextureSource`] containing the image data directly.
+    /// Creates a texture [`Source`] containing the image data directly.
     ///
     /// Makes an educated guess about the image format by examining the given data.
     ///
     /// This is useful if you already have your image loaded in-memory, maybe
     /// because you downloaded or generated it procedurally.
     ///
-    /// [`TextureSource`]: struct.TextureSource.html
-    pub fn memory(bytes: Vec<u8>, center: Point) -> TextureSource {
+    /// [`Source`]: struct.Source.html
+    pub fn memory(bytes: Vec<u8>, center: Point) -> Source {
         Self::from_data(Data::Bytes(bytes), center)
     }
 
-    fn from_data(data: Data, center: Point) -> TextureSource {
-        TextureSource {
+    fn from_data(data: Data, center: Point) -> Source {
+        Source {
             data: Arc::new(data),
             center,
         }
@@ -163,14 +171,14 @@ impl TextureSource {
 
     pub(crate) fn load_bgra(
         &self,
-    ) -> Result<ImageBuffer<image::Bgra<u8>, Vec<u8>>, TextureError> {
+    ) -> Result<ImageBuffer<image::Bgra<u8>, Vec<u8>>, Error> {
         self.data.load_bgra()
     }
 }
 
-/// The data of a [`Texture`].
+/// The data of a [`Loader`].
 ///
-/// [`Texture`]: struct.Texture.html
+/// [`Loader`]: struct.Texture.html
 #[derive(Clone)]
 pub enum Data {
     /// File data
@@ -193,13 +201,13 @@ pub enum Data {
 impl Data {
     pub(crate) fn load_bgra(
         &self,
-    ) -> Result<ImageBuffer<image::Bgra<u8>, Vec<u8>>, TextureError> {
+    ) -> Result<ImageBuffer<image::Bgra<u8>, Vec<u8>>, Error> {
         match self {
             Data::Path(path) => {
                 let img = match image::open(path) {
                     Ok(img) => img,
                     Err(e) => {
-                        return Err(TextureError::ImageError(
+                        return Err(Error::ImageError(
                             e,
                             String::from(
                                 path.to_str().unwrap_or("Invalid path"),
@@ -213,10 +221,7 @@ impl Data {
                 let img = match image::load_from_memory(bytes.as_slice()) {
                     Ok(img) => img,
                     Err(e) => {
-                        return Err(TextureError::ImageError(
-                            e,
-                            String::from(""),
-                        ))
+                        return Err(Error::ImageError(e, String::from("")))
                     }
                 };
                 Ok(img.to_bgra8())
@@ -231,9 +236,7 @@ impl Data {
                 {
                     Ok(data)
                 } else {
-                    return Err(TextureError::PixelBufferTooSmall(
-                        *width, *height,
-                    ));
+                    return Err(Error::PixelBufferTooSmall(*width, *height));
                 }
             }
         }

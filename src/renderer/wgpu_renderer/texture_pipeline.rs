@@ -1,4 +1,4 @@
-use crate::{texture, IdGroup, Point, Rect};
+use crate::{texture, Point, Rect};
 use std::fmt::Debug;
 use std::mem;
 use zerocopy::AsBytes;
@@ -10,7 +10,7 @@ const ATLAS_SCALE: [f32; 2] = [
     1.0 / atlas::ATLAS_SIZE as f32,
 ];
 
-pub struct Pipeline<TexID: IdGroup> {
+pub struct Pipeline {
     pipeline: wgpu::RenderPipeline,
     uniforms_buffer: wgpu::Buffer,
     vertex_buffer: wgpu::Buffer,
@@ -19,12 +19,12 @@ pub struct Pipeline<TexID: IdGroup> {
     constants_bind_group: wgpu::BindGroup,
     texture_layout: wgpu::BindGroupLayout,
     texture_bind_group: wgpu::BindGroup,
-    texture_atlas: atlas::Atlas<TexID>,
+    texture_atlas: atlas::Atlas,
 
     instances: Vec<Instance>,
 }
 
-impl<TexID: IdGroup> Pipeline<TexID> {
+impl Pipeline {
     pub fn new(
         device: &wgpu::Device,
         texture_format: wgpu::TextureFormat,
@@ -299,15 +299,19 @@ impl<TexID: IdGroup> Pipeline<TexID> {
         self.instances.clear();
     }
 
-    pub fn replace_texture_atlas(
+    pub fn new_texture_atlas(
         &mut self,
-        textures: &[(TexID, texture::Texture)],
+        texture_loaders: &mut [texture::Loader],
         hi_dpi: bool,
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
     ) -> Result<(), atlas::AtlasError> {
-        self.texture_atlas
-            .replace_texture_atlas(device, textures, encoder, hi_dpi)?;
+        self.texture_atlas.new_texture_atlas(
+            texture_loaders,
+            device,
+            encoder,
+            hi_dpi,
+        )?;
 
         self.texture_bind_group =
             device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -326,12 +330,12 @@ impl<TexID: IdGroup> Pipeline<TexID> {
 
     pub fn add_instance(
         &mut self,
-        texture_id: TexID,
+        texture_handle: &texture::Handle,
         position: Point,
         rotation: f32,
     ) {
-        if let Some(entry) = self.texture_atlas.get_entry(texture_id) {
-            match entry {
+        if let Some(entry) = self.texture_atlas.get_entry(texture_handle) {
+            match &*entry {
                 atlas::Entry::Contiguous {
                     allocation,
                     center,

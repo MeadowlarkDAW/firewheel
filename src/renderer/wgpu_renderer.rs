@@ -1,4 +1,4 @@
-use crate::{texture, viewport::Viewport, Background, IdGroup, PhySize};
+use crate::{texture, viewport::Viewport, Background, PhySize};
 use futures::task::SpawnExt;
 use raw_window_handle::HasRawWindowHandle;
 
@@ -10,11 +10,11 @@ use background::BackgroundRenderer;
 
 pub use texture_pipeline::atlas;
 
-pub struct Renderer<TexID: IdGroup> {
-    pub texture_pipeline: texture_pipeline::Pipeline<TexID>,
+pub struct Renderer {
+    pub texture_pipeline: texture_pipeline::Pipeline,
     pub text_pipeline: text_pipeline::Pipeline,
 
-    background_renderer: BackgroundRenderer<TexID>,
+    background_renderer: BackgroundRenderer,
 
     surface: wgpu::Surface,
     device: wgpu::Device,
@@ -26,7 +26,7 @@ pub struct Renderer<TexID: IdGroup> {
     local_pool: futures::executor::LocalPool,
 }
 
-impl<TexID: IdGroup> Renderer<TexID> {
+impl Renderer {
     const CHUNK_SIZE: u64 = 10 * 1024;
 
     // Creating some of the wgpu types requires async code
@@ -99,7 +99,7 @@ impl<TexID: IdGroup> Renderer<TexID> {
         })
     }
 
-    pub fn set_background(&mut self, background: Background<TexID>) {
+    pub fn set_background(&mut self, background: Background) {
         self.background_renderer.set_background(background);
     }
 
@@ -171,9 +171,9 @@ impl<TexID: IdGroup> Renderer<TexID> {
         self.local_pool.run_until_stalled();
     }
 
-    pub fn replace_texture_atlas(
+    pub fn new_texture_atlas(
         &mut self,
-        textures: &[(TexID, texture::Texture)],
+        texture_loaders: &mut [texture::Loader],
     ) -> Result<(), texture_pipeline::atlas::AtlasError> {
         let mut encoder = self.device.create_command_encoder(
             &wgpu::CommandEncoderDescriptor {
@@ -181,8 +181,8 @@ impl<TexID: IdGroup> Renderer<TexID> {
             },
         );
 
-        self.texture_pipeline.replace_texture_atlas(
-            textures,
+        self.texture_pipeline.new_texture_atlas(
+            texture_loaders,
             self.viewport.is_hi_dpi(),
             &self.device,
             &mut encoder,

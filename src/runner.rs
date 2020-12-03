@@ -1,6 +1,6 @@
 use crate::{
     renderer::Renderer, settings, settings::ScalePolicy, Application, Message,
-    PhySize, Root, Settings, Size, Tree,
+    PhySize, Root, Settings,
 };
 use baseview::{
     Event, Parent, Window, WindowHandle, WindowHandler, WindowOpenOptions,
@@ -8,18 +8,17 @@ use baseview::{
 };
 use futures::executor::block_on;
 
-pub struct Runner<A: Application + 'static + Send> {
+pub struct Runner<A: Application + 'static> {
     user_app: A,
-    widget_tree: Tree<A::TextureIDs, A::WidgetIDs>,
-    renderer: Renderer<A::TextureIDs>,
+    renderer: Renderer,
     scale_policy: ScalePolicy,
 }
 
-impl<A: Application + 'static + Send> Runner<A> {
+impl<A: Application + 'static> Runner<A> {
     /// Open a new window
     pub fn open<B>(settings: Settings, build: B) -> WindowHandle
     where
-        B: FnOnce(&mut Root<A::TextureIDs>) -> A,
+        B: FnOnce(&mut Root) -> A,
         B: Send + 'static,
     {
         let scale_policy = settings.window.scale;
@@ -63,9 +62,10 @@ impl<A: Application + 'static + Send> Runner<A> {
 
                 let user_app = build(&mut root);
 
+                // TODO: alert renderer of texture handles
+
                 Runner {
                     user_app,
-                    widget_tree: Tree::new(),
                     renderer,
                     scale_policy,
                 }
@@ -74,10 +74,14 @@ impl<A: Application + 'static + Send> Runner<A> {
     }
 }
 
-impl<A: Application + 'static + Send> WindowHandler for Runner<A> {
+// Safe because `WindowHandler` is effectively treated like a single-threaded system.
+unsafe impl<A: Application + 'static> Send for Runner<A> {}
+
+impl<A: Application + 'static> WindowHandler for Runner<A> {
     type Message = Message<A::CustomMessage>;
 
     fn on_frame(&mut self) {
+        /*
         // Construct the current widget tree.
         self.widget_tree.start_tree_construction();
         self.user_app.view(&mut self.widget_tree);
@@ -86,6 +90,7 @@ impl<A: Application + 'static + Send> WindowHandler for Runner<A> {
 
         // Retrieve any rendering changes.
         let render_info = self.widget_tree.get_render_info();
+        */
 
         self.renderer.render();
     }

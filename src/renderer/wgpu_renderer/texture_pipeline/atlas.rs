@@ -1,8 +1,8 @@
-use crate::{texture, IdGroup, Point};
-use fnv::FnvHashMap;
+use crate::{texture, Point};
 use image::{ImageBuffer, ImageError};
 use std::error::Error;
 use std::fmt::{self, Debug};
+use std::rc::{Rc, Weak};
 
 mod allocation;
 mod allocator;
@@ -16,6 +16,30 @@ pub use layer::Layer;
 use allocator::Allocator;
 
 pub const ATLAS_SIZE: u32 = 2048;
+
+pub struct Handle {
+    pub(crate) entry: Weak<Entry>,
+}
+
+impl Handle {
+    pub fn new() -> Self {
+        Self { entry: Weak::new() }
+    }
+}
+
+impl Default for Handle {
+    fn default() -> Self {
+        Self { entry: Weak::new() }
+    }
+}
+
+impl Clone for Handle {
+    fn clone(&self) -> Self {
+        Handle {
+            entry: self.entry.clone(),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub enum AtlasError {
@@ -46,15 +70,15 @@ impl fmt::Display for AtlasError {
 
 impl Error for AtlasError {}
 
-pub struct Atlas<TexID: IdGroup> {
+pub struct Atlas {
     texture: wgpu::Texture,
     texture_view: wgpu::TextureView,
     layers: Vec<Layer>,
-    atlas_map: FnvHashMap<TexID, Entry>,
+    atlas_map: Vec<Rc<Entry>>,
     did_clear_once: bool,
 }
 
-impl<TexID: IdGroup> Atlas<TexID> {
+impl Atlas {
     pub fn new(device: &wgpu::Device) -> Self {
         let extent = wgpu::Extent3d {
             width: ATLAS_SIZE,
@@ -83,38 +107,40 @@ impl<TexID: IdGroup> Atlas<TexID> {
             texture,
             texture_view,
             layers: vec![Layer::Empty],
-            atlas_map: FnvHashMap::default(),
+            atlas_map: Vec::new(),
             did_clear_once: false,
         }
     }
 
-    pub fn replace_texture_atlas(
+    pub fn new_texture_atlas(
         &mut self,
+        texture_loaders: &mut [texture::Loader],
         device: &wgpu::Device,
-        textures: &[(TexID, texture::Texture)],
         encoder: &mut wgpu::CommandEncoder,
         hi_dpi: bool,
     ) -> Result<(), AtlasError> {
         let mut collected_textures: Vec<(
-            TexID,
+            &mut Handle,
             ImageBuffer<image::Bgra<u8>, Vec<u8>>,
             bool,
             Point,
-        )> = Vec::with_capacity(textures.len());
+        )> = Vec::with_capacity(texture_loaders.len());
 
-        for (id, texture) in textures {
-            match texture.load_bgra(hi_dpi) {
+        for loader in texture_loaders {
+            match loader.load_bgra(hi_dpi) {
                 Ok((data, is_hi_dpi, center)) => {
-                    collected_textures.push((*id, data, is_hi_dpi, center));
+                    collected_textures.push((
+                        loader.handle(),
+                        data,
+                        is_hi_dpi,
+                        center,
+                    ));
                 }
                 Err(e) => match e {
-                    texture::TextureError::ImageError(e, path) => {
+                    texture::Error::ImageError(e, path) => {
                         return Err(AtlasError::ImageError(e, path));
                     }
-                    texture::TextureError::PixelBufferTooSmall(
-                        width,
-                        height,
-                    ) => {
+                    texture::Error::PixelBufferTooSmall(width, height) => {
                         return Err(AtlasError::PixelBufferTooSmall(
                             width, height,
                         ));
@@ -130,7 +156,7 @@ impl<TexID: IdGroup> Atlas<TexID> {
                 .reserve(collected_textures.len() - self.atlas_map.len());
         }
 
-        for (id, data, is_hi_dpi, center) in collected_textures {
+        for (handle, data, is_hi_dpi, center) in collected_textures {
             if let Some(entry) = self.add_new_entry(
                 data.width(),
                 data.height(),
@@ -140,7 +166,9 @@ impl<TexID: IdGroup> Atlas<TexID> {
                 device,
                 encoder,
             ) {
-                let _ = self.atlas_map.insert(id, entry);
+                handle.entry = Rc::downgrade(&entry);
+
+                self.atlas_map.push(entry);
             } else {
                 // Ran out of memory (?)
                 return Err(AtlasError::Unkown);
@@ -201,7 +229,7 @@ impl<TexID: IdGroup> Atlas<TexID> {
         center: Point,
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
-    ) -> Option<Entry> {
+    ) -> Option<Rc<Entry>> {
         use wgpu::util::DeviceExt;
 
         let entry = {
@@ -274,12 +302,12 @@ impl<TexID: IdGroup> Atlas<TexID> {
             }
         }
 
-        Some(entry)
+        Some(Rc::new(entry))
     }
 
     #[inline]
-    pub fn get_entry(&self, id: TexID) -> Option<&Entry> {
-        self.atlas_map.get(&id)
+    pub fn get_entry(&self, handle: &Handle) -> Option<Rc<Entry>> {
+        handle.entry.upgrade()
     }
 
     fn allocate(

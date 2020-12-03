@@ -20,15 +20,9 @@ pub use renderer::atlas;
 pub use root::Root;
 pub use runner::Runner;
 pub use settings::Settings;
-pub use texture::{Texture, TextureSource};
 pub use widgets::*;
 
 pub use baseview::{
     MouseButton, MouseClick, MouseCursor, MouseEvent, Parent, WindowEvent,
     WindowHandle, WindowInfo,
 };
-
-pub trait IdGroup:
-    std::fmt::Debug + std::hash::Hash + Copy + Clone + PartialEq + Eq + 'static
-{
-}
