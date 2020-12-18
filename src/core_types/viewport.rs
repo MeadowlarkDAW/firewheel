@@ -1,11 +1,12 @@
-use crate::{PhyPoint, PhySize, Point, Rect, Size};
+use crate::{PhySize, Point, Rect, Size};
+use glam::Mat4;
 
 #[derive(Debug)]
 pub struct Viewport {
     physical_size: PhySize,
     logical_size: Size,
     scale_factor: f64,
-    projection_scale: [f32; 2],
+    projection: Mat4,
 }
 
 impl Viewport {
@@ -22,16 +23,20 @@ impl Viewport {
             physical_size.height as f32 / scale_factor as f32,
         );
 
-        let projection_scale = [
-            2.0 / f32::from(logical_size.width()),
-            -2.0 / f32::from(logical_size.height()),
-        ];
+        let projection = Mat4::orthographic_rh_gl(
+            0.0,
+            logical_size.width(),
+            logical_size.height(),
+            0.0,
+            -1.0,
+            1.0,
+        );
 
         Self {
             physical_size,
             logical_size,
             scale_factor,
-            projection_scale,
+            projection,
         }
     }
 
@@ -56,11 +61,11 @@ impl Viewport {
         self.scale_factor
     }
 
-    /// Returns the projection transformation scale of the [`Viewport`].
+    /// Returns the projection matrix of the [`Viewport`].
     ///
     /// [`Viewport`]: struct.Viewport.html
-    pub fn projection_scale(&self) -> [f32; 2] {
-        self.projection_scale
+    pub fn projection(&self) -> &Mat4 {
+        &self.projection
     }
 
     ///

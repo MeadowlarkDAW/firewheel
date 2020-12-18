@@ -1,5 +1,7 @@
+use std::vec;
+
 use goldenrod::{
-    settings, texture, Application, Background, Message, Point, Root, Runner,
+    node, settings, texture, Application, Background, Point, Root, Runner,
     Settings, Size,
 };
 
@@ -9,6 +11,8 @@ struct PetalDriveGUI {
     tex_knob: texture::Handle,
     tex_vslider: texture::Handle,
     tex_hslider: texture::Handle,
+
+    test_panel: node::Handle<node::Panel>,
 }
 
 impl PetalDriveGUI {
@@ -56,9 +60,9 @@ impl PetalDriveGUI {
 }
 
 impl Application for PetalDriveGUI {
-    type CustomMessage = ();
-
-    fn on_message(&mut self, _message: Message<()>, _root: &mut Root) {}
+    fn load_nodes(&mut self) -> Vec<node::Loader> {
+        vec![node::Panel::new(&mut self.test_panel)]
+    }
 }
 
 fn main() {
@@ -68,11 +72,12 @@ fn main() {
             logical_size: Size::new(485.0, 285.0),
             scale: settings::ScalePolicy::SystemScaleFactor,
         },
+        antialiasing: Default::default(),
     };
 
-    let handle = Runner::open(settings, |root| -> PetalDriveGUI {
+    let app_runner = Runner::open(settings, |root| -> PetalDriveGUI {
         PetalDriveGUI::new(root)
     });
 
-    handle.app_run_blocking();
+    app_runner.unwrap().app_run_blocking();
 }

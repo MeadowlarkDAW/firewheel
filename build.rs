@@ -41,14 +41,32 @@ impl ShaderData {
 #[cfg(feature = "wgpu-renderer")]
 fn main() -> Result<()> {
     // This tells cargo to rerun this script if something in /src/ changes.
-    println!("cargo:rerun-if-changed=src/shader/image.vert");
-    println!("cargo:rerun-if-changed=src/shader/image.frag");
+    println!(
+        "cargo:rerun-if-changed=src/renderer/wgpu_renderer/shader/texture.vert"
+    );
+    println!(
+        "cargo:rerun-if-changed=src/renderer/wgpu_renderer/shader/texture.frag"
+    );
+    println!(
+        "cargo:rerun-if-changed=src/renderer/wgpu_renderer/shader/quad.vert"
+    );
+    println!(
+        "cargo:rerun-if-changed=src/renderer/wgpu_renderer/shader/quad.frag"
+    );
+    println!("cargo:rerun-if-changed=src/renderer/wgpu_renderer/shader/triangle.vert");
+    println!("cargo:rerun-if-changed=src/renderer/wgpu_renderer/shader/triangle.frag");
+    println!(
+        "cargo:rerun-if-changed=src/renderer/wgpu_renderer/shader/blit.vert"
+    );
+    println!(
+        "cargo:rerun-if-changed=src/renderer/wgpu_renderer/shader/blit.frag"
+    );
 
     // Collect all shaders recursively within /src/
     let mut shader_paths = [
-        glob("./src/shader/*.vert")?,
-        glob("./src/shader/*.frag")?,
-        glob("./src/shader/*.comp")?,
+        glob("./src/renderer/wgpu_renderer/shader/*.vert")?,
+        glob("./src/renderer/wgpu_renderer/shader/*.frag")?,
+        glob("./src/renderer/wgpu_renderer/shader/*.comp")?,
     ];
 
     // This could be parallelized

@@ -1,4 +1,4 @@
-use crate::{font, Color, Font, Point, Rect, Size};
+use crate::{font, Color, Font, HAlign, Point, Rect, Size, VAlign};
 use std::{cell::RefCell, collections::HashMap};
 use wgpu_glyph::{
     ab_glyph, BuiltInLineBreaker, GlyphBrush, HorizontalAlign, Layout, Section,
@@ -56,11 +56,22 @@ impl Pipeline {
         font_family: font::Font,
         position: Point,
         scissor_rect: Option<Size>,
-        h_align: HorizontalAlign,
-        v_align: VerticalAlign,
+        h_align: HAlign,
+        v_align: VAlign,
     ) {
         let font_id = self.get_font_id(font_family);
         let position = (f32::from(position.x), f32::from(position.y));
+
+        let h_align = match h_align {
+            HAlign::Center => HorizontalAlign::Center,
+            HAlign::Left => HorizontalAlign::Left,
+            HAlign::Right => HorizontalAlign::Right,
+        };
+        let v_align = match v_align {
+            VAlign::Center => VerticalAlign::Center,
+            VAlign::Bottom => VerticalAlign::Bottom,
+            VAlign::Top => VerticalAlign::Top,
+        };
 
         let section = if let Some(scissor_rect) = scissor_rect {
             let bounds = (scissor_rect.width(), scissor_rect.height());
@@ -103,7 +114,6 @@ impl Pipeline {
         device: &wgpu::Device,
         staging_belt: &mut wgpu::util::StagingBelt,
         encoder: &mut wgpu::CommandEncoder,
-        projection_scale: [f32; 2],
         bounds: Rect,
         target: &wgpu::TextureView,
     ) {

@@ -1,5 +1,9 @@
 use crate::{texture, Color, Font, HAlign, Point, Size, VAlign};
 
+mod triangle;
+
+pub use triangle::*;
+
 pub enum Primitive {
     Texture(Texture),
     SingleLineText(SingleLineText),

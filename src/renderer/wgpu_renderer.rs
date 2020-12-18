@@ -1,10 +1,14 @@
-use crate::{texture, viewport::Viewport, Background, PhySize};
+use crate::{
+    settings, texture, viewport::Viewport, Background, Color, PhySize, Point,
+};
 use futures::task::SpawnExt;
 use raw_window_handle::HasRawWindowHandle;
 
 mod background;
+mod quad_pipeline;
 mod text_pipeline;
 mod texture_pipeline;
+mod triangle_pipeline;
 
 use background::BackgroundRenderer;
 
@@ -13,6 +17,8 @@ pub use texture_pipeline::atlas;
 pub struct Renderer {
     pub texture_pipeline: texture_pipeline::Pipeline,
     pub text_pipeline: text_pipeline::Pipeline,
+    pub quad_pipeline: quad_pipeline::Pipeline,
+    pub triangle_pipeline: triangle_pipeline::Pipeline,
 
     background_renderer: BackgroundRenderer,
 
@@ -34,6 +40,7 @@ impl Renderer {
         window: &impl HasRawWindowHandle,
         physical_size: PhySize,
         scale_factor: f64,
+        antialiasing: settings::Antialiasing,
     ) -> Option<Self> {
         let viewport =
             Viewport::from_physical_size(physical_size, scale_factor);
@@ -82,6 +89,15 @@ impl Renderer {
         let text_pipeline =
             text_pipeline::Pipeline::new(&device, sc_desc.format, None);
 
+        let quad_pipeline =
+            quad_pipeline::Pipeline::new(&device, sc_desc.format);
+
+        let triangle_pipeline = triangle_pipeline::Pipeline::new(
+            &device,
+            sc_desc.format,
+            Some(antialiasing),
+        );
+
         Some(Self {
             surface,
             device,
@@ -96,6 +112,8 @@ impl Renderer {
 
             texture_pipeline,
             text_pipeline,
+            quad_pipeline,
+            triangle_pipeline,
         })
     }
 
@@ -144,7 +162,7 @@ impl Renderer {
             &self.device,
             &mut self.staging_belt,
             &mut encoder,
-            self.viewport.projection_scale(),
+            self.viewport.projection(),
             self.viewport.bounds(),
             &frame.view,
         );
@@ -153,9 +171,79 @@ impl Renderer {
             &self.device,
             &mut self.staging_belt,
             &mut encoder,
-            self.viewport.projection_scale(),
             self.viewport.bounds(),
             &frame.view,
+        );
+
+        self.quad_pipeline.render(
+            &self.device,
+            &mut self.staging_belt,
+            &mut encoder,
+            self.viewport.projection(),
+            self.viewport.bounds(),
+            &frame.view,
+        );
+
+        use lyon::math::{point, Point};
+        use lyon::path::builder::*;
+        use lyon::path::Path;
+        use lyon::tessellation::*;
+
+        // Build a Path.
+        let mut builder = Path::builder();
+        builder.move_to(point(0.0, 0.0));
+        builder.line_to(point(100.0, 0.0));
+        builder.quadratic_bezier_to(point(200.0, 0.0), point(200.0, 100.0));
+        builder.cubic_bezier_to(
+            point(100.0, 100.0),
+            point(0.0, 100.0),
+            point(0.0, 0.0),
+        );
+        builder.close();
+        let path = builder.build();
+
+        let mut geometry: VertexBuffers<crate::primitive::Vertex2D, u32> =
+            VertexBuffers::new();
+        let mut tessellator = FillTessellator::new();
+        {
+            // Compute the tessellation.
+            tessellator
+                .tessellate_path(
+                    &path,
+                    &FillOptions::default(),
+                    &mut BuffersBuilder::new(
+                        &mut geometry,
+                        |pos: Point, _: FillAttributes| {
+                            crate::primitive::Vertex2D {
+                                position: pos.to_array(),
+                                color: crate::Color::WHITE.into(),
+                            }
+                        },
+                    ),
+                )
+                .unwrap();
+        }
+
+        let mesh = crate::primitive::Mesh2D {
+            vertices: geometry.vertices,
+            indices: geometry.indices,
+        };
+
+        let instance = triangle_pipeline::Instance {
+            origin: crate::Point::new(50.0, 50.0),
+            buffers: &mesh,
+            clip_bounds: self.viewport.bounds(),
+        };
+
+        self.triangle_pipeline.render(
+            &self.device,
+            &mut self.staging_belt,
+            &mut encoder,
+            self.viewport.projection(),
+            &frame.view,
+            self.viewport.bounds().size.width() as u32,
+            self.viewport.bounds().size.height() as u32,
+            &[instance],
         );
 
         // Submit work

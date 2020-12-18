@@ -1,26 +1,17 @@
-use crate::{texture, Point, Rect};
+use crate::{Color, Point, Rect, Size};
 use glam::Mat4;
 use std::fmt::Debug;
 use std::mem;
 use zerocopy::AsBytes;
 
-pub mod atlas;
-
-const ATLAS_SCALE: [f32; 2] = [
-    1.0 / atlas::ATLAS_SIZE as f32,
-    1.0 / atlas::ATLAS_SIZE as f32,
-];
-
+#[derive(Debug)]
 pub struct Pipeline {
     pipeline: wgpu::RenderPipeline,
+    uniforms_bind_group: wgpu::BindGroup,
     uniforms_buffer: wgpu::Buffer,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     instances_buffer: wgpu::Buffer,
-    uniforms_bind_group: wgpu::BindGroup,
-    texture_layout: wgpu::BindGroupLayout,
-    texture_bind_group: wgpu::BindGroup,
-    texture_atlas: atlas::Atlas,
 
     instances: Vec<Instance>,
 }
@@ -32,42 +23,24 @@ impl Pipeline {
     ) -> Self {
         use wgpu::util::DeviceExt;
 
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Linear,
-            ..Default::default()
-        });
-
         let uniforms_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("goldenrod::texture uniforms layout"),
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStage::VERTEX,
-                        ty: wgpu::BindingType::UniformBuffer {
-                            dynamic: false,
-                            min_binding_size: wgpu::BufferSize::new(
-                                mem::size_of::<Uniforms>() as u64,
-                            ),
-                        },
-                        count: None,
+                label: Some("goldenrod::quad uniforms layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStage::VERTEX,
+                    ty: wgpu::BindingType::UniformBuffer {
+                        dynamic: false,
+                        min_binding_size: wgpu::BufferSize::new(
+                            mem::size_of::<Uniforms>() as u64,
+                        ),
                     },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStage::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler { comparison: false },
-                        count: None,
-                    },
-                ],
+                    count: None,
+                }],
             });
 
         let uniforms_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("goldenrod::texture uniforms buffer"),
+            label: Some("goldenrod::quad uniforms buffer"),
             size: mem::size_of::<Uniforms>() as u64,
             usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
             mapped_at_creation: false,
@@ -75,54 +48,34 @@ impl Pipeline {
 
         let uniforms_bind_group =
             device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("goldenrod::texture constants bind group"),
+                label: Some("goldenrod::quad uniforms bind group"),
                 layout: &uniforms_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::Buffer(
-                            uniforms_buffer.slice(..),
-                        ),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&sampler),
-                    },
-                ],
-            });
-
-        let texture_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("goldenrod::texture texture layout"),
-                entries: &[wgpu::BindGroupLayoutEntry {
+                entries: &[wgpu::BindGroupEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStage::FRAGMENT,
-                    ty: wgpu::BindingType::SampledTexture {
-                        dimension: wgpu::TextureViewDimension::D2,
-                        component_type: wgpu::TextureComponentType::Float,
-                        multisampled: false,
-                    },
-                    count: None,
+                    resource: wgpu::BindingResource::Buffer(
+                        uniforms_buffer.slice(..),
+                    ),
                 }],
             });
 
         let pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("goldenrod::texture pipeline layout"),
+                label: Some("goldenrod::quad pipeline layout"),
                 push_constant_ranges: &[],
-                bind_group_layouts: &[&uniforms_layout, &texture_layout],
+                bind_group_layouts: &[&uniforms_layout],
             });
 
         let vs_module = device.create_shader_module(wgpu::include_spirv!(
-            "./shader/texture.vert.spv"
+            "./shader/quad.vert.spv"
         ));
+
         let fs_module = device.create_shader_module(wgpu::include_spirv!(
-            "./shader/texture.frag.spv"
+            "./shader/quad.frag.spv"
         ));
 
         let pipeline =
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("goldenrod::texture pipeline"),
+                label: Some("goldenrod::quad pipeline"),
                 layout: Some(&pipeline_layout),
                 vertex_stage: wgpu::ProgrammableStageDescriptor {
                     module: &vs_module,
@@ -164,49 +117,32 @@ impl Pipeline {
 
         let vertex_buffer =
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("goldenrod::texture vertex buffer"),
+                label: Some("goldenrod::quad vertex buffer"),
                 contents: QUAD_VERTICES.as_bytes(),
                 usage: wgpu::BufferUsage::VERTEX,
             });
 
         let index_buffer =
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("goldenrod::texture index buffer"),
+                label: Some("goldenrod::quad index buffer"),
                 contents: QUAD_INDICES.as_bytes(),
                 usage: wgpu::BufferUsage::INDEX,
             });
 
         let instances_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("goldenrod::texture instance buffer"),
+            label: Some("goldenrod::quad instance buffer"),
             size: mem::size_of::<Instance>() as u64 * Instance::MAX as u64,
             usage: wgpu::BufferUsage::VERTEX | wgpu::BufferUsage::COPY_DST,
             mapped_at_creation: false,
         });
 
-        let texture_atlas = atlas::Atlas::new(device);
-
-        let texture_bind_group =
-            device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("goldenrod::texture texture atlas bind group"),
-                layout: &texture_layout,
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(
-                        &texture_atlas.view(),
-                    ),
-                }],
-            });
-
         Self {
             pipeline,
+            uniforms_bind_group,
             uniforms_buffer,
             vertex_buffer,
             index_buffer,
             instances_buffer,
-            uniforms_bind_group,
-            texture_layout,
-            texture_bind_group,
-            texture_atlas,
             instances: Vec::with_capacity(Instance::MAX),
         }
     }
@@ -238,7 +174,6 @@ impl Pipeline {
             uniforms_buffer.copy_from_slice(
                 Uniforms {
                     projection: projection.to_cols_array(),
-                    atlas_scale: ATLAS_SCALE,
                 }
                 .as_bytes(),
             );
@@ -281,7 +216,6 @@ impl Pipeline {
 
             render_pass.set_pipeline(&self.pipeline);
             render_pass.set_bind_group(0, &self.uniforms_bind_group, &[]);
-            render_pass.set_bind_group(1, &self.texture_bind_group, &[]);
             render_pass.set_index_buffer(self.index_buffer.slice(..));
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.set_vertex_buffer(1, self.instances_buffer.slice(..));
@@ -290,7 +224,8 @@ impl Pipeline {
                 bounds.top_left.x as u32,
                 bounds.top_left.y as u32,
                 bounds.size.width() as u32,
-                bounds.size.height() as u32,
+                // TODO: Address anti-aliasing adjustments properly
+                bounds.size.height() as u32 + 1,
             );
 
             render_pass.draw_indexed(
@@ -305,86 +240,23 @@ impl Pipeline {
         self.instances.clear();
     }
 
-    pub fn new_texture_atlas(
-        &mut self,
-        texture_loaders: &mut [texture::Loader],
-        hi_dpi: bool,
-        device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
-    ) -> Result<(), atlas::AtlasError> {
-        self.texture_atlas.new_texture_atlas(
-            texture_loaders,
-            device,
-            encoder,
-            hi_dpi,
-        )?;
-
-        self.texture_bind_group =
-            device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("goldenrod::texture texture atlas bind group"),
-                layout: &self.texture_layout,
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(
-                        &self.texture_atlas.view(),
-                    ),
-                }],
-            });
-
-        Ok(())
-    }
-
     pub fn add_instance(
         &mut self,
-        texture_handle: &texture::Handle,
         position: Point,
-        rotation: f32,
+        size: Size,
+        color: &Color,
+        border_color: &Color,
+        border_radius: f32,
+        border_width: f32,
     ) {
-        if let Some(entry) = self.texture_atlas.get_entry(texture_handle) {
-            match &*entry {
-                atlas::Entry::Contiguous {
-                    allocation,
-                    center,
-                    hi_dpi,
-                } => {
-                    self.instances.push(Instance {
-                        _position: position.into(),
-                        _atlas_position: allocation.position(),
-                        _atlas_size: allocation.size(),
-                        _center: (*center).into(),
-                        _rotation: rotation,
-                        _atlas_layer: allocation.layer(),
-                        _is_hi_dpi: (*hi_dpi).into(),
-                    });
-                }
-                atlas::Entry::Fragmented {
-                    fragments,
-                    center,
-                    hi_dpi,
-                    ..
-                } => {
-                    let is_hi_dpi: u32 = (*hi_dpi).into();
-
-                    for fragment in fragments {
-                        self.instances.push(Instance {
-                            _position: [
-                                position.x + fragment.position[0],
-                                position.y + fragment.position[1],
-                            ],
-                            _atlas_position: fragment.allocation.position(),
-                            _atlas_size: fragment.allocation.size(),
-                            _center: [
-                                center.x + fragment.position[0],
-                                center.y + fragment.position[1],
-                            ],
-                            _rotation: rotation,
-                            _atlas_layer: fragment.allocation.layer(),
-                            _is_hi_dpi: is_hi_dpi,
-                        });
-                    }
-                }
-            }
-        }
+        self.instances.push(Instance {
+            _position: position.into(),
+            _size: size.into(),
+            _color: (*color).into(),
+            _border_color: (*border_color).into(),
+            _border_radius: border_radius,
+            _border_width: border_width,
+        })
     }
 }
 
@@ -429,12 +301,11 @@ const QUAD_VERTICES: [Vertex; 4] = [
 #[derive(Debug, Clone, Copy, AsBytes)]
 struct Instance {
     _position: [f32; 2],
-    _atlas_position: [f32; 2],
-    _atlas_size: [f32; 2],
-    _center: [f32; 2],
-    _rotation: f32,
-    _atlas_layer: u32,
-    _is_hi_dpi: u32,
+    _size: [f32; 2],
+    _color: [f32; 4],
+    _border_color: [f32; 4],
+    _border_radius: f32,
+    _border_width: f32,
 }
 
 impl Instance {
@@ -451,49 +322,43 @@ impl Instance {
                     format: wgpu::VertexFormat::Float2,
                     offset: 0,
                 },
-                // _atlas_position: [f32; 2],
+                // _size: [f32; 2],
                 wgpu::VertexAttributeDescriptor {
                     shader_location: 2,
                     format: wgpu::VertexFormat::Float2,
                     offset: (std::mem::size_of::<[f32; 2]>() * 1)
                         as wgpu::BufferAddress,
                 },
-                // _atlas_size: [f32; 2],
+                // _color: [f32; 4],
                 wgpu::VertexAttributeDescriptor {
                     shader_location: 3,
-                    format: wgpu::VertexFormat::Float2,
+                    format: wgpu::VertexFormat::Float4,
                     offset: (std::mem::size_of::<[f32; 2]>() * 2)
                         as wgpu::BufferAddress,
                 },
-                // _center: [f32; 2],
+                // _border_color: [f32; 4],
                 wgpu::VertexAttributeDescriptor {
                     shader_location: 4,
-                    format: wgpu::VertexFormat::Float2,
-                    offset: (std::mem::size_of::<[f32; 2]>() * 3)
+                    format: wgpu::VertexFormat::Float4,
+                    offset: ((std::mem::size_of::<[f32; 2]>() * 2)
+                        + (std::mem::size_of::<[f32; 4]>() * 1))
                         as wgpu::BufferAddress,
                 },
-                // _rotation: f32,
+                // _border_radius: f32,
                 wgpu::VertexAttributeDescriptor {
                     shader_location: 5,
                     format: wgpu::VertexFormat::Float,
-                    offset: (std::mem::size_of::<[f32; 2]>() * 4)
+                    offset: ((std::mem::size_of::<[f32; 2]>() * 2)
+                        + (std::mem::size_of::<[f32; 4]>() * 2))
                         as wgpu::BufferAddress,
                 },
-                // _atlas_layer: u32,
+                // _border_width f32,
                 wgpu::VertexAttributeDescriptor {
                     shader_location: 6,
-                    format: wgpu::VertexFormat::Uint,
-                    offset: ((std::mem::size_of::<[f32; 2]>() * 4)
-                        + std::mem::size_of::<f32>())
-                        as wgpu::BufferAddress,
-                },
-                // _is_hi_dpi: u32,
-                wgpu::VertexAttributeDescriptor {
-                    shader_location: 7,
-                    format: wgpu::VertexFormat::Uint,
-                    offset: ((std::mem::size_of::<[f32; 2]>() * 4)
-                        + std::mem::size_of::<f32>()
-                        + std::mem::size_of::<u32>())
+                    format: wgpu::VertexFormat::Float,
+                    offset: ((std::mem::size_of::<[f32; 2]>() * 2)
+                        + (std::mem::size_of::<[f32; 4]>() * 2)
+                        + (std::mem::size_of::<f32>() * 1))
                         as wgpu::BufferAddress,
                 },
             ],
@@ -505,5 +370,4 @@ impl Instance {
 #[derive(Debug, Clone, Copy, AsBytes)]
 struct Uniforms {
     projection: [f32; 16],
-    atlas_scale: [f32; 2],
 }

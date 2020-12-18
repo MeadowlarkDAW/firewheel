@@ -1,22 +1,23 @@
 use crate::{
-    renderer::Renderer, settings, settings::ScalePolicy, Application, Message,
+    node, renderer::Renderer, settings, settings::ScalePolicy, Application,
     PhySize, Root, Settings,
 };
 use baseview::{
-    Event, Parent, Window, WindowHandle, WindowHandler, WindowOpenOptions,
+    AppRunner, Event, Parent, Window, WindowHandler, WindowOpenOptions,
     WindowScalePolicy,
 };
 use futures::executor::block_on;
 
 pub struct Runner<A: Application + 'static> {
-    user_app: A,
+    _user_app: A,
     renderer: Renderer,
     scale_policy: ScalePolicy,
+    tree: node::Tree,
 }
 
 impl<A: Application + 'static> Runner<A> {
     /// Open a new window
-    pub fn open<B>(settings: Settings, build: B) -> WindowHandle
+    pub fn open<B>(settings: Settings, build: B) -> Option<AppRunner>
     where
         B: FnOnce(&mut Root) -> A,
         B: Send + 'static,
@@ -25,6 +26,8 @@ impl<A: Application + 'static> Runner<A> {
 
         let logical_width = settings.window.logical_size.width() as f64;
         let logical_height = settings.window.logical_size.height() as f64;
+
+        let antialiasing = settings.antialiasing;
 
         let window_options = WindowOpenOptions {
             title: settings.window.title,
@@ -54,20 +57,27 @@ impl<A: Application + 'static> Runner<A> {
                     (logical_height * scale) as i32,
                 );
 
-                let mut renderer =
-                    block_on(Renderer::new(window, physical_size, scale))
-                        .unwrap();
+                let mut renderer = block_on(Renderer::new(
+                    window,
+                    physical_size,
+                    scale,
+                    antialiasing,
+                ))
+                .unwrap();
 
                 let mut root = Root::new(window, &mut renderer);
 
-                let user_app = build(&mut root);
+                let mut user_app = build(&mut root);
+
+                let tree = node::Tree::new(user_app.load_nodes());
 
                 // TODO: alert renderer of texture handles
 
                 Runner {
-                    user_app,
+                    _user_app: user_app,
                     renderer,
                     scale_policy,
+                    tree,
                 }
             },
         )
@@ -78,13 +88,11 @@ impl<A: Application + 'static> Runner<A> {
 unsafe impl<A: Application + 'static> Send for Runner<A> {}
 
 impl<A: Application + 'static> WindowHandler for Runner<A> {
-    type Message = Message<A::CustomMessage>;
-
     fn on_frame(&mut self) {
         /*
         // Construct the current widget tree.
         self.widget_tree.start_tree_construction();
-        self.user_app.view(&mut self.widget_tree);
+        self._user_app.view(&mut self.widget_tree);
 
         // TODO: Check for duplicate widgets with the same id.
 
@@ -115,11 +123,5 @@ impl<A: Application + 'static> WindowHandler for Runner<A> {
             },
             _ => {}
         }
-    }
-
-    fn on_message(&mut self, window: &mut Window, message: Self::Message) {
-        let mut root = Root::new(window, &mut self.renderer);
-
-        self.user_app.on_message(message, &mut root);
     }
 }
