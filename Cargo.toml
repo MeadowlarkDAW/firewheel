@@ -14,3 +14,4 @@ members = [
 gl = { version = "0.14" }
 nvg = "0.5"
 log = "0.4"
+fnv = "1.0"

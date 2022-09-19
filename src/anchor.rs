@@ -1,10 +1,7 @@
-use super::Point;
-
 #[derive(Default, Debug, Clone, Copy, PartialEq)]
 pub struct Anchor {
     pub h_align: HAlign,
     pub v_align: VAlign,
-    pub offset: Point,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -1,4 +1,4 @@
-use super::{Size, Point};
+use super::{Point, Size};
 
 pub trait Widget {
     fn wants_mouse_events(&self) -> bool {
