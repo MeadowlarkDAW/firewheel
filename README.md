@@ -7,7 +7,7 @@ This crate is currently incomplete and just an experiment. There is no guarantee
 
 ---
 
-Goldenrod is an opinionated "do it yourself" UI toolkit focused on performance. It is geared towards making desktop and audio plugin UIs that are complex (but "rigid").
+Goldenrod is an opinionated "do it yourself" UI toolkit focused on performance. It is geared towards making desktop and audio plugin UIs that are complex but "rigid".
 
 # Why?
 
