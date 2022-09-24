@@ -1,3 +1,5 @@
+use std::ops::{Add, AddAssign, Sub, SubAssign};
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ScaleFactor(pub f64);
 
@@ -128,6 +130,38 @@ impl Point {
     }
 }
 
+impl Add<Point> for Point {
+    type Output = Point;
+    fn add(self, rhs: Point) -> Self::Output {
+        Point {
+            x: self.x + rhs.x,
+            y: self.y + rhs.y,
+        }
+    }
+}
+
+impl Sub<Point> for Point {
+    type Output = Point;
+    fn sub(self, rhs: Point) -> Self::Output {
+        Point {
+            x: self.x - rhs.x,
+            y: self.y - rhs.y,
+        }
+    }
+}
+
+impl AddAssign for Point {
+    fn add_assign(&mut self, rhs: Self) {
+        *self = *self + rhs
+    }
+}
+
+impl SubAssign for Point {
+    fn sub_assign(&mut self, rhs: Self) {
+        *self = *self - rhs
+    }
+}
+
 /// A point in actual physical coordinates
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PhysicalPoint {
@@ -217,5 +251,10 @@ impl Rect {
             x: self.center_x(),
             y: self.center_y(),
         }
+    }
+
+    #[inline]
+    pub fn contains_point(&self, point: Point) -> bool {
+        point.x >= self.x() && point.y >= self.y() && point.x <= self.x2() && point.y <= self.y2()
     }
 }

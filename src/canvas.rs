@@ -1,74 +1,148 @@
-use fnv::FnvHashMap;
-use std::cell::RefCell;
-use std::error::Error;
-use std::fmt;
+use fnv::{FnvHashMap, FnvHashSet};
+use std::cell::{Ref, RefCell, RefMut};
 use std::rc::Rc;
 
-use crate::layer::{Layer, LayerBuilder, LayerID};
-use crate::Size;
+use crate::anchor::Anchor;
+use crate::layer::{Layer, LayerError, LayerID};
+use crate::widget::{Widget, WidgetID};
+use crate::{ContainerRegionID, ParentAnchorType, Point, Size};
 
-pub struct Canvas {
-    current_size: Size,
-    min_size: Option<Size>,
-    max_size: Option<Size>,
+struct SharedLayerEntry<MSG> {
+    shared: Rc<RefCell<Layer<MSG>>>,
+}
 
-    layers: FnvHashMap<LayerID, Rc<RefCell<Layer>>>,
-    layers_ordered: Vec<(i32, Vec<Rc<RefCell<Layer>>>)>,
+impl<MSG> SharedLayerEntry<MSG> {
+    fn borrow(&self) -> Ref<'_, Layer<MSG>> {
+        RefCell::borrow(&self.shared)
+    }
+
+    fn borrow_mut(&mut self) -> RefMut<'_, Layer<MSG>> {
+        RefCell::borrow_mut(&self.shared)
+    }
+}
+
+impl<MSG> Clone for SharedLayerEntry<MSG> {
+    fn clone(&self) -> Self {
+        Self {
+            shared: Rc::clone(&self.shared),
+        }
+    }
+}
+
+pub(crate) struct SharedWidgetEntry<MSG> {
+    shared: Rc<RefCell<Box<dyn Widget<MSG>>>>,
+}
+
+impl<MSG> SharedWidgetEntry<MSG> {
+    fn borrow(&self) -> Ref<'_, Box<dyn Widget<MSG>>> {
+        RefCell::borrow(&self.shared)
+    }
+
+    pub(crate) fn borrow_mut(&mut self) -> RefMut<'_, Box<dyn Widget<MSG>>> {
+        RefCell::borrow_mut(&self.shared)
+    }
+}
+
+impl<MSG> Clone for SharedWidgetEntry<MSG> {
+    fn clone(&self) -> Self {
+        Self {
+            shared: Rc::clone(&self.shared),
+        }
+    }
+}
+
+/// A set of widgets optimized for iteration.
+pub(crate) struct WidgetSet<MSG> {
+    set: FnvHashSet<WidgetID>,
+    entries: Vec<(WidgetID, SharedWidgetEntry<MSG>)>,
+}
+
+impl<MSG> WidgetSet<MSG> {
+    pub fn new() -> Self {
+        Self {
+            set: FnvHashSet::default(),
+            entries: Vec::new(),
+        }
+    }
+
+    pub fn insert(&mut self, id: WidgetID, entry: SharedWidgetEntry<MSG>) {
+        if self.set.insert(id) {
+            self.entries.push((id, entry));
+        }
+    }
+
+    pub fn remove(&mut self, id: WidgetID) {
+        if self.set.remove(&id) {
+            let mut remove_i = None;
+            for (i, entry) in self.entries.iter().enumerate() {
+                if entry.0 == id {
+                    remove_i = Some(i);
+                    break;
+                }
+            }
+            if let Some(i) = remove_i {
+                self.entries.remove(i);
+            }
+        }
+    }
+
+    pub fn iter_mut(&mut self) -> impl IntoIterator<Item = &'_ mut SharedWidgetEntry<MSG>> {
+        self.entries.iter_mut().map(|(_, entry)| entry)
+    }
+}
+
+pub struct Canvas<MSG> {
+    next_layer_id: u64,
+
+    layers: FnvHashMap<LayerID, SharedLayerEntry<MSG>>,
+    layers_ordered: Vec<(i32, Vec<SharedLayerEntry<MSG>>)>,
+
+    dirty_layers: FnvHashSet<LayerID>,
+
+    widgets: FnvHashMap<WidgetID, SharedWidgetEntry<MSG>>,
+    widget_with_text_comp_listen: Option<SharedWidgetEntry<MSG>>,
+    widgets_with_keyboard_listen: WidgetSet<MSG>,
+    widgets_scheduled_for_animation: WidgetSet<MSG>,
 
     do_repack_layers: bool,
 }
 
-impl Canvas {
-    pub fn new(mut intial_size: Size, min_size: Option<Size>, max_size: Option<Size>) -> Self {
-        if let Some(min_size) = min_size {
-            intial_size = intial_size.max(min_size);
-
-            if let Some(max_size) = max_size {
-                assert!(min_size.width() <= max_size.width());
-                assert!(min_size.height() <= max_size.height());
-            }
-        }
-        if let Some(max_size) = max_size {
-            intial_size = intial_size.min(max_size);
-        }
-
+impl<MSG> Canvas<MSG> {
+    pub fn new() -> Self {
         Self {
-            current_size: intial_size,
-            min_size,
-            max_size,
+            next_layer_id: 0,
             layers: FnvHashMap::default(),
             layers_ordered: Vec::new(),
+            dirty_layers: FnvHashSet::default(),
+            widgets: FnvHashMap::default(),
+            widget_with_text_comp_listen: None,
+            widgets_with_keyboard_listen: WidgetSet::new(),
+            widgets_scheduled_for_animation: WidgetSet::new(),
             do_repack_layers: true,
         }
     }
 
-    pub fn add_layer(&mut self, mut layer: Layer) -> Result<(), AddLayerError> {
-        let id = layer.id();
+    pub fn add_layer(
+        &mut self,
+        size: Size,
+        min_size: Option<Size>,
+        max_size: Option<Size>,
+        z_order: i32,
+        position: Point,
+    ) -> Result<LayerID, LayerError> {
+        let id = LayerID {
+            id: self.next_layer_id,
+            z_order,
+        };
 
-        if self.layers.contains_key(&id) {
-            return Err(AddLayerError::LayerIDAlreadyExists(layer.id()));
-        }
+        let layer = SharedLayerEntry {
+            shared: Rc::new(RefCell::new(Layer::new(
+                id, size, min_size, max_size, position,
+            )?)),
+        };
+        self.layers.insert(id, layer.clone());
 
-        if let Some(min_size) = layer.min_size {
-            if let Some(max_size) = layer.max_size {
-                if min_size.width() > max_size.width() || min_size.height() > max_size.height() {
-                    return Err(AddLayerError::MinSizeNotLessThanMaxSize { min_size, max_size });
-                }
-            }
-
-            if let Some(current_size) = &mut layer.current_size {
-                *current_size = current_size.max(min_size);
-            }
-        }
-        if let Some(max_size) = layer.max_size {
-            if let Some(current_size) = &mut layer.current_size {
-                *current_size = current_size.min(max_size);
-            }
-        }
-
-        let layer = Rc::new(RefCell::new(layer));
-
-        self.layers.insert(id, Rc::clone(&layer));
+        self.next_layer_id += 1;
 
         let mut existing_z_order_i = None;
         let mut insert_i = 0;
@@ -89,7 +163,7 @@ impl Canvas {
 
         self.do_repack_layers = true;
 
-        Ok(())
+        Ok(id)
     }
 
     pub fn remove_layer(&mut self, id: LayerID) {
@@ -102,7 +176,7 @@ impl Canvas {
             if id.z_order == *z_order {
                 let mut remove_i = None;
                 for (i, layer) in layers.iter().enumerate() {
-                    if RefCell::borrow(layer).id() == id {
+                    if layer.borrow().id == id {
                         remove_i = Some(i);
                         break;
                     }
@@ -122,35 +196,109 @@ impl Canvas {
             self.layers_ordered.remove(i);
         }
 
+        self.dirty_layers.remove(&id);
+
         self.do_repack_layers = true;
     }
 
-    fn pack_layers(&mut self) {
-        // TODO
+    pub fn set_layer_position(
+        &mut self,
+        layer: LayerID,
+        position: Point,
+    ) -> Result<(), LayerError> {
+        Ok(self
+            .layers
+            .get_mut(&layer)
+            .ok_or_else(|| LayerError::LayerWithIDNotFound(layer))?
+            .borrow_mut()
+            .set_position(position))
     }
-}
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum AddLayerError {
-    LayerIDAlreadyExists(LayerID),
-    MinSizeNotLessThanMaxSize { min_size: Size, max_size: Size },
-}
+    pub fn modify_layer(
+        &mut self,
+        layer: LayerID,
+        new_size: Option<Size>,
+        new_min_size: Option<Size>,
+        new_max_size: Option<Size>,
+    ) -> Result<(), LayerError> {
+        self.layers
+            .get_mut(&layer)
+            .ok_or_else(|| LayerError::LayerWithIDNotFound(layer))?
+            .borrow_mut()
+            .modify(new_size, new_min_size, new_max_size, &mut self.dirty_layers)
+    }
 
-impl Error for AddLayerError {}
+    pub fn add_container_region(
+        &mut self,
+        layer: LayerID,
+        size: Size,
+        internal_anchor: Anchor,
+        parent_anchor: Anchor,
+        parent_anchor_type: ParentAnchorType,
+        anchor_offset: Point,
+    ) -> Result<ContainerRegionID, ()> {
+        self.layers
+            .get_mut(&layer)
+            .ok_or_else(|| ())?
+            .borrow_mut()
+            .add_container_region(
+                size,
+                internal_anchor,
+                parent_anchor,
+                parent_anchor_type,
+                anchor_offset,
+            )
+    }
 
-impl fmt::Display for AddLayerError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::LayerIDAlreadyExists(id) => {
-                write!(f, "Layer with ID {:?} already exists", id)
-            }
-            Self::MinSizeNotLessThanMaxSize { min_size, max_size } => {
-                write!(
-                    f,
-                    "Layer has a minimum size {:?} that is not less than its maximum size {:?}",
-                    min_size, max_size
-                )
-            }
-        }
+    pub fn remove_container_region(
+        &mut self,
+        layer: LayerID,
+        region: ContainerRegionID,
+    ) -> Result<(), ()> {
+        self.layers
+            .get_mut(&layer)
+            .ok_or_else(|| ())?
+            .borrow_mut()
+            .remove_container_region(region, &mut self.dirty_layers)
+    }
+
+    pub fn modify_container_region(
+        &mut self,
+        layer: LayerID,
+        region: ContainerRegionID,
+        new_size: Option<Size>,
+        new_internal_anchor: Option<Anchor>,
+        new_parent_anchor: Option<Anchor>,
+        new_anchor_offset: Option<Point>,
+    ) -> Result<(), ()> {
+        self.layers
+            .get_mut(&layer)
+            .ok_or_else(|| ())?
+            .borrow_mut()
+            .modify_container_region(
+                region,
+                new_size,
+                new_internal_anchor,
+                new_parent_anchor,
+                new_anchor_offset,
+                &mut self.dirty_layers,
+            )
+    }
+
+    pub fn mark_container_region_dirty(
+        &mut self,
+        layer: LayerID,
+        region: ContainerRegionID,
+    ) -> Result<(), ()> {
+        self.layers
+            .get_mut(&layer)
+            .ok_or_else(|| ())?
+            .borrow_mut()
+            .mark_container_region_dirty(region, &mut self.dirty_layers)
+    }
+
+    fn pack_layers(&mut self) {
+
+        // TODO
     }
 }

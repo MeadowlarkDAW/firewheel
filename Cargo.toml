@@ -12,6 +12,8 @@ members = [
 
 [dependencies]
 gl = { version = "0.14" }
+keyboard-types = { version = "0.6.1", default-features = false }
 nvg = "0.5"
 log = "0.4"
 fnv = "1.0"
+smallvec = "1.9"

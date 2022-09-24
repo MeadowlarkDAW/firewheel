@@ -5,18 +5,18 @@ use std::hash::Hash;
 use std::rc::Rc;
 
 pub(crate) struct RegionTree {
-    next_id: u64,
-    entries: FnvHashMap<RegionID, SharedRegionTreeEntry>,
+    next_region_id: u64,
+    entries: FnvHashMap<u64, SharedRegionTreeEntry>,
     roots: Vec<SharedRegionTreeEntry>,
-    pub dirty_regions: FnvHashSet<RegionID>,
-    pub clear_rects: Vec<Rect>,
+    dirty_regions: FnvHashSet<u64>,
+    clear_rects: Vec<Rect>,
     layer_size: Size,
 }
 
 impl RegionTree {
     pub fn new(layer_size: Size) -> Self {
         Self {
-            next_id: 0,
+            next_region_id: 0,
             entries: FnvHashMap::default(),
             roots: Vec::new(),
             dirty_regions: FnvHashSet::default(),
@@ -25,20 +25,19 @@ impl RegionTree {
         }
     }
 
-    pub fn new_region(
+    pub fn new_container_region(
         &mut self,
         size: Size,
         internal_anchor: Anchor,
         parent_anchor: Anchor,
         parent_anchor_type: ParentAnchorType,
         anchor_offset: Point,
-        is_invisible: bool,
-    ) -> Result<RegionID, ()> {
-        let new_id = RegionID(self.next_id);
+    ) -> Result<ContainerRegionID, ()> {
+        let new_id = ContainerRegionID(self.next_region_id);
         let mut new_entry = SharedRegionTreeEntry {
             shared: Rc::new(RefCell::new(RegionTreeEntry {
                 region: Region {
-                    id: new_id,
+                    id: new_id.0,
                     size,
                     internal_anchor,
                     parent_anchor,
@@ -47,10 +46,10 @@ impl RegionTree {
                     rect: Rect::default(),        // This will be overwritten
                     parent_rect: Rect::default(), // This will be overwritten
                     last_rendered_rect: None,
-                    is_invisible,
+                    is_container: true,
                 },
                 parent: None,
-                children: Vec::new(),
+                children: Some(Vec::new()),
             })),
         };
 
@@ -63,17 +62,19 @@ impl RegionTree {
                     size: self.layer_size,
                 }
             }
-            ParentAnchorType::Region(id) => {
-                let parent_rect = if let Some(parent_entry) = self.entries.get_mut(&id) {
+            ParentAnchorType::ContainerRegion(id) => {
+                let parent_rect = if let Some(parent_entry) = self.entries.get_mut(&id.0) {
                     let parent_rect = {
-                        let mut parent_entry = parent_entry.borrow_mut();
-                        parent_entry.children.push(new_entry.clone());
-
-                        parent_entry.region.rect
+                        let mut parent_entry_ref = parent_entry.borrow_mut();
+                        if let Some(children) = &mut parent_entry_ref.children {
+                            children.push(new_entry.clone());
+                        } else {
+                            panic!("Parent region is not a container region");
+                        }
+                        parent_entry_ref.region.rect
                     };
                     {
-                        let mut new_entry_ref = new_entry.borrow_mut();
-                        new_entry_ref.parent = Some(parent_entry.clone());
+                        new_entry.borrow_mut().parent = Some(parent_entry.clone());
                     }
 
                     parent_rect
@@ -84,41 +85,49 @@ impl RegionTree {
                 parent_rect
             }
         };
-
         {
-            let mut new_entry_ref = new_entry.borrow_mut();
-            new_entry_ref.region.update_parent_rect(parent_rect, true);
-            new_entry_ref.mark_dirty(&mut self.dirty_regions, &mut self.clear_rects);
+            new_entry.borrow_mut().update_parent_rect(
+                parent_rect,
+                &mut self.dirty_regions,
+                &mut self.clear_rects,
+            )
         }
 
-        self.next_id += 1;
+        self.next_region_id += 1;
         Ok(new_id)
     }
 
-    pub fn remove_region(&mut self, id: RegionID) -> Result<(), ()> {
-        let mut entry = self.entries.remove(&id).ok_or_else(|| ())?;
+    pub fn remove_container_region(&mut self, id: ContainerRegionID) -> Result<(), ()> {
+        let mut entry = self.entries.remove(&id.0).ok_or_else(|| ())?;
         let mut entry_ref = entry.borrow_mut();
 
-        if !entry_ref.children.is_empty() {
-            return Err(());
+        if let Some(children) = &entry_ref.children {
+            if !children.is_empty() {
+                return Err(());
+            }
+        } else {
+            panic!("region was not a container region");
         }
 
         if let Some(parent_entry) = &mut entry_ref.parent {
-            let mut parent_entry = parent_entry.borrow_mut();
-            let mut remove_i = None;
-            for (i, entry) in parent_entry.children.iter().enumerate() {
-                if entry.borrow().region.id == id {
-                    remove_i = Some(i);
-                    break;
+            if let Some(children) = &mut parent_entry.borrow_mut().children {
+                let mut remove_i = None;
+                for (i, entry) in children.iter().enumerate() {
+                    if entry.borrow().region.id == id.0 {
+                        remove_i = Some(i);
+                        break;
+                    }
                 }
-            }
-            if let Some(i) = remove_i {
-                parent_entry.children.remove(i);
+                if let Some(i) = remove_i {
+                    children.remove(i);
+                }
+            } else {
+                panic!("parent region was not a container region");
             }
         } else {
             let mut remove_i = None;
             for (i, entry) in self.roots.iter().enumerate() {
-                if entry.borrow().region.id == id {
+                if entry.borrow().region.id == id.0 {
                     remove_i = Some(i);
                     break;
                 }
@@ -128,23 +137,24 @@ impl RegionTree {
             }
         }
 
-        if let Some(rect) = entry_ref.region.last_rendered_rect {
-            self.clear_rects.push(rect);
-        } // else this region was never rendered
-
         Ok(())
     }
 
-    pub fn modify_region(
+    pub fn modify_container_region(
         &mut self,
-        id: RegionID,
+        id: ContainerRegionID,
         new_size: Option<Size>,
         new_internal_anchor: Option<Anchor>,
         new_parent_anchor: Option<Anchor>,
         new_anchor_offset: Option<Point>,
     ) -> Result<(), ()> {
-        let entry = self.entries.get_mut(&id).ok_or_else(|| ())?;
-        entry.borrow_mut().modify(
+        let mut entry_ref = self.entries.get_mut(&id.0).ok_or_else(|| ())?.borrow_mut();
+
+        if entry_ref.children.is_none() {
+            panic!("region was not a container region");
+        }
+
+        entry_ref.modify(
             new_size,
             new_internal_anchor,
             new_parent_anchor,
@@ -155,12 +165,14 @@ impl RegionTree {
         Ok(())
     }
 
-    pub fn mark_region_dirty(&mut self, id: RegionID) {
-        if let Some(entry) = self.entries.get_mut(&id) {
-            entry
-                .borrow_mut()
-                .mark_dirty(&mut self.dirty_regions, &mut self.clear_rects);
+    pub fn mark_container_region_dirty(&mut self, id: ContainerRegionID) -> Result<(), ()> {
+        let mut entry_ref = self.entries.get_mut(&id.0).ok_or_else(|| ())?.borrow_mut();
+
+        if entry_ref.children.is_none() {
+            panic!("region was not a container region");
         }
+
+        Ok(entry_ref.mark_dirty(&mut self.dirty_regions, &mut self.clear_rects))
     }
 
     pub fn set_layer_size(&mut self, size: Size) {
@@ -189,12 +201,12 @@ impl RegionTree {
 }
 
 #[derive(Debug, Clone)]
-struct SharedRegionTreeEntry {
+pub(super) struct SharedRegionTreeEntry {
     shared: Rc<RefCell<RegionTreeEntry>>,
 }
 
 impl SharedRegionTreeEntry {
-    fn borrow(&self) -> Ref<'_, RegionTreeEntry> {
+    pub(super) fn borrow(&self) -> Ref<'_, RegionTreeEntry> {
         RefCell::borrow(&self.shared)
     }
 
@@ -204,20 +216,24 @@ impl SharedRegionTreeEntry {
 }
 
 #[derive(Debug, Clone)]
-struct RegionTreeEntry {
+pub(super) struct RegionTreeEntry {
     region: Region,
     parent: Option<SharedRegionTreeEntry>,
-    children: Vec<SharedRegionTreeEntry>,
+    children: Option<Vec<SharedRegionTreeEntry>>,
 }
 
 impl RegionTreeEntry {
+    pub(super) fn rect(&self) -> Rect {
+        self.region.rect
+    }
+
     fn modify(
         &mut self,
         new_size: Option<Size>,
         new_internal_anchor: Option<Anchor>,
         new_parent_anchor: Option<Anchor>,
         new_anchor_offset: Option<Point>,
-        dirty_regions: &mut FnvHashSet<RegionID>,
+        dirty_regions: &mut FnvHashSet<u64>,
         clear_rects: &mut Vec<Rect>,
     ) {
         let mut changed = false;
@@ -251,10 +267,14 @@ impl RegionTreeEntry {
             self.mark_dirty(dirty_regions, clear_rects);
             let new_rect = self.region.rect;
 
-            for child_entry in self.children.iter_mut() {
-                child_entry
-                    .borrow_mut()
-                    .update_parent_rect(new_rect, dirty_regions, clear_rects);
+            if let Some(children) = &mut self.children {
+                for child_entry in children.iter_mut() {
+                    child_entry.borrow_mut().update_parent_rect(
+                        new_rect,
+                        dirty_regions,
+                        clear_rects,
+                    );
+                }
             }
         }
     }
@@ -262,28 +282,32 @@ impl RegionTreeEntry {
     fn update_parent_rect(
         &mut self,
         parent_rect: Rect,
-        dirty_regions: &mut FnvHashSet<RegionID>,
+        dirty_regions: &mut FnvHashSet<u64>,
         clear_rects: &mut Vec<Rect>,
     ) {
         if self.region.update_parent_rect(parent_rect, false) {
             self.mark_dirty(dirty_regions, clear_rects);
 
-            for child_entry in self.children.iter_mut() {
-                child_entry.borrow_mut().update_parent_rect(
-                    self.region.rect,
-                    dirty_regions,
-                    clear_rects,
-                );
+            if let Some(children) = &mut self.children {
+                for child_entry in children.iter_mut() {
+                    child_entry.borrow_mut().update_parent_rect(
+                        self.region.rect,
+                        dirty_regions,
+                        clear_rects,
+                    );
+                }
             }
         }
     }
 
-    fn mark_dirty(
-        &mut self,
-        dirty_regions: &mut FnvHashSet<RegionID>,
-        clear_rects: &mut Vec<Rect>,
-    ) {
-        if !self.region.is_invisible {
+    fn mark_dirty(&mut self, dirty_regions: &mut FnvHashSet<u64>, clear_rects: &mut Vec<Rect>) {
+        if let Some(children) = &mut self.children {
+            for child_entry in children.iter_mut() {
+                child_entry
+                    .borrow_mut()
+                    .mark_dirty(dirty_regions, clear_rects);
+            }
+        } else {
             if dirty_regions.insert(self.region.id) {
                 if let Some(rect) = self.region.last_rendered_rect {
                     clear_rects.push(rect);
@@ -294,11 +318,11 @@ impl RegionTreeEntry {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct RegionID(u64);
+pub struct ContainerRegionID(u64);
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Region {
-    pub id: RegionID,
+pub(crate) struct Region {
+    pub id: u64,
     pub size: Size,
     pub rect: Rect,
     pub internal_anchor: Anchor,
@@ -307,7 +331,7 @@ pub struct Region {
     pub anchor_offset: Point,
     pub last_rendered_rect: Option<Rect>,
     pub parent_rect: Rect,
-    pub is_invisible: bool,
+    pub is_container: bool,
 }
 
 impl Region {
@@ -383,5 +407,5 @@ impl Region {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParentAnchorType {
     Layer,
-    Region(RegionID),
+    ContainerRegion(ContainerRegionID),
 }
