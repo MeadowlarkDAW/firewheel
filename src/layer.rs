@@ -1,18 +1,18 @@
 use fnv::FnvHashSet;
 
 use crate::anchor::Anchor;
-use crate::canvas::SharedWidgetEntry;
-use crate::event::{Event, MouseEvent};
+use crate::canvas::{StrongWidgetEntry, WidgetRef};
+use crate::event::MouseEvent;
 use crate::size::{Point, Size};
-use crate::{EventCapturedStatus, WidgetID, WidgetRequests};
+use crate::WidgetRequests;
 use std::cmp::Ordering;
 use std::error::Error;
 use std::fmt;
 use std::hash::Hash;
 
 mod region_tree;
+use region_tree::RegionTree;
 pub use region_tree::{ContainerRegionID, ParentAnchorType};
-use region_tree::{RegionTree, SharedRegionTreeEntry};
 
 /// The unique identifier for a layer.
 #[derive(Debug, Clone, Copy)]
@@ -55,99 +55,24 @@ impl Hash for LayerID {
     }
 }
 
-struct RegionMouseState<MSG> {
-    widget_id: WidgetID,
-    widget: SharedWidgetEntry<MSG>,
-    region: SharedRegionTreeEntry,
-}
-
-/// A set of widgets optimized for iteration.
-struct WidgetRegionSet<MSG> {
-    set: FnvHashSet<WidgetID>,
-    entries: Vec<RegionMouseState<MSG>>,
-}
-
-impl<MSG> WidgetRegionSet<MSG> {
-    fn new() -> Self {
-        Self {
-            set: FnvHashSet::default(),
-            entries: Vec::new(),
-        }
-    }
-
-    fn insert(
-        &mut self,
-        id: WidgetID,
-        widget_entry: SharedWidgetEntry<MSG>,
-        region_entry: SharedRegionTreeEntry,
-    ) {
-        if self.set.insert(id) {
-            self.entries.push(RegionMouseState {
-                widget_id: id,
-                widget: widget_entry,
-                region: region_entry,
-            });
-        } else {
-            for entry in self.entries.iter_mut() {
-                if entry.widget_id == id {
-                    entry.widget = widget_entry;
-                    entry.region = region_entry;
-                    break;
-                }
-            }
-        }
-    }
-
-    fn remove(&mut self, id: WidgetID) {
-        if self.set.remove(&id) {
-            let mut remove_i = None;
-            for (i, entry) in self.entries.iter().enumerate() {
-                if entry.widget_id == id {
-                    remove_i = Some(i);
-                    break;
-                }
-            }
-            if let Some(i) = remove_i {
-                self.entries.remove(i);
-            }
-        }
-    }
-}
-
 pub(crate) struct Layer<MSG> {
     pub id: LayerID,
 
-    region_tree: RegionTree,
+    region_tree: RegionTree<MSG>,
     position: Point,
 
     size: Size,
-    min_size: Option<Size>,
-    max_size: Option<Size>,
-
-    widgets_with_mouse_listen: WidgetRegionSet<MSG>,
 
     visible: bool,
 }
 
 impl<MSG> Layer<MSG> {
-    pub fn new(
-        id: LayerID,
-        size: Size,
-        min_size: Option<Size>,
-        max_size: Option<Size>,
-        position: Point,
-    ) -> Result<Self, LayerError> {
-        Self::check_min_max_size(min_size, max_size)?;
-        let size = Self::clamp_size(size, min_size, max_size);
-
+    pub fn new(id: LayerID, size: Size, position: Point) -> Result<Self, LayerError> {
         Ok(Self {
             id,
             region_tree: RegionTree::new(size),
             position,
-            size: size,
-            min_size,
-            max_size,
-            widgets_with_mouse_listen: WidgetRegionSet::new(),
+            size,
             visible: true,
         })
     }
@@ -156,23 +81,24 @@ impl<MSG> Layer<MSG> {
         self.position = position;
     }
 
-    pub fn set_visible(&mut self, visible: bool) {
-        self.visible = visible;
+    pub fn set_visible(&mut self, visible: bool, dirty_layers: &mut FnvHashSet<LayerID>) {
+        if self.visible != visible {
+            self.visible = visible;
+            dirty_layers.insert(self.id);
+
+            if visible {
+                self.region_tree.layer_just_shown();
+            } else {
+                self.region_tree.layer_just_hidden();
+            }
+        }
     }
 
-    pub fn modify(
+    pub fn set_size(
         &mut self,
-        new_size: Option<Size>,
-        new_min_size: Option<Size>,
-        new_max_size: Option<Size>,
+        size: Size,
         dirty_layers: &mut FnvHashSet<LayerID>,
     ) -> Result<(), LayerError> {
-        Self::check_min_max_size(new_min_size, new_max_size)?;
-        self.min_size = new_min_size;
-        self.max_size = new_max_size;
-
-        let size = Self::clamp_size(new_size.unwrap_or(self.size), new_min_size, new_max_size);
-
         if self.size != size {
             self.size = size;
             self.region_tree.set_layer_size(size);
@@ -189,6 +115,7 @@ impl<MSG> Layer<MSG> {
         parent_anchor: Anchor,
         parent_anchor_type: ParentAnchorType,
         anchor_offset: Point,
+        visible: bool,
     ) -> Result<ContainerRegionID, ()> {
         self.region_tree.new_container_region(
             size,
@@ -196,6 +123,7 @@ impl<MSG> Layer<MSG> {
             parent_anchor,
             parent_anchor_type,
             anchor_offset,
+            visible,
         )
     }
 
@@ -237,6 +165,22 @@ impl<MSG> Layer<MSG> {
         Ok(())
     }
 
+    pub fn set_container_region_visibility(
+        &mut self,
+        id: ContainerRegionID,
+        visible: bool,
+        dirty_layers: &mut FnvHashSet<LayerID>,
+    ) -> Result<(), ()> {
+        self.region_tree
+            .set_container_region_visibility(id, visible)?;
+
+        if self.region_tree.is_dirty() {
+            dirty_layers.insert(self.id);
+        }
+
+        Ok(())
+    }
+
     pub fn mark_container_region_dirty(
         &mut self,
         id: ContainerRegionID,
@@ -251,10 +195,84 @@ impl<MSG> Layer<MSG> {
         Ok(())
     }
 
+    pub fn insert_widget_region(
+        &mut self,
+        assigned_widget: StrongWidgetEntry<MSG>,
+        size: Size,
+        internal_anchor: Anchor,
+        parent_anchor: Anchor,
+        parent_anchor_type: ParentAnchorType,
+        anchor_offset: Point,
+        listens_to_mouse_events: bool,
+        visible: bool,
+        dirty_layers: &mut FnvHashSet<LayerID>,
+    ) -> Result<(), ()> {
+        self.region_tree.insert_widget_region(
+            assigned_widget,
+            size,
+            internal_anchor,
+            parent_anchor,
+            parent_anchor_type,
+            anchor_offset,
+            listens_to_mouse_events,
+            visible,
+        )?;
+
+        if self.region_tree.is_dirty() {
+            dirty_layers.insert(self.id);
+        }
+
+        Ok(())
+    }
+
+    pub fn remove_widget_region(
+        &mut self,
+        widget: &WidgetRef<MSG>,
+        dirty_layers: &mut FnvHashSet<LayerID>,
+    ) -> Result<(), ()> {
+        self.region_tree.remove_widget_region(widget)?;
+
+        if self.region_tree.is_dirty() {
+            dirty_layers.insert(self.id);
+        }
+
+        Ok(())
+    }
+
+    pub fn set_widget_region_visibility(
+        &mut self,
+        widget: &WidgetRef<MSG>,
+        visible: bool,
+        dirty_layers: &mut FnvHashSet<LayerID>,
+    ) -> Result<(), ()> {
+        self.region_tree
+            .set_widget_region_visibility(widget, visible)?;
+
+        if self.region_tree.is_dirty() {
+            dirty_layers.insert(self.id);
+        }
+
+        Ok(())
+    }
+
+    pub fn mark_widget_region_dirty(
+        &mut self,
+        widget: &WidgetRef<MSG>,
+        dirty_layers: &mut FnvHashSet<LayerID>,
+    ) -> Result<(), ()> {
+        self.region_tree.mark_widget_region_dirty(widget)?;
+
+        if self.region_tree.is_dirty() {
+            dirty_layers.insert(self.id);
+        }
+
+        Ok(())
+    }
+
     pub fn handle_mouse_event(
         &mut self,
         mut event: MouseEvent,
-    ) -> Option<(WidgetID, WidgetRequests<MSG>)> {
+    ) -> Option<(StrongWidgetEntry<MSG>, WidgetRequests<MSG>)> {
         if !self.visible {
             return None;
         }
@@ -271,62 +289,15 @@ impl<MSG> Layer<MSG> {
         event.position -= self.position;
         event.previous_position -= self.position;
 
-        let mut captured = None;
-        for region_mouse_state in self.widgets_with_mouse_listen.entries.iter_mut() {
-            let region_rect = region_mouse_state.region.borrow().rect();
-            if region_rect.contains_point(event.position) {
-                // Remove the region's offset from the position of the mouse event.
-                let temp_position = event.position;
-                let temp_prev_position = event.previous_position;
-                event.position -= region_rect.pos;
-                event.previous_position -= region_rect.pos;
+        event.layer = self.id;
 
-                if let EventCapturedStatus::Captured(requests) = region_mouse_state
-                    .widget
-                    .borrow_mut()
-                    .on_event(&Event::Mouse(event))
-                {
-                    captured = Some((region_mouse_state.widget_id, requests));
-                    break;
-                }
-
-                event.position = temp_position;
-                event.previous_position = temp_prev_position;
-            }
-        }
-
-        captured
-    }
-
-    fn check_min_max_size(
-        min_size: Option<Size>,
-        max_size: Option<Size>,
-    ) -> Result<(), LayerError> {
-        if let Some(min_size) = min_size {
-            if let Some(max_size) = max_size {
-                if min_size.width() > max_size.width() || min_size.height() > max_size.height() {
-                    return Err(LayerError::MinSizeNotLessThanMaxSize { min_size, max_size });
-                }
-            }
-        }
-        Ok(())
-    }
-
-    fn clamp_size(mut size: Size, min_size: Option<Size>, max_size: Option<Size>) -> Size {
-        if let Some(min_size) = min_size {
-            size = size.max(min_size);
-        }
-        if let Some(max_size) = max_size {
-            size = size.min(max_size);
-        }
-        size
+        self.region_tree.handle_mouse_event(event)
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum LayerError {
     LayerWithIDNotFound(LayerID),
-    MinSizeNotLessThanMaxSize { min_size: Size, max_size: Size },
 }
 
 impl Error for LayerError {}
@@ -336,13 +307,6 @@ impl fmt::Display for LayerError {
         match self {
             Self::LayerWithIDNotFound(id) => {
                 write!(f, "Could not find layer with ID {:?}", id)
-            }
-            Self::MinSizeNotLessThanMaxSize { min_size, max_size } => {
-                write!(
-                    f,
-                    "Layer has a minimum size {:?} that is not less than its maximum size {:?}",
-                    min_size, max_size
-                )
             }
         }
     }

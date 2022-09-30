@@ -33,11 +33,11 @@ If you are just looking for a easy-to-use/feature rich UI toolkit in Rust, pleas
 * Widget organization
     * Widgets cannot contain other widgets, nor can they contain references to other widgets. Every widget is solely in charge of its own logic and rendering, and only communicates with (and mutates) the outside world using custom-defined events.
     * There is no "widget tree" or DOM. Every widget is essentially "root level", and you get to organize them in your code however you like.
+    * There are no "panel" widgets. You simply define all backgrounds as a series of rectangles/lines to draw in a single draw pass on a "background" layer, and then the widget layers are blitted on top.
 * Layout system
-    * Layout of widgets is performed solely through a list of anchor points (with offsets to those anchor points). These anchor points are anchored to either the layer itself or to a previous anchor point in the list. No "Flexbox", "margins", or "padding" logic.
+    * Layout of widgets is performed solely through a list of abstract regions with anchor points (with offsets to those anchor points). These anchor points are anchored to either the layer itself or to a previous anchor in the list. No "Flexbox", "margins", or "padding" logic.
     * You can layout anchor points in a row, in a column, or in a grid.
 * Styling & custom drawing
-    * There are no "panel" widgets. You simply define all backgrounds as a series of rectangles/lines to draw in a single draw pass on a "background" layer, and then the widget layers are blitted on top.
     * No pre-determined stylesheets. You can define whatever custom styling system you want for your widgets/application.
     * Has a relatively easy-to-use GPU-accelerated drawing API provided by [nanovg](https://github.com/inniyah/nanovg).
     * Widgets may also use custom shaders for rendering.

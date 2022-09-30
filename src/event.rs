@@ -7,16 +7,13 @@ pub use keyboard_types::{
 };
 
 pub enum Event<MSG> {
-    User(MSG),
+    User(Box<MSG>),
     Animation(AnimationEvent),
     Mouse(MouseEvent),
     LockedMouse(LockedMouseEvent),
     Keyboard(KeyboardEvent),
     TextComposition(CompositionEvent),
-    DrawRegionModified(DrawRegionModifiedEvent),
-    Visibility { is_visible: bool },
-    WidgetAdded,
-    WidgetRemoved,
+    VisibilityChanged { visible: bool },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,6 +26,7 @@ pub enum MouseButtonState {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MouseEvent {
+    pub layer: LayerID,
     pub position: Point,
     pub previous_position: Point,
     pub left_button: MouseButtonState,
