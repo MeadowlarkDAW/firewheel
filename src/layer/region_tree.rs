@@ -1,4 +1,4 @@
-use crate::canvas::{StrongWidgetEntry, WidgetRef};
+use crate::canvas::StrongWidgetEntry;
 use crate::event::{Event, MouseEvent};
 use crate::{
     Anchor, EventCapturedStatus, HAlign, Point, Rect, Size, VAlign, WidgetRegionType,
@@ -20,9 +20,9 @@ pub struct RegionInfo {
 
 pub(crate) struct RegionTree<MSG> {
     next_region_id: u64,
-    entries: FnvHashMap<u64, StrongRegionTreeEntry<MSG>>,
     roots: Vec<StrongRegionTreeEntry<MSG>>,
     widget_id_to_assigned_region: FnvHashMap<u64, StrongRegionTreeEntry<MSG>>,
+    container_id_to_assigned_region: FnvHashMap<u64, StrongRegionTreeEntry<MSG>>,
     dirty_regions: FnvHashSet<u64>,
     clear_rects: Vec<Rect>,
     widgets_just_shown: FnvHashSet<u64>,
@@ -34,9 +34,9 @@ impl<MSG> RegionTree<MSG> {
     pub fn new(layer_size: Size) -> Self {
         Self {
             next_region_id: 0,
-            entries: FnvHashMap::default(),
             roots: Vec::new(),
             widget_id_to_assigned_region: FnvHashMap::default(),
+            container_id_to_assigned_region: FnvHashMap::default(),
             dirty_regions: FnvHashSet::default(),
             clear_rects: Vec::new(),
             widgets_just_shown: FnvHashSet::default(),
@@ -88,7 +88,9 @@ impl<MSG> RegionTree<MSG> {
                 }
             }
             ParentAnchorType::ContainerRegion(id) => {
-                let parent_rect = if let Some(parent_entry) = self.entries.get_mut(&id.0) {
+                let parent_rect = if let Some(parent_entry) =
+                    self.container_id_to_assigned_region.get_mut(&id.0)
+                {
                     let parent_rect = {
                         let mut parent_entry_ref = parent_entry.borrow_mut();
                         if let Some(children) = &mut parent_entry_ref.children {
@@ -118,11 +120,17 @@ impl<MSG> RegionTree<MSG> {
             )
         }
 
+        self.container_id_to_assigned_region
+            .insert(new_id.0, new_entry);
+
         Ok(new_id)
     }
 
     pub fn remove_container_region(&mut self, id: ContainerRegionID) -> Result<(), ()> {
-        let mut entry = self.entries.remove(&id.0).ok_or_else(|| ())?;
+        let mut entry = self
+            .container_id_to_assigned_region
+            .remove(&id.0)
+            .ok_or_else(|| ())?;
         let mut entry_ref = entry.borrow_mut();
 
         if let Some(children) = &entry_ref.children {
@@ -177,7 +185,11 @@ impl<MSG> RegionTree<MSG> {
         new_parent_anchor: Option<Anchor>,
         new_anchor_offset: Option<Point>,
     ) -> Result<(), ()> {
-        let mut entry_ref = self.entries.get_mut(&id.0).ok_or_else(|| ())?.borrow_mut();
+        let mut entry_ref = self
+            .container_id_to_assigned_region
+            .get_mut(&id.0)
+            .ok_or_else(|| ())?
+            .borrow_mut();
 
         if entry_ref.children.is_none() {
             panic!("region was not a container region");
@@ -196,7 +208,11 @@ impl<MSG> RegionTree<MSG> {
     }
 
     pub fn mark_container_region_dirty(&mut self, id: ContainerRegionID) -> Result<(), ()> {
-        let mut entry_ref = self.entries.get_mut(&id.0).ok_or_else(|| ())?.borrow_mut();
+        let mut entry_ref = self
+            .container_id_to_assigned_region
+            .get_mut(&id.0)
+            .ok_or_else(|| ())?
+            .borrow_mut();
 
         if entry_ref.children.is_none() {
             panic!("region was not a container region");
@@ -205,32 +221,16 @@ impl<MSG> RegionTree<MSG> {
         Ok(entry_ref.mark_dirty(&mut self.dirty_regions, &mut self.clear_rects, None))
     }
 
-    pub fn layer_just_shown(&mut self) {
-        for entry in self.roots.iter_mut() {
-            entry.borrow_mut().mark_dirty(
-                &mut self.dirty_regions,
-                &mut self.clear_rects,
-                Some(&mut self.widgets_just_shown),
-            );
-        }
-    }
-
-    pub fn layer_just_hidden(&mut self) {
-        for entry in self.roots.iter_mut() {
-            entry.borrow_mut().set_just_hidden(
-                &mut self.dirty_regions,
-                &mut self.clear_rects,
-                &mut self.widgets_just_hidden,
-            );
-        }
-    }
-
     pub fn set_container_region_visibility(
         &mut self,
         id: ContainerRegionID,
         visible: bool,
     ) -> Result<(), ()> {
-        let mut entry_ref = self.entries.get_mut(&id.0).ok_or_else(|| ())?.borrow_mut();
+        let mut entry_ref = self
+            .container_id_to_assigned_region
+            .get_mut(&id.0)
+            .ok_or_else(|| ())?
+            .borrow_mut();
 
         if entry_ref.children.is_none() {
             panic!("region was not a container region");
@@ -247,7 +247,7 @@ impl<MSG> RegionTree<MSG> {
 
     pub fn add_widget_region(
         &mut self,
-        assigned_widget: StrongWidgetEntry<MSG>,
+        assigned_widget: &mut StrongWidgetEntry<MSG>,
         region_info: RegionInfo,
         listens_to_mouse_events: bool,
         region_type: WidgetRegionType,
@@ -289,6 +289,8 @@ impl<MSG> RegionTree<MSG> {
             region_id: new_id.0,
         };
 
+        assigned_widget.set_assigned_region(entry.downgrade());
+
         let parent_rect = match region_info.parent_anchor_type {
             ParentAnchorType::Layer => {
                 self.roots.push(entry.clone());
@@ -299,7 +301,9 @@ impl<MSG> RegionTree<MSG> {
                 }
             }
             ParentAnchorType::ContainerRegion(id) => {
-                let parent_rect = if let Some(parent_entry) = self.entries.get_mut(&id.0) {
+                let parent_rect = if let Some(parent_entry) =
+                    self.container_id_to_assigned_region.get_mut(&id.0)
+                {
                     let parent_rect = {
                         let mut parent_entry_ref = parent_entry.borrow_mut();
                         if let Some(children) = &mut parent_entry_ref.children {
@@ -322,16 +326,26 @@ impl<MSG> RegionTree<MSG> {
             }
         };
 
+        self.widget_id_to_assigned_region
+            .insert(assigned_widget.unique_id(), entry.clone());
+
         {
-            entry.borrow_mut().update_parent_rect(
+            let weak_entry = entry.downgrade();
+            let mut entry_ref = entry.borrow_mut();
+
+            entry_ref
+                .assigned_widget
+                .as_mut()
+                .unwrap()
+                .widget
+                .set_assigned_region(weak_entry);
+
+            entry_ref.update_parent_rect(
                 parent_rect,
                 &mut self.dirty_regions,
                 &mut self.clear_rects,
             );
         }
-
-        self.widget_id_to_assigned_region
-            .insert(assigned_widget.unique_id(), entry);
 
         Ok(())
     }
@@ -397,70 +411,62 @@ impl<MSG> RegionTree<MSG> {
 
     pub fn modify_widget_region(
         &mut self,
-        widget: &StrongWidgetEntry<MSG>,
+        widget: &mut StrongWidgetEntry<MSG>,
         new_size: Option<Size>,
         new_internal_anchor: Option<Anchor>,
         new_parent_anchor: Option<Anchor>,
         new_anchor_offset: Option<Point>,
     ) -> Result<(), ()> {
-        let mut entry_ref = self
-            .widget_id_to_assigned_region
-            .get_mut(&widget.unique_id())
+        widget
+            .assigned_region_mut()
+            .upgrade()
             .ok_or_else(|| ())?
-            .borrow_mut();
-
-        if entry_ref.children.is_some() {
-            panic!("region was not a widget region");
-        }
-
-        entry_ref.modify(
-            new_size,
-            new_internal_anchor,
-            new_parent_anchor,
-            new_anchor_offset,
-            &mut self.dirty_regions,
-            &mut self.clear_rects,
-        );
+            .borrow_mut()
+            .modify(
+                new_size,
+                new_internal_anchor,
+                new_parent_anchor,
+                new_anchor_offset,
+                &mut self.dirty_regions,
+                &mut self.clear_rects,
+            );
 
         Ok(())
     }
 
-    pub fn mark_widget_region_dirty(&mut self, widget: &StrongWidgetEntry<MSG>) -> Result<(), ()> {
-        let mut entry_ref = self
-            .widget_id_to_assigned_region
-            .get_mut(&widget.unique_id())
+    pub fn mark_widget_region_dirty(
+        &mut self,
+        widget: &mut StrongWidgetEntry<MSG>,
+    ) -> Result<(), ()> {
+        widget
+            .assigned_region_mut()
+            .upgrade()
             .ok_or_else(|| ())?
-            .borrow_mut();
+            .borrow_mut()
+            .mark_dirty(&mut self.dirty_regions, &mut self.clear_rects, None);
 
-        if entry_ref.children.is_some() {
-            panic!("region was not a widget region");
-        }
-
-        Ok(entry_ref.mark_dirty(&mut self.dirty_regions, &mut self.clear_rects, None))
+        Ok(())
     }
 
     pub fn set_widget_region_visibility(
         &mut self,
-        widget: &WidgetRef<MSG>,
+        widget: &mut StrongWidgetEntry<MSG>,
         visible: bool,
     ) -> Result<(), ()> {
-        let mut entry_ref = self
-            .widget_id_to_assigned_region
-            .get_mut(&widget.unique_id())
+        widget
+            .assigned_region_mut()
+            .upgrade()
             .ok_or_else(|| ())?
-            .borrow_mut();
+            .borrow_mut()
+            .set_visibilty(
+                visible,
+                &mut self.dirty_regions,
+                &mut self.clear_rects,
+                &mut self.widgets_just_shown,
+                &mut self.widgets_just_hidden,
+            );
 
-        if entry_ref.children.is_some() {
-            panic!("region was not a widget region");
-        }
-
-        Ok(entry_ref.set_visibilty(
-            visible,
-            &mut self.dirty_regions,
-            &mut self.clear_rects,
-            &mut self.widgets_just_shown,
-            &mut self.widgets_just_hidden,
-        ))
+        Ok(())
     }
 
     pub fn set_layer_size(&mut self, size: Size) {
@@ -479,6 +485,26 @@ impl<MSG> RegionTree<MSG> {
                 new_rect,
                 &mut self.dirty_regions,
                 &mut self.clear_rects,
+            );
+        }
+    }
+
+    pub fn layer_just_shown(&mut self) {
+        for entry in self.roots.iter_mut() {
+            entry.borrow_mut().mark_dirty(
+                &mut self.dirty_regions,
+                &mut self.clear_rects,
+                Some(&mut self.widgets_just_shown),
+            );
+        }
+    }
+
+    pub fn layer_just_hidden(&mut self) {
+        for entry in self.roots.iter_mut() {
+            entry.borrow_mut().set_just_hidden(
+                &mut self.dirty_regions,
+                &mut self.clear_rects,
+                &mut self.widgets_just_hidden,
             );
         }
     }
@@ -549,6 +575,13 @@ pub(crate) struct WeakRegionTreeEntry<MSG> {
 }
 
 impl<MSG> WeakRegionTreeEntry<MSG> {
+    pub fn new() -> Self {
+        Self {
+            shared: Weak::new(),
+            region_id: u64::MAX,
+        }
+    }
+
     fn upgrade(&self) -> Option<Rc<RefCell<RegionTreeEntry<MSG>>>> {
         self.shared.upgrade()
     }

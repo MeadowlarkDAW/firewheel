@@ -22,7 +22,7 @@ pub trait Widget<MSG> {
 pub struct WidgetAddedInfo {
     pub region_type: WidgetRegionType,
     pub recieve_next_animation_event: bool,
-    pub listen_to_mouse_events: bool,
+    pub listens_to_mouse_events: bool,
     pub keyboard_events_listen: KeyboardEventsListen,
     pub visible: bool,
 }

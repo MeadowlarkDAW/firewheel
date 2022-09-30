@@ -5,7 +5,7 @@ use std::rc::{Rc, Weak};
 
 use crate::anchor::Anchor;
 use crate::event::KeyboardEventsListen;
-use crate::layer::{Layer, LayerError, LayerID};
+use crate::layer::{Layer, LayerError, LayerID, WeakRegionTreeEntry};
 use crate::widget::{LockMousePointerType, Widget};
 use crate::{ContainerRegionID, ParentAnchorType, Point, RegionInfo, Size};
 
@@ -60,6 +60,7 @@ impl<MSG> Clone for WeakLayerEntry<MSG> {
 pub(crate) struct StrongWidgetEntry<MSG> {
     shared: Rc<RefCell<Box<dyn Widget<MSG>>>>,
     assigned_layer: WeakLayerEntry<MSG>,
+    assigned_region: WeakRegionTreeEntry<MSG>,
     unique_id: u64,
 }
 
@@ -77,6 +78,14 @@ impl<MSG> StrongWidgetEntry<MSG> {
     pub fn unique_id(&self) -> u64 {
         self.unique_id
     }
+
+    pub fn set_assigned_region(&mut self, region: WeakRegionTreeEntry<MSG>) {
+        self.assigned_region = region;
+    }
+
+    pub fn assigned_region_mut(&mut self) -> &mut WeakRegionTreeEntry<MSG> {
+        &mut self.assigned_region
+    }
 }
 
 impl<MSG> Clone for StrongWidgetEntry<MSG> {
@@ -84,6 +93,7 @@ impl<MSG> Clone for StrongWidgetEntry<MSG> {
         Self {
             shared: Rc::clone(&self.shared),
             assigned_layer: self.assigned_layer.clone(),
+            assigned_region: self.assigned_region.clone(),
             unique_id: self.unique_id,
         }
     }
@@ -407,16 +417,17 @@ impl<MSG> Canvas<MSG> {
             return Err(());
         };
 
-        let widget_entry = StrongWidgetEntry {
+        let mut widget_entry = StrongWidgetEntry {
             shared: Rc::new(RefCell::new(widget)),
             assigned_layer: layer_entry.downgrade(),
+            assigned_region: WeakRegionTreeEntry::new(),
             unique_id: id,
         };
 
         layer_entry.borrow_mut().add_widget_region(
-            widget_entry.clone(),
+            &mut widget_entry,
             region,
-            info.listen_to_mouse_events,
+            info.listens_to_mouse_events,
             info.region_type,
             info.visible,
             &mut self.dirty_layers,
@@ -470,7 +481,7 @@ impl<MSG> Canvas<MSG> {
             .unwrap()
             .borrow_mut()
             .modify_widget_region(
-                &widget_ref.shared,
+                &mut widget_ref.shared,
                 new_size,
                 new_internal_anchor,
                 new_parent_anchor,
@@ -487,7 +498,7 @@ impl<MSG> Canvas<MSG> {
             .upgrade()
             .unwrap()
             .borrow_mut()
-            .set_widget_region_visibility(widget_ref, visible, &mut self.dirty_layers)
+            .set_widget_region_visibility(&mut widget_ref.shared, visible, &mut self.dirty_layers)
             .unwrap();
     }
 

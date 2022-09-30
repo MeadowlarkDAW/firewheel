@@ -1,7 +1,7 @@
 use fnv::FnvHashSet;
 
 use crate::anchor::Anchor;
-use crate::canvas::{StrongWidgetEntry, WidgetRef};
+use crate::canvas::StrongWidgetEntry;
 use crate::event::MouseEvent;
 use crate::size::{Point, Size};
 use crate::{WidgetRegionType, WidgetRequests};
@@ -12,6 +12,7 @@ use std::hash::Hash;
 
 mod region_tree;
 use region_tree::RegionTree;
+pub(crate) use region_tree::WeakRegionTreeEntry;
 pub use region_tree::{ContainerRegionID, ParentAnchorType, RegionInfo};
 
 /// The unique identifier for a layer.
@@ -197,7 +198,7 @@ impl<MSG> Layer<MSG> {
 
     pub fn add_widget_region(
         &mut self,
-        assigned_widget: StrongWidgetEntry<MSG>,
+        assigned_widget: &mut StrongWidgetEntry<MSG>,
         region_info: RegionInfo,
         listens_to_mouse_events: bool,
         region_type: WidgetRegionType,
@@ -233,7 +234,7 @@ impl<MSG> Layer<MSG> {
 
     pub fn modify_widget_region(
         &mut self,
-        widget: &StrongWidgetEntry<MSG>,
+        widget: &mut StrongWidgetEntry<MSG>,
         new_size: Option<Size>,
         new_internal_anchor: Option<Anchor>,
         new_parent_anchor: Option<Anchor>,
@@ -257,7 +258,7 @@ impl<MSG> Layer<MSG> {
 
     pub fn set_widget_region_visibility(
         &mut self,
-        widget: &WidgetRef<MSG>,
+        widget: &mut StrongWidgetEntry<MSG>,
         visible: bool,
         dirty_layers: &mut FnvHashSet<LayerID>,
     ) -> Result<(), ()> {
@@ -273,7 +274,7 @@ impl<MSG> Layer<MSG> {
 
     pub fn mark_widget_region_dirty(
         &mut self,
-        widget: &StrongWidgetEntry<MSG>,
+        widget: &mut StrongWidgetEntry<MSG>,
         dirty_layers: &mut FnvHashSet<LayerID>,
     ) -> Result<(), ()> {
         self.region_tree.mark_widget_region_dirty(widget)?;
