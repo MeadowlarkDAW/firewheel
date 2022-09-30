@@ -1,10 +1,22 @@
 use crate::canvas::{StrongWidgetEntry, WidgetRef};
 use crate::event::{Event, MouseEvent};
-use crate::{Anchor, EventCapturedStatus, HAlign, Point, Rect, Size, VAlign, WidgetRequests};
+use crate::{
+    Anchor, EventCapturedStatus, HAlign, Point, Rect, Size, VAlign, WidgetRegionType,
+    WidgetRequests,
+};
 use fnv::{FnvHashMap, FnvHashSet};
 use std::cell::{Ref, RefCell, RefMut};
 use std::hash::Hash;
 use std::rc::{Rc, Weak};
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RegionInfo {
+    pub size: Size,
+    pub internal_anchor: Anchor,
+    pub parent_anchor: Anchor,
+    pub parent_anchor_type: ParentAnchorType,
+    pub anchor_offset: Point,
+}
 
 pub(crate) struct RegionTree<MSG> {
     next_region_id: u64,
@@ -233,173 +245,121 @@ impl<MSG> RegionTree<MSG> {
         ))
     }
 
-    pub fn insert_widget_region(
+    pub fn add_widget_region(
         &mut self,
         assigned_widget: StrongWidgetEntry<MSG>,
-        size: Size,
-        internal_anchor: Anchor,
-        parent_anchor: Anchor,
-        parent_anchor_type: ParentAnchorType,
-        anchor_offset: Point,
+        region_info: RegionInfo,
         listens_to_mouse_events: bool,
+        region_type: WidgetRegionType,
         visible: bool,
     ) -> Result<(), ()> {
-        let mut is_new_insert = false;
-        let entry = self
+        if self
             .widget_id_to_assigned_region
-            .entry(assigned_widget.unique_id())
-            .or_insert_with(|| {
-                is_new_insert = true;
-
-                let new_id = ContainerRegionID(self.next_region_id);
-                self.next_region_id += 1;
-
-                StrongRegionTreeEntry {
-                    shared: Rc::new(RefCell::new(RegionTreeEntry {
-                        region: Region {
-                            id: new_id.0,
-                            size,
-                            internal_anchor,
-                            parent_anchor,
-                            parent_anchor_type,
-                            anchor_offset,
-                            rect: Rect::default(), // This will be overwritten
-                            parent_rect: Rect::default(), // This will be overwritten
-                            last_rendered_rect: None,
-                            is_container: true,
-                            visible,
-                        },
-                        parent: None,
-                        children: None,
-                        assigned_widget: Some(RegionAssignedWidget {
-                            widget: assigned_widget,
-                            listens_to_mouse_events,
-                        }),
-                    })),
-                    region_id: new_id.0,
-                }
-            });
-
-        let mut entry_ref = entry.shared.borrow_mut();
-        let mut add_to_new_parent = is_new_insert;
-        if !is_new_insert {
-            entry_ref
-                .assigned_widget
-                .as_mut()
-                .unwrap()
-                .listens_to_mouse_events = listens_to_mouse_events;
-
-            if entry_ref.region.parent_anchor_type != parent_anchor_type {
-                add_to_new_parent = true;
-                entry_ref.region.parent_anchor_type = parent_anchor_type;
-
-                // Remove this child entry from its old parent.
-                if let Some(old_parent_entry) = entry_ref.parent.take() {
-                    let old_parent_entry = old_parent_entry.upgrade().unwrap();
-                    let mut old_parent_entry = old_parent_entry.borrow_mut();
-
-                    if let Some(children) = &mut old_parent_entry.children {
-                        let mut remove_i = None;
-                        for (i, e) in children.iter().enumerate() {
-                            if e.region_id == entry.region_id {
-                                remove_i = Some(i);
-                                break;
-                            }
-                        }
-                        if let Some(i) = remove_i {
-                            children.remove(i);
-                        }
-                    } else {
-                        panic!("parent region was not a container region");
-                    }
-                } else {
-                    // This entry had no parent, so remove it from the root entries instead.
-                    let mut remove_i = None;
-                    for (i, e) in self.roots.iter().enumerate() {
-                        if e.region_id == entry.region_id {
-                            remove_i = Some(i);
-                            break;
-                        }
-                    }
-                    if let Some(i) = remove_i {
-                        self.roots.remove(i);
-                    }
-                }
-            }
-
-            entry_ref.set_visibilty(
-                visible,
-                &mut self.dirty_regions,
-                &mut self.clear_rects,
-                &mut self.widgets_just_shown,
-                &mut self.widgets_just_hidden,
-            );
-
-            entry_ref.modify(
-                Some(size),
-                Some(internal_anchor),
-                Some(parent_anchor),
-                Some(anchor_offset),
-                &mut self.dirty_regions,
-                &mut self.clear_rects,
-            );
+            .contains_key(&assigned_widget.unique_id())
+        {
+            return Err(());
         }
 
-        if add_to_new_parent {
-            let parent_rect = match parent_anchor_type {
-                ParentAnchorType::Layer => {
-                    self.roots.push(entry.clone());
+        let new_id = ContainerRegionID(self.next_region_id);
+        self.next_region_id += 1;
 
-                    Rect {
-                        pos: Point { x: 0.0, y: 0.0 },
-                        size: self.layer_size,
-                    }
+        let mut entry = StrongRegionTreeEntry {
+            shared: Rc::new(RefCell::new(RegionTreeEntry {
+                region: Region {
+                    id: new_id.0,
+                    size: region_info.size,
+                    internal_anchor: region_info.internal_anchor,
+                    parent_anchor: region_info.parent_anchor,
+                    parent_anchor_type: region_info.parent_anchor_type,
+                    anchor_offset: region_info.anchor_offset,
+                    rect: Rect::default(),        // This will be overwritten
+                    parent_rect: Rect::default(), // This will be overwritten
+                    last_rendered_rect: None,
+                    is_container: true,
+                    visible,
+                },
+                parent: None,
+                children: None,
+                assigned_widget: Some(RegionAssignedWidget {
+                    widget: assigned_widget.clone(),
+                    listens_to_mouse_events,
+                    region_type,
+                }),
+            })),
+            region_id: new_id.0,
+        };
+
+        let parent_rect = match region_info.parent_anchor_type {
+            ParentAnchorType::Layer => {
+                self.roots.push(entry.clone());
+
+                Rect {
+                    pos: Point { x: 0.0, y: 0.0 },
+                    size: self.layer_size,
                 }
-                ParentAnchorType::ContainerRegion(id) => {
-                    let parent_rect = if let Some(parent_entry) = self.entries.get_mut(&id.0) {
-                        let parent_rect = {
-                            let mut parent_entry_ref = parent_entry.borrow_mut();
-                            if let Some(children) = &mut parent_entry_ref.children {
-                                children.push(entry.clone());
-                            } else {
-                                panic!("Parent region is not a container region");
-                            }
-                            parent_entry_ref.region.rect
-                        };
-                        {
-                            entry_ref.parent = Some(parent_entry.downgrade());
+            }
+            ParentAnchorType::ContainerRegion(id) => {
+                let parent_rect = if let Some(parent_entry) = self.entries.get_mut(&id.0) {
+                    let parent_rect = {
+                        let mut parent_entry_ref = parent_entry.borrow_mut();
+                        if let Some(children) = &mut parent_entry_ref.children {
+                            children.push(entry.clone());
+                        } else {
+                            panic!("Parent region is not a container region");
                         }
-
-                        parent_rect
-                    } else {
-                        return Err(());
+                        parent_entry_ref.region.rect
                     };
+                    {
+                        entry.borrow_mut().parent = Some(parent_entry.downgrade());
+                    }
 
                     parent_rect
-                }
-            };
+                } else {
+                    return Err(());
+                };
 
-            entry_ref.update_parent_rect(
+                parent_rect
+            }
+        };
+
+        {
+            entry.borrow_mut().update_parent_rect(
                 parent_rect,
                 &mut self.dirty_regions,
                 &mut self.clear_rects,
-            )
+            );
         }
+
+        self.widget_id_to_assigned_region
+            .insert(assigned_widget.unique_id(), entry);
 
         Ok(())
     }
 
-    pub fn remove_widget_region(&mut self, widget: &WidgetRef<MSG>) -> Result<(), ()> {
-        let mut entry = self
+    pub fn remove_widget_region(&mut self, widget: &StrongWidgetEntry<MSG>) {
+        let mut entry = if let Some(entry) = self
             .widget_id_to_assigned_region
             .remove(&widget.unique_id())
-            .ok_or_else(|| ())?;
+        {
+            entry
+        } else {
+            return;
+        };
+
         let entry_region_id = entry.region_id;
         let mut entry_ref = entry.borrow_mut();
 
         if entry_ref.children.is_some() {
             panic!("region was not a widget region");
         }
+
+        self.dirty_regions.remove(&entry_ref.region.id);
+        if let Some(rect) = entry_ref.region.last_rendered_rect.take() {
+            self.clear_rects.push(rect);
+        }
+
+        self.widgets_just_shown.remove(&widget.unique_id());
+        self.widgets_just_hidden.remove(&widget.unique_id());
 
         // Remove this child entry from its parent.
         if let Some(parent_entry) = entry_ref.parent.take() {
@@ -433,11 +393,39 @@ impl<MSG> RegionTree<MSG> {
                 self.roots.remove(i);
             }
         }
+    }
+
+    pub fn modify_widget_region(
+        &mut self,
+        widget: &StrongWidgetEntry<MSG>,
+        new_size: Option<Size>,
+        new_internal_anchor: Option<Anchor>,
+        new_parent_anchor: Option<Anchor>,
+        new_anchor_offset: Option<Point>,
+    ) -> Result<(), ()> {
+        let mut entry_ref = self
+            .widget_id_to_assigned_region
+            .get_mut(&widget.unique_id())
+            .ok_or_else(|| ())?
+            .borrow_mut();
+
+        if entry_ref.children.is_some() {
+            panic!("region was not a widget region");
+        }
+
+        entry_ref.modify(
+            new_size,
+            new_internal_anchor,
+            new_parent_anchor,
+            new_anchor_offset,
+            &mut self.dirty_regions,
+            &mut self.clear_rects,
+        );
 
         Ok(())
     }
 
-    pub fn mark_widget_region_dirty(&mut self, widget: &WidgetRef<MSG>) -> Result<(), ()> {
+    pub fn mark_widget_region_dirty(&mut self, widget: &StrongWidgetEntry<MSG>) -> Result<(), ()> {
         let mut entry_ref = self
             .widget_id_to_assigned_region
             .get_mut(&widget.unique_id())
@@ -499,12 +487,17 @@ impl<MSG> RegionTree<MSG> {
         !self.dirty_regions.is_empty() || !self.clear_rects.is_empty()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.roots.is_empty()
+    }
+
     pub fn handle_mouse_event(
         &mut self,
         event: MouseEvent,
-    ) -> Option<(StrongWidgetEntry<MSG>, WidgetRequests<MSG>)> {
+        msg_out_queue: &mut Vec<MSG>,
+    ) -> Option<(StrongWidgetEntry<MSG>, WidgetRequests)> {
         for region in self.roots.iter_mut() {
-            match region.borrow_mut().handle_mouse_event(event) {
+            match region.borrow_mut().handle_mouse_event(event, msg_out_queue) {
                 MouseCapturedStatus::Captured { widget, requests } => {
                     return Some((widget, requests));
                 }
@@ -573,7 +566,7 @@ impl<MSG> Clone for WeakRegionTreeEntry<MSG> {
 enum MouseCapturedStatus<MSG> {
     Captured {
         widget: StrongWidgetEntry<MSG>,
-        requests: WidgetRequests<MSG>,
+        requests: WidgetRequests,
     },
     InRegionButNotCaptured,
     NotInRegion,
@@ -582,6 +575,7 @@ enum MouseCapturedStatus<MSG> {
 struct RegionAssignedWidget<MSG> {
     widget: StrongWidgetEntry<MSG>,
     listens_to_mouse_events: bool,
+    region_type: WidgetRegionType,
 }
 
 pub(super) struct RegionTreeEntry<MSG> {
@@ -592,7 +586,11 @@ pub(super) struct RegionTreeEntry<MSG> {
 }
 
 impl<MSG> RegionTreeEntry<MSG> {
-    fn handle_mouse_event(&mut self, mut event: MouseEvent) -> MouseCapturedStatus<MSG> {
+    fn handle_mouse_event(
+        &mut self,
+        mut event: MouseEvent,
+        msg_out_queue: &mut Vec<MSG>,
+    ) -> MouseCapturedStatus<MSG> {
         if self.region.visible {
             if self.region.rect.contains_point(event.position) {
                 if let Some(assigned_widget) = &mut self.assigned_widget {
@@ -607,7 +605,7 @@ impl<MSG> RegionTreeEntry<MSG> {
                             assigned_widget
                                 .widget
                                 .borrow_mut()
-                                .on_event(&Event::Mouse(event))
+                                .on_event(&Event::Mouse(event), msg_out_queue)
                         };
                         let status = if let EventCapturedStatus::Captured(requests) = status {
                             MouseCapturedStatus::Captured {
@@ -625,7 +623,10 @@ impl<MSG> RegionTreeEntry<MSG> {
                     }
                 } else if let Some(children) = &mut self.children {
                     for child_region in children.iter_mut() {
-                        match child_region.borrow_mut().handle_mouse_event(event) {
+                        match child_region
+                            .borrow_mut()
+                            .handle_mouse_event(event, msg_out_queue)
+                        {
                             MouseCapturedStatus::Captured { widget, requests } => {
                                 return MouseCapturedStatus::Captured { widget, requests };
                             }
@@ -760,14 +761,18 @@ impl<MSG> RegionTreeEntry<MSG> {
                             .mark_dirty(dirty_regions, clear_rects, None);
                     }
                 }
-            } else if let Some(widgets_just_shown) = widgets_just_shown {
-                widgets_just_shown
-                    .insert(self.assigned_widget.as_ref().unwrap().widget.unique_id());
-            }
+            } else {
+                let assigned_widget_info = self.assigned_widget.as_ref().unwrap();
 
-            if dirty_regions.insert(self.region.id) {
-                if let Some(rect) = self.region.last_rendered_rect {
-                    clear_rects.push(rect);
+                if let Some(widgets_just_shown) = widgets_just_shown {
+                    widgets_just_shown.insert(assigned_widget_info.widget.unique_id());
+                }
+
+                if let WidgetRegionType::Painted = assigned_widget_info.region_type {
+                    dirty_regions.insert(self.region.id);
+                    if let Some(rect) = self.region.last_rendered_rect.take() {
+                        clear_rects.push(rect);
+                    }
                 }
             }
         }
@@ -790,7 +795,7 @@ impl<MSG> RegionTreeEntry<MSG> {
                 }
             } else {
                 dirty_regions.remove(&self.region.id);
-                if let Some(rect) = self.region.last_rendered_rect {
+                if let Some(rect) = self.region.last_rendered_rect.take() {
                     clear_rects.push(rect);
                 }
             }
@@ -804,8 +809,8 @@ pub struct ContainerRegionID(u64);
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Region {
     pub id: u64,
-    pub size: Size,
     pub rect: Rect,
+    pub size: Size,
     pub internal_anchor: Anchor,
     pub parent_anchor: Anchor,
     pub parent_anchor_type: ParentAnchorType,

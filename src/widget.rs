@@ -1,69 +1,60 @@
-use smallvec::SmallVec;
-
 use crate::event::{Event, KeyboardEventsListen};
-use crate::layer::LayerID;
-use crate::ParentAnchorType;
-use crate::{Anchor, Point, Size};
 
-pub struct WidgetDrawRegionInfo {
-    pub layer: LayerID,
-    pub size: Size,
-    pub internal_anchor: Anchor,
-    pub parent_anchor: Anchor,
-    pub parent_anchor_type: ParentAnchorType,
-    pub anchor_offset: Point,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WidgetRegionType {
+    /// This widget paints stuff into this region.
+    Painted,
+    /// This widget does not paint anything into this region,
+    /// rather it only uses this region for mouse events.
+    MouseOnly,
 }
 
 pub trait Widget<MSG> {
-    fn on_added(&mut self) -> WidgetAddedInfo<MSG>;
-    fn on_removed(&mut self) -> SmallVec<[Box<MSG>; 4]> {
-        SmallVec::new()
-    }
+    fn on_added(&mut self, msg_out_queue: &mut Vec<MSG>) -> WidgetAddedInfo;
 
-    fn on_event(&mut self, event: &Event<MSG>) -> EventCapturedStatus<MSG>;
+    #[allow(unused)]
+    fn on_removed(&mut self, msg_out_queue: &mut Vec<MSG>) {}
+
+    fn on_event(&mut self, event: &Event<MSG>, msg_out_queue: &mut Vec<MSG>)
+        -> EventCapturedStatus;
 }
 
-pub struct WidgetAddedInfo<MSG> {
-    pub draw_regions: SmallVec<[WidgetDrawRegionInfo; 4]>,
+pub struct WidgetAddedInfo {
+    pub region_type: WidgetRegionType,
     pub recieve_next_animation_event: bool,
     pub listen_to_mouse_events: bool,
     pub keyboard_events_listen: KeyboardEventsListen,
-    pub send_user_events: SmallVec<[Box<MSG>; 4]>,
     pub visible: bool,
 }
 
-pub struct WidgetRequests<MSG> {
-    pub repaint_regions: SmallVec<[LayerID; 4]>,
+pub struct WidgetRequests {
+    pub repaint: bool,
     pub recieve_next_animation_event: bool,
     pub set_mouse_events_listen: Option<bool>,
     pub set_keyboard_events_listen: Option<KeyboardEventsListen>,
     pub set_visibilty: Option<bool>,
-    pub set_draw_regions: Option<SmallVec<[WidgetDrawRegionInfo; 4]>>,
-    pub send_user_events: SmallVec<[Box<MSG>; 4]>,
     pub lock_mouse_pointer: Option<LockMousePointerType>,
 }
 
-impl<MSG> Default for WidgetRequests<MSG> {
+impl Default for WidgetRequests {
     fn default() -> Self {
         Self {
-            repaint_regions: SmallVec::new(),
+            repaint: false,
             recieve_next_animation_event: false,
             set_mouse_events_listen: None,
             set_keyboard_events_listen: None,
             set_visibilty: None,
-            set_draw_regions: None,
-            send_user_events: SmallVec::new(),
             lock_mouse_pointer: None,
         }
     }
 }
 
-pub enum EventCapturedStatus<MSG> {
+pub enum EventCapturedStatus {
     NotCaptured,
-    Captured(WidgetRequests<MSG>),
+    Captured(WidgetRequests),
 }
 
-impl<MSG> Default for EventCapturedStatus<MSG> {
+impl Default for EventCapturedStatus {
     fn default() -> Self {
         EventCapturedStatus::NotCaptured
     }

@@ -4,7 +4,7 @@ use crate::anchor::Anchor;
 use crate::canvas::{StrongWidgetEntry, WidgetRef};
 use crate::event::MouseEvent;
 use crate::size::{Point, Size};
-use crate::WidgetRequests;
+use crate::{WidgetRegionType, WidgetRequests};
 use std::cmp::Ordering;
 use std::error::Error;
 use std::fmt;
@@ -12,7 +12,7 @@ use std::hash::Hash;
 
 mod region_tree;
 use region_tree::RegionTree;
-pub use region_tree::{ContainerRegionID, ParentAnchorType};
+pub use region_tree::{ContainerRegionID, ParentAnchorType, RegionInfo};
 
 /// The unique identifier for a layer.
 #[derive(Debug, Clone, Copy)]
@@ -195,26 +195,20 @@ impl<MSG> Layer<MSG> {
         Ok(())
     }
 
-    pub fn insert_widget_region(
+    pub fn add_widget_region(
         &mut self,
         assigned_widget: StrongWidgetEntry<MSG>,
-        size: Size,
-        internal_anchor: Anchor,
-        parent_anchor: Anchor,
-        parent_anchor_type: ParentAnchorType,
-        anchor_offset: Point,
+        region_info: RegionInfo,
         listens_to_mouse_events: bool,
+        region_type: WidgetRegionType,
         visible: bool,
         dirty_layers: &mut FnvHashSet<LayerID>,
     ) -> Result<(), ()> {
-        self.region_tree.insert_widget_region(
+        self.region_tree.add_widget_region(
             assigned_widget,
-            size,
-            internal_anchor,
-            parent_anchor,
-            parent_anchor_type,
-            anchor_offset,
+            region_info,
             listens_to_mouse_events,
+            region_type,
             visible,
         )?;
 
@@ -227,10 +221,32 @@ impl<MSG> Layer<MSG> {
 
     pub fn remove_widget_region(
         &mut self,
-        widget: &WidgetRef<MSG>,
+        widget: &StrongWidgetEntry<MSG>,
+        dirty_layers: &mut FnvHashSet<LayerID>,
+    ) {
+        self.region_tree.remove_widget_region(widget);
+
+        if self.region_tree.is_dirty() {
+            dirty_layers.insert(self.id);
+        }
+    }
+
+    pub fn modify_widget_region(
+        &mut self,
+        widget: &StrongWidgetEntry<MSG>,
+        new_size: Option<Size>,
+        new_internal_anchor: Option<Anchor>,
+        new_parent_anchor: Option<Anchor>,
+        new_anchor_offset: Option<Point>,
         dirty_layers: &mut FnvHashSet<LayerID>,
     ) -> Result<(), ()> {
-        self.region_tree.remove_widget_region(widget)?;
+        self.region_tree.modify_widget_region(
+            widget,
+            new_size,
+            new_internal_anchor,
+            new_parent_anchor,
+            new_anchor_offset,
+        )?;
 
         if self.region_tree.is_dirty() {
             dirty_layers.insert(self.id);
@@ -257,7 +273,7 @@ impl<MSG> Layer<MSG> {
 
     pub fn mark_widget_region_dirty(
         &mut self,
-        widget: &WidgetRef<MSG>,
+        widget: &StrongWidgetEntry<MSG>,
         dirty_layers: &mut FnvHashSet<LayerID>,
     ) -> Result<(), ()> {
         self.region_tree.mark_widget_region_dirty(widget)?;
@@ -272,7 +288,8 @@ impl<MSG> Layer<MSG> {
     pub fn handle_mouse_event(
         &mut self,
         mut event: MouseEvent,
-    ) -> Option<(StrongWidgetEntry<MSG>, WidgetRequests<MSG>)> {
+        msg_out_queue: &mut Vec<MSG>,
+    ) -> Option<(StrongWidgetEntry<MSG>, WidgetRequests)> {
         if !self.visible {
             return None;
         }
@@ -289,9 +306,11 @@ impl<MSG> Layer<MSG> {
         event.position -= self.position;
         event.previous_position -= self.position;
 
-        event.layer = self.id;
+        self.region_tree.handle_mouse_event(event, msg_out_queue)
+    }
 
-        self.region_tree.handle_mouse_event(event)
+    pub fn is_empty(&self) -> bool {
+        self.region_tree.is_empty()
     }
 }
 

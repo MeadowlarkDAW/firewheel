@@ -1,20 +1,19 @@
 use fnv::{FnvHashMap, FnvHashSet};
-use smallvec::SmallVec;
 use std::cell::{Ref, RefCell, RefMut};
 use std::hash::Hash;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 
 use crate::anchor::Anchor;
 use crate::event::KeyboardEventsListen;
 use crate::layer::{Layer, LayerError, LayerID};
 use crate::widget::{LockMousePointerType, Widget};
-use crate::{ContainerRegionID, ParentAnchorType, Point, Size};
+use crate::{ContainerRegionID, ParentAnchorType, Point, RegionInfo, Size};
 
-struct SharedLayerEntry<MSG> {
+struct StrongLayerEntry<MSG> {
     shared: Rc<RefCell<Layer<MSG>>>,
 }
 
-impl<MSG> SharedLayerEntry<MSG> {
+impl<MSG> StrongLayerEntry<MSG> {
     fn borrow(&self) -> Ref<'_, Layer<MSG>> {
         RefCell::borrow(&self.shared)
     }
@@ -22,9 +21,15 @@ impl<MSG> SharedLayerEntry<MSG> {
     fn borrow_mut(&mut self) -> RefMut<'_, Layer<MSG>> {
         RefCell::borrow_mut(&self.shared)
     }
+
+    fn downgrade(&self) -> WeakLayerEntry<MSG> {
+        WeakLayerEntry {
+            shared: Rc::downgrade(&self.shared),
+        }
+    }
 }
 
-impl<MSG> Clone for SharedLayerEntry<MSG> {
+impl<MSG> Clone for StrongLayerEntry<MSG> {
     fn clone(&self) -> Self {
         Self {
             shared: Rc::clone(&self.shared),
@@ -32,8 +37,29 @@ impl<MSG> Clone for SharedLayerEntry<MSG> {
     }
 }
 
+pub(crate) struct WeakLayerEntry<MSG> {
+    shared: Weak<RefCell<Layer<MSG>>>,
+}
+
+impl<MSG> WeakLayerEntry<MSG> {
+    fn upgrade(&self) -> Option<StrongLayerEntry<MSG>> {
+        self.shared
+            .upgrade()
+            .map(|shared| StrongLayerEntry { shared })
+    }
+}
+
+impl<MSG> Clone for WeakLayerEntry<MSG> {
+    fn clone(&self) -> Self {
+        Self {
+            shared: Weak::clone(&self.shared),
+        }
+    }
+}
+
 pub(crate) struct StrongWidgetEntry<MSG> {
     shared: Rc<RefCell<Box<dyn Widget<MSG>>>>,
+    assigned_layer: WeakLayerEntry<MSG>,
     unique_id: u64,
 }
 
@@ -57,6 +83,7 @@ impl<MSG> Clone for StrongWidgetEntry<MSG> {
     fn clone(&self) -> Self {
         Self {
             shared: Rc::clone(&self.shared),
+            assigned_layer: self.assigned_layer.clone(),
             unique_id: self.unique_id,
         }
     }
@@ -131,18 +158,18 @@ pub struct Canvas<MSG> {
     next_layer_id: u64,
     next_widget_id: u64,
 
-    layers: FnvHashMap<LayerID, SharedLayerEntry<MSG>>,
-    layers_ordered: Vec<(i32, Vec<SharedLayerEntry<MSG>>)>,
+    layers: FnvHashMap<LayerID, StrongLayerEntry<MSG>>,
+    layers_ordered: Vec<(i32, Vec<StrongLayerEntry<MSG>>)>,
 
     dirty_layers: FnvHashSet<LayerID>,
 
-    widgets: FnvHashMap<StrongWidgetEntry<MSG>, SmallVec<[LayerID; 4]>>,
+    widgets: FnvHashSet<StrongWidgetEntry<MSG>>,
     last_widget_that_captured_mouse: Option<(StrongWidgetEntry<MSG>, Option<LockMousePointerType>)>,
     widget_with_text_comp_listen: Option<StrongWidgetEntry<MSG>>,
     widgets_with_keyboard_listen: WidgetSet<MSG>,
     widgets_scheduled_for_animation: WidgetSet<MSG>,
 
-    user_msg_queue: Vec<Box<MSG>>,
+    msg_out_queue: Vec<MSG>,
 
     do_repack_layers: bool,
 }
@@ -155,12 +182,12 @@ impl<MSG> Canvas<MSG> {
             layers: FnvHashMap::default(),
             layers_ordered: Vec::new(),
             dirty_layers: FnvHashSet::default(),
-            widgets: FnvHashMap::default(),
+            widgets: FnvHashSet::default(),
             last_widget_that_captured_mouse: None,
             widget_with_text_comp_listen: None,
             widgets_with_keyboard_listen: WidgetSet::new(),
             widgets_scheduled_for_animation: WidgetSet::new(),
-            user_msg_queue: Vec::new(),
+            msg_out_queue: Vec::new(),
             do_repack_layers: true,
         }
     }
@@ -176,7 +203,7 @@ impl<MSG> Canvas<MSG> {
             z_order,
         };
 
-        let layer = SharedLayerEntry {
+        let layer = StrongLayerEntry {
             shared: Rc::new(RefCell::new(Layer::new(id, size, position)?)),
         };
         self.layers.insert(id, layer.clone());
@@ -205,9 +232,15 @@ impl<MSG> Canvas<MSG> {
         Ok(id)
     }
 
-    pub fn remove_layer(&mut self, id: LayerID) {
-        if self.layers.remove(&id).is_none() {
-            return;
+    pub fn remove_layer(&mut self, id: LayerID) -> Result<(), ()> {
+        if let Some(layer) = self.layers.get(&id) {
+            if !layer.borrow().is_empty() {
+                // TODO: Custom error
+                return Err(());
+            }
+        } else {
+            // TODO: Custom error
+            return Err(());
         }
 
         let mut remove_z_order_i = None;
@@ -238,6 +271,8 @@ impl<MSG> Canvas<MSG> {
         self.dirty_layers.remove(&id);
 
         self.do_repack_layers = true;
+
+        Ok(())
     }
 
     pub fn set_layer_position(
@@ -354,50 +389,40 @@ impl<MSG> Canvas<MSG> {
             .mark_container_region_dirty(region, &mut self.dirty_layers)
     }
 
-    pub fn add_widget(&mut self, mut widget: Box<dyn Widget<MSG>>) {
-        let mut info = widget.on_added();
-
-        for event in info.send_user_events.drain(..) {
-            self.user_msg_queue.push(event);
-        }
+    pub fn add_widget(
+        &mut self,
+        mut widget: Box<dyn Widget<MSG>>,
+        layer: LayerID,
+        region: RegionInfo,
+    ) -> Result<WidgetRef<MSG>, ()> {
+        let info = widget.on_added(&mut self.msg_out_queue);
 
         let id = self.next_widget_id;
         self.next_widget_id += 1;
 
+        let mut layer_entry = if let Some(layer) = self.layers.get(&layer) {
+            layer.clone()
+        } else {
+            // TODO: custom error
+            return Err(());
+        };
+
         let widget_entry = StrongWidgetEntry {
             shared: Rc::new(RefCell::new(widget)),
+            assigned_layer: layer_entry.downgrade(),
             unique_id: id,
         };
 
-        let mut assigned_layers: SmallVec<[LayerID; 4]> =
-            SmallVec::with_capacity(info.draw_regions.len());
-        for draw_region in info.draw_regions.iter() {
-            if let Some(layer) = self.layers.get_mut(&draw_region.layer) {
-                if let Err(_) = layer.borrow_mut().insert_widget_region(
-                    widget_entry.clone(),
-                    draw_region.size,
-                    draw_region.internal_anchor,
-                    draw_region.parent_anchor,
-                    draw_region.parent_anchor_type,
-                    draw_region.anchor_offset,
-                    info.listen_to_mouse_events,
-                    info.visible,
-                    &mut self.dirty_layers,
-                ) {
-                    // TODO: Get custom error message.
-                    log::error!("Failed to add widget to layer {:?}", &draw_region.layer);
-                }
+        layer_entry.borrow_mut().add_widget_region(
+            widget_entry.clone(),
+            region,
+            info.listen_to_mouse_events,
+            info.region_type,
+            info.visible,
+            &mut self.dirty_layers,
+        )?;
 
-                assigned_layers.push(draw_region.layer);
-            } else {
-                log::error!(
-                    "New widget returned draw region for layer {:?} that doesn't exist",
-                    &draw_region.layer
-                );
-            }
-        }
-
-        self.widgets.insert(widget_entry.clone(), assigned_layers);
+        self.widgets.insert(widget_entry.clone());
 
         let set_text_comp = match info.keyboard_events_listen {
             KeyboardEventsListen::None => false,
@@ -424,31 +449,57 @@ impl<MSG> Canvas<MSG> {
         if info.recieve_next_animation_event {
             self.widgets_scheduled_for_animation.insert(&widget_entry);
         }
+
+        Ok(WidgetRef {
+            shared: widget_entry,
+        })
+    }
+
+    pub fn modify_widget_region(
+        &mut self,
+        widget_ref: &mut WidgetRef<MSG>,
+        new_size: Option<Size>,
+        new_internal_anchor: Option<Anchor>,
+        new_parent_anchor: Option<Anchor>,
+        new_anchor_offset: Option<Point>,
+    ) {
+        widget_ref
+            .shared
+            .assigned_layer
+            .upgrade()
+            .unwrap()
+            .borrow_mut()
+            .modify_widget_region(
+                &widget_ref.shared,
+                new_size,
+                new_internal_anchor,
+                new_parent_anchor,
+                new_anchor_offset,
+                &mut self.dirty_layers,
+            )
+            .unwrap();
     }
 
     pub fn set_widget_visibility(&mut self, widget_ref: &mut WidgetRef<MSG>, visible: bool) {
-        let assigned_layers = self.widgets.get_mut(&widget_ref.shared).unwrap();
-        for layer in assigned_layers.iter() {
-            self.layers
-                .get_mut(layer)
-                .unwrap()
-                .borrow_mut()
-                .set_widget_region_visibility(widget_ref, visible, &mut self.dirty_layers)
-                .unwrap();
-        }
+        widget_ref
+            .shared
+            .assigned_layer
+            .upgrade()
+            .unwrap()
+            .borrow_mut()
+            .set_widget_region_visibility(widget_ref, visible, &mut self.dirty_layers)
+            .unwrap();
     }
 
     pub fn remove_widget(&mut self, mut widget_ref: WidgetRef<MSG>) {
-        // Remove this widget from all of its assigned layers.
-        let assigned_layers = self.widgets.remove(&widget_ref.shared).unwrap();
-        for layer in assigned_layers.iter() {
-            self.layers
-                .get_mut(layer)
-                .unwrap()
-                .borrow_mut()
-                .remove_widget_region(&widget_ref, &mut self.dirty_layers)
-                .unwrap();
-        }
+        // Remove this widget from its assigned layer.
+        widget_ref
+            .shared
+            .assigned_layer
+            .upgrade()
+            .unwrap()
+            .borrow_mut()
+            .remove_widget_region(&widget_ref.shared, &mut self.dirty_layers);
 
         // Remove this widget from all active event listeners.
         if let Some(w) = self.last_widget_that_captured_mouse.take() {
@@ -464,10 +515,10 @@ impl<MSG> Canvas<MSG> {
         self.widgets_with_keyboard_listen.remove(&widget_ref);
         self.widgets_scheduled_for_animation.remove(&widget_ref);
 
-        let mut messages = widget_ref.shared.borrow_mut().on_removed();
-        for msg in messages.drain(..) {
-            self.user_msg_queue.push(msg);
-        }
+        widget_ref
+            .shared
+            .borrow_mut()
+            .on_removed(&mut self.msg_out_queue);
     }
 
     fn pack_layers(&mut self) {

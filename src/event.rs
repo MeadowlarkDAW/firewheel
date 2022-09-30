@@ -26,7 +26,6 @@ pub enum MouseButtonState {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MouseEvent {
-    pub layer: LayerID,
     pub position: Point,
     pub previous_position: Point,
     pub left_button: MouseButtonState,
