@@ -1,5 +1,6 @@
 mod anchor;
 mod canvas;
+mod gl_renderer;
 mod layer;
 
 mod widget;
