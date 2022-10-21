@@ -1,5 +1,5 @@
 use crate::canvas::StrongWidgetEntry;
-use crate::event::{Event, MouseEvent};
+use crate::event::{InputEvent, PointerEvent};
 use crate::{
     Anchor, EventCapturedStatus, HAlign, Point, Rect, Size, VAlign, WidgetRegionType,
     WidgetRequests,
@@ -8,6 +8,8 @@ use fnv::{FnvHashMap, FnvHashSet};
 use std::cell::{Ref, RefCell, RefMut};
 use std::hash::Hash;
 use std::rc::{Rc, Weak};
+
+// TODO: Write unit tests for this monstrosity.
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RegionInfo {
@@ -27,7 +29,7 @@ pub(crate) struct RegionTree<MSG> {
     clear_rects: Vec<Rect>,
     widgets_just_shown: FnvHashSet<u64>,
     widgets_just_hidden: FnvHashSet<u64>,
-    layer_size: Size,
+    layer_rect: Rect,
 }
 
 impl<MSG> RegionTree<MSG> {
@@ -41,7 +43,7 @@ impl<MSG> RegionTree<MSG> {
             clear_rects: Vec::new(),
             widgets_just_shown: FnvHashSet::default(),
             widgets_just_hidden: FnvHashSet::default(),
-            layer_size,
+            layer_rect: Rect::new(Point::new(0.0, 0.0), layer_size),
         }
     }
 
@@ -52,7 +54,7 @@ impl<MSG> RegionTree<MSG> {
         parent_anchor: Anchor,
         parent_anchor_type: ParentAnchorType,
         anchor_offset: Point,
-        visible: bool,
+        explicit_visibility: bool,
     ) -> Result<ContainerRegionID, ()> {
         let new_id = ContainerRegionID(self.next_region_id);
         self.next_region_id += 1;
@@ -69,7 +71,8 @@ impl<MSG> RegionTree<MSG> {
                     parent_rect: Rect::default(), // This will be overwritten
                     last_rendered_rect: None,
                     is_container: true,
-                    visible,
+                    explicit_visibility,
+                    is_within_layer_rect: false,
                 },
                 parent: None,
                 children: Some(Vec::new()),
@@ -82,10 +85,7 @@ impl<MSG> RegionTree<MSG> {
             ParentAnchorType::Layer => {
                 self.roots.push(new_entry.clone());
 
-                Rect {
-                    pos: Point { x: 0.0, y: 0.0 },
-                    size: self.layer_size,
-                }
+                self.layer_rect
             }
             ParentAnchorType::ContainerRegion(id) => {
                 let parent_rect = if let Some(parent_entry) =
@@ -113,11 +113,21 @@ impl<MSG> RegionTree<MSG> {
             }
         };
         {
-            new_entry.borrow_mut().update_parent_rect(
+            let mut new_entry = new_entry.borrow_mut();
+
+            new_entry.update_parent_rect(
                 parent_rect,
                 &mut self.dirty_regions,
                 &mut self.clear_rects,
-            )
+            );
+
+            new_entry.check_if_within_layer_bounds(
+                self.layer_rect,
+                &mut self.dirty_regions,
+                &mut self.clear_rects,
+                &mut self.widgets_just_shown,
+                &mut self.widgets_just_hidden,
+            );
         }
 
         self.container_id_to_assigned_region
@@ -202,6 +212,9 @@ impl<MSG> RegionTree<MSG> {
             new_anchor_offset,
             &mut self.dirty_regions,
             &mut self.clear_rects,
+            self.layer_rect,
+            &mut self.widgets_just_shown,
+            &mut self.widgets_just_hidden,
         );
 
         Ok(())
@@ -218,13 +231,13 @@ impl<MSG> RegionTree<MSG> {
             panic!("region was not a container region");
         }
 
-        Ok(entry_ref.mark_dirty(&mut self.dirty_regions, &mut self.clear_rects, None))
+        Ok(entry_ref.mark_dirty(&mut self.dirty_regions, &mut self.clear_rects, None, true))
     }
 
-    pub fn set_container_region_visibility(
+    pub fn set_container_region_explicit_visibility(
         &mut self,
         id: ContainerRegionID,
-        visible: bool,
+        explicit_visibility: bool,
     ) -> Result<(), ()> {
         let mut entry_ref = self
             .container_id_to_assigned_region
@@ -236,10 +249,11 @@ impl<MSG> RegionTree<MSG> {
             panic!("region was not a container region");
         }
 
-        Ok(entry_ref.set_visibilty(
-            visible,
+        Ok(entry_ref.set_explicit_visibilty(
+            explicit_visibility,
             &mut self.dirty_regions,
             &mut self.clear_rects,
+            self.layer_rect,
             &mut self.widgets_just_shown,
             &mut self.widgets_just_hidden,
         ))
@@ -249,9 +263,9 @@ impl<MSG> RegionTree<MSG> {
         &mut self,
         assigned_widget: &mut StrongWidgetEntry<MSG>,
         region_info: RegionInfo,
-        listens_to_mouse_events: bool,
+        //listens_to_pointer_events: bool,
         region_type: WidgetRegionType,
-        visible: bool,
+        explicit_visibility: bool,
     ) -> Result<(), ()> {
         if self
             .widget_id_to_assigned_region
@@ -276,13 +290,14 @@ impl<MSG> RegionTree<MSG> {
                     parent_rect: Rect::default(), // This will be overwritten
                     last_rendered_rect: None,
                     is_container: true,
-                    visible,
+                    explicit_visibility,
+                    is_within_layer_rect: false,
                 },
                 parent: None,
                 children: None,
                 assigned_widget: Some(RegionAssignedWidget {
                     widget: assigned_widget.clone(),
-                    listens_to_mouse_events,
+                    listens_to_pointer_events: false,
                     region_type,
                 }),
             })),
@@ -295,10 +310,7 @@ impl<MSG> RegionTree<MSG> {
             ParentAnchorType::Layer => {
                 self.roots.push(entry.clone());
 
-                Rect {
-                    pos: Point { x: 0.0, y: 0.0 },
-                    size: self.layer_size,
-                }
+                self.layer_rect
             }
             ParentAnchorType::ContainerRegion(id) => {
                 let parent_rect = if let Some(parent_entry) =
@@ -344,6 +356,14 @@ impl<MSG> RegionTree<MSG> {
                 parent_rect,
                 &mut self.dirty_regions,
                 &mut self.clear_rects,
+            );
+
+            entry_ref.check_if_within_layer_bounds(
+                self.layer_rect,
+                &mut self.dirty_regions,
+                &mut self.clear_rects,
+                &mut self.widgets_just_shown,
+                &mut self.widgets_just_hidden,
             );
         }
 
@@ -411,14 +431,14 @@ impl<MSG> RegionTree<MSG> {
 
     pub fn modify_widget_region(
         &mut self,
-        widget: &mut StrongWidgetEntry<MSG>,
+        widget: &StrongWidgetEntry<MSG>,
         new_size: Option<Size>,
         new_internal_anchor: Option<Anchor>,
         new_parent_anchor: Option<Anchor>,
         new_anchor_offset: Option<Point>,
     ) -> Result<(), ()> {
         widget
-            .assigned_region_mut()
+            .assigned_region()
             .upgrade()
             .ok_or_else(|| ())?
             .borrow_mut()
@@ -429,39 +449,7 @@ impl<MSG> RegionTree<MSG> {
                 new_anchor_offset,
                 &mut self.dirty_regions,
                 &mut self.clear_rects,
-            );
-
-        Ok(())
-    }
-
-    pub fn mark_widget_region_dirty(
-        &mut self,
-        widget: &mut StrongWidgetEntry<MSG>,
-    ) -> Result<(), ()> {
-        widget
-            .assigned_region_mut()
-            .upgrade()
-            .ok_or_else(|| ())?
-            .borrow_mut()
-            .mark_dirty(&mut self.dirty_regions, &mut self.clear_rects, None);
-
-        Ok(())
-    }
-
-    pub fn set_widget_region_visibility(
-        &mut self,
-        widget: &mut StrongWidgetEntry<MSG>,
-        visible: bool,
-    ) -> Result<(), ()> {
-        widget
-            .assigned_region_mut()
-            .upgrade()
-            .ok_or_else(|| ())?
-            .borrow_mut()
-            .set_visibilty(
-                visible,
-                &mut self.dirty_regions,
-                &mut self.clear_rects,
+                self.layer_rect,
                 &mut self.widgets_just_shown,
                 &mut self.widgets_just_hidden,
             );
@@ -469,32 +457,98 @@ impl<MSG> RegionTree<MSG> {
         Ok(())
     }
 
-    pub fn set_layer_size(&mut self, size: Size) {
-        if self.layer_size == size {
-            return;
-        }
-        self.layer_size = size;
+    pub fn mark_widget_region_dirty(&mut self, widget: &StrongWidgetEntry<MSG>) -> Result<(), ()> {
+        widget
+            .assigned_region()
+            .upgrade()
+            .ok_or_else(|| ())?
+            .borrow_mut()
+            .mark_dirty(&mut self.dirty_regions, &mut self.clear_rects, None, true);
 
-        let new_rect = Rect {
-            pos: Point { x: 0.0, y: 0.0 },
-            size,
-        };
+        Ok(())
+    }
 
-        for entry in self.roots.iter_mut() {
-            entry.borrow_mut().update_parent_rect(
-                new_rect,
+    pub fn set_widget_region_explicit_visibility(
+        &mut self,
+        widget: &StrongWidgetEntry<MSG>,
+        explicit_visibility: bool,
+    ) -> Result<(), ()> {
+        widget
+            .assigned_region()
+            .upgrade()
+            .ok_or_else(|| ())?
+            .borrow_mut()
+            .set_explicit_visibilty(
+                explicit_visibility,
                 &mut self.dirty_regions,
                 &mut self.clear_rects,
+                self.layer_rect,
+                &mut self.widgets_just_shown,
+                &mut self.widgets_just_hidden,
+            );
+
+        Ok(())
+    }
+
+    pub fn set_widget_region_listens_to_pointer_events(
+        &mut self,
+        widget: &StrongWidgetEntry<MSG>,
+        listens: bool,
+    ) -> Result<(), ()> {
+        widget
+            .assigned_region()
+            .upgrade()
+            .ok_or_else(|| ())?
+            .borrow_mut()
+            .assigned_widget
+            .as_mut()
+            .unwrap()
+            .listens_to_pointer_events = listens;
+
+        Ok(())
+    }
+
+    pub fn set_layer_size(&mut self, size: Size) {
+        if self.layer_rect.size() == size {
+            return;
+        }
+        self.layer_rect.set_size(size);
+
+        for entry in self.roots.iter_mut() {
+            let mut entry = entry.borrow_mut();
+
+            entry.update_parent_rect(
+                self.layer_rect,
+                &mut self.dirty_regions,
+                &mut self.clear_rects,
+            );
+
+            entry.check_if_within_layer_bounds(
+                self.layer_rect,
+                &mut self.dirty_regions,
+                &mut self.clear_rects,
+                &mut self.widgets_just_shown,
+                &mut self.widgets_just_hidden,
             );
         }
     }
 
     pub fn layer_just_shown(&mut self) {
         for entry in self.roots.iter_mut() {
-            entry.borrow_mut().mark_dirty(
+            let mut entry = entry.borrow_mut();
+
+            entry.check_if_within_layer_bounds(
+                self.layer_rect,
+                &mut self.dirty_regions,
+                &mut self.clear_rects,
+                &mut self.widgets_just_shown,
+                &mut self.widgets_just_hidden,
+            );
+            entry.mark_dirty(
                 &mut self.dirty_regions,
                 &mut self.clear_rects,
                 Some(&mut self.widgets_just_shown),
+                true,
             );
         }
     }
@@ -505,6 +559,7 @@ impl<MSG> RegionTree<MSG> {
                 &mut self.dirty_regions,
                 &mut self.clear_rects,
                 &mut self.widgets_just_hidden,
+                true,
             );
         }
     }
@@ -517,20 +572,23 @@ impl<MSG> RegionTree<MSG> {
         self.roots.is_empty()
     }
 
-    pub fn handle_mouse_event(
+    pub fn handle_pointer_event(
         &mut self,
-        event: MouseEvent,
+        event: PointerEvent,
         msg_out_queue: &mut Vec<MSG>,
     ) -> Option<(StrongWidgetEntry<MSG>, WidgetRequests)> {
         for region in self.roots.iter_mut() {
-            match region.borrow_mut().handle_mouse_event(event, msg_out_queue) {
-                MouseCapturedStatus::Captured { widget, requests } => {
+            match region
+                .borrow_mut()
+                .handle_pointer_event(event, msg_out_queue)
+            {
+                PointerCapturedStatus::Captured { widget, requests } => {
                     return Some((widget, requests));
                 }
-                MouseCapturedStatus::InRegionButNotCaptured => {
+                PointerCapturedStatus::InRegionButNotCaptured => {
                     return None;
                 }
-                MouseCapturedStatus::NotInRegion => {}
+                PointerCapturedStatus::NotInRegion => {}
             }
         }
 
@@ -596,7 +654,7 @@ impl<MSG> Clone for WeakRegionTreeEntry<MSG> {
     }
 }
 
-enum MouseCapturedStatus<MSG> {
+enum PointerCapturedStatus<MSG> {
     Captured {
         widget: StrongWidgetEntry<MSG>,
         requests: WidgetRequests,
@@ -607,7 +665,7 @@ enum MouseCapturedStatus<MSG> {
 
 struct RegionAssignedWidget<MSG> {
     widget: StrongWidgetEntry<MSG>,
-    listens_to_mouse_events: bool,
+    listens_to_pointer_events: bool,
     region_type: WidgetRegionType,
 }
 
@@ -619,80 +677,89 @@ pub(super) struct RegionTreeEntry<MSG> {
 }
 
 impl<MSG> RegionTreeEntry<MSG> {
-    fn handle_mouse_event(
+    fn handle_pointer_event(
         &mut self,
-        mut event: MouseEvent,
+        mut event: PointerEvent,
         msg_out_queue: &mut Vec<MSG>,
-    ) -> MouseCapturedStatus<MSG> {
-        if self.region.visible {
-            if self.region.rect.contains_point(event.position) {
-                if let Some(assigned_widget) = &mut self.assigned_widget {
-                    if assigned_widget.listens_to_mouse_events {
+    ) -> PointerCapturedStatus<MSG> {
+        if self.region.is_visible() {
+            if let Some(assigned_widget) = &mut self.assigned_widget {
+                if assigned_widget.listens_to_pointer_events {
+                    if self.region.rect.contains_point(event.position) {
                         // Remove the region's offset from the position of the mouse event.
                         let temp_position = event.position;
-                        let temp_prev_position = event.previous_position;
-                        event.position -= self.region.rect.pos;
-                        event.previous_position -= self.region.rect.pos;
+                        event.position -= self.region.rect.pos();
 
                         let status = {
                             assigned_widget
                                 .widget
                                 .borrow_mut()
-                                .on_event(&Event::Mouse(event), msg_out_queue)
+                                .on_input_event(&InputEvent::Pointer(event), msg_out_queue)
                         };
                         let status = if let EventCapturedStatus::Captured(requests) = status {
-                            MouseCapturedStatus::Captured {
+                            PointerCapturedStatus::Captured {
                                 widget: assigned_widget.widget.clone(),
                                 requests,
                             }
                         } else {
-                            MouseCapturedStatus::InRegionButNotCaptured
+                            PointerCapturedStatus::InRegionButNotCaptured
                         };
 
                         event.position = temp_position;
-                        event.previous_position = temp_prev_position;
 
                         return status;
                     }
-                } else if let Some(children) = &mut self.children {
+                }
+            } else if self.region.rect.contains_point(event.position) {
+                if let Some(children) = &mut self.children {
                     for child_region in children.iter_mut() {
                         match child_region
                             .borrow_mut()
-                            .handle_mouse_event(event, msg_out_queue)
+                            .handle_pointer_event(event, msg_out_queue)
                         {
-                            MouseCapturedStatus::Captured { widget, requests } => {
-                                return MouseCapturedStatus::Captured { widget, requests };
+                            PointerCapturedStatus::Captured { widget, requests } => {
+                                return PointerCapturedStatus::Captured { widget, requests };
                             }
-                            MouseCapturedStatus::InRegionButNotCaptured => {
-                                return MouseCapturedStatus::InRegionButNotCaptured;
+                            PointerCapturedStatus::InRegionButNotCaptured => {
+                                return PointerCapturedStatus::InRegionButNotCaptured;
                             }
-                            MouseCapturedStatus::NotInRegion => {}
+                            PointerCapturedStatus::NotInRegion => {}
                         }
                     }
                 }
 
-                return MouseCapturedStatus::InRegionButNotCaptured;
+                return PointerCapturedStatus::InRegionButNotCaptured;
             }
         }
 
-        MouseCapturedStatus::NotInRegion
+        PointerCapturedStatus::NotInRegion
     }
 
-    fn set_visibilty(
+    fn set_explicit_visibilty(
         &mut self,
-        visible: bool,
+        explicit_visibility: bool,
         dirty_regions: &mut FnvHashSet<u64>,
         clear_rects: &mut Vec<Rect>,
+        layer_rect: Rect,
         widgets_just_shown: &mut FnvHashSet<u64>,
         widgets_just_hidden: &mut FnvHashSet<u64>,
     ) {
-        if self.region.visible != visible {
-            self.region.visible = visible;
+        if self.region.explicit_visibility != explicit_visibility {
+            self.region.explicit_visibility = explicit_visibility;
 
-            if visible {
-                self.mark_dirty(dirty_regions, clear_rects, Some(widgets_just_shown));
+            if explicit_visibility {
+                let layer_visibility_changed = self.check_if_within_layer_bounds(
+                    layer_rect,
+                    dirty_regions,
+                    clear_rects,
+                    widgets_just_shown,
+                    widgets_just_hidden,
+                );
+                if !layer_visibility_changed && self.region.is_visible() {
+                    self.mark_dirty(dirty_regions, clear_rects, None, false);
+                }
             } else {
-                self.set_just_hidden(dirty_regions, clear_rects, widgets_just_hidden);
+                self.set_just_hidden(dirty_regions, clear_rects, widgets_just_hidden, true);
             }
         }
     }
@@ -705,6 +772,9 @@ impl<MSG> RegionTreeEntry<MSG> {
         new_anchor_offset: Option<Point>,
         dirty_regions: &mut FnvHashSet<u64>,
         clear_rects: &mut Vec<Rect>,
+        layer_rect: Rect,
+        widgets_just_shown: &mut FnvHashSet<u64>,
+        widgets_just_hidden: &mut FnvHashSet<u64>,
     ) {
         let mut changed = false;
         if let Some(new_size) = new_size {
@@ -734,19 +804,75 @@ impl<MSG> RegionTreeEntry<MSG> {
 
         if changed {
             self.region.update_rect();
-            self.mark_dirty(dirty_regions, clear_rects, None);
-            let new_rect = self.region.rect;
+
+            let layer_visibility_changed = self.check_if_within_layer_bounds(
+                layer_rect,
+                dirty_regions,
+                clear_rects,
+                widgets_just_shown,
+                widgets_just_hidden,
+            );
+            if !layer_visibility_changed && self.region.is_visible() {
+                self.mark_dirty(dirty_regions, clear_rects, None, false);
+            }
 
             if let Some(children) = &mut self.children {
                 for child_entry in children.iter_mut() {
                     child_entry.borrow_mut().update_parent_rect(
-                        new_rect,
+                        self.region.rect,
                         dirty_regions,
                         clear_rects,
                     );
                 }
             }
         }
+    }
+
+    fn check_if_within_layer_bounds(
+        &mut self,
+        layer_rect: Rect,
+        dirty_regions: &mut FnvHashSet<u64>,
+        clear_rects: &mut Vec<Rect>,
+        widgets_just_shown: &mut FnvHashSet<u64>,
+        widgets_just_hidden: &mut FnvHashSet<u64>,
+    ) -> bool {
+        let mut changed = false;
+
+        if self.region.explicit_visibility {
+            let is_within_layer_rect = layer_rect.overlaps_with_rect(self.region.rect);
+
+            if self.region.is_within_layer_rect {
+                if !is_within_layer_rect {
+                    // The region is no longer within the layer rect.
+                    self.region.is_within_layer_rect = false;
+                    changed = true;
+
+                    self.set_just_hidden(dirty_regions, clear_rects, widgets_just_hidden, false);
+                }
+            } else {
+                if is_within_layer_rect {
+                    // The region is now within the layer rect.
+                    self.region.is_within_layer_rect = true;
+                    changed = true;
+
+                    self.mark_dirty(dirty_regions, clear_rects, Some(widgets_just_shown), false);
+                }
+            }
+        }
+
+        if let Some(children) = &mut self.children {
+            for child_entry in children.iter_mut() {
+                child_entry.borrow_mut().check_if_within_layer_bounds(
+                    layer_rect,
+                    dirty_regions,
+                    clear_rects,
+                    widgets_just_shown,
+                    widgets_just_hidden,
+                );
+            }
+        }
+
+        changed
     }
 
     fn update_parent_rect(
@@ -756,7 +882,7 @@ impl<MSG> RegionTreeEntry<MSG> {
         clear_rects: &mut Vec<Rect>,
     ) {
         if self.region.update_parent_rect(parent_rect, false) {
-            self.mark_dirty(dirty_regions, clear_rects, None);
+            self.mark_dirty(dirty_regions, clear_rects, None, false);
 
             if let Some(children) = &mut self.children {
                 for child_entry in children.iter_mut() {
@@ -775,23 +901,30 @@ impl<MSG> RegionTreeEntry<MSG> {
         dirty_regions: &mut FnvHashSet<u64>,
         clear_rects: &mut Vec<Rect>,
         widgets_just_shown: Option<&mut FnvHashSet<u64>>,
+        recurse: bool,
     ) {
-        if self.region.visible {
+        if self.region.is_visible() {
             if let Some(children) = &mut self.children {
-                // Get around the borrow checker.
-                if let Some(widgets_just_shown) = widgets_just_shown {
-                    for child_entry in children.iter_mut() {
-                        child_entry.borrow_mut().mark_dirty(
-                            dirty_regions,
-                            clear_rects,
-                            Some(widgets_just_shown),
-                        );
-                    }
-                } else {
-                    for child_entry in children.iter_mut() {
-                        child_entry
-                            .borrow_mut()
-                            .mark_dirty(dirty_regions, clear_rects, None);
+                if recurse {
+                    // Get around the borrow checker.
+                    if let Some(widgets_just_shown) = widgets_just_shown {
+                        for child_entry in children.iter_mut() {
+                            child_entry.borrow_mut().mark_dirty(
+                                dirty_regions,
+                                clear_rects,
+                                Some(widgets_just_shown),
+                                true,
+                            );
+                        }
+                    } else {
+                        for child_entry in children.iter_mut() {
+                            child_entry.borrow_mut().mark_dirty(
+                                dirty_regions,
+                                clear_rects,
+                                None,
+                                true,
+                            );
+                        }
                     }
                 }
             } else {
@@ -816,15 +949,19 @@ impl<MSG> RegionTreeEntry<MSG> {
         dirty_regions: &mut FnvHashSet<u64>,
         clear_rects: &mut Vec<Rect>,
         widgets_just_hidden: &mut FnvHashSet<u64>,
+        recurse: bool,
     ) {
-        if self.region.visible {
+        if self.region.explicit_visibility {
             if let Some(children) = &mut self.children {
-                for child_entry in children.iter_mut() {
-                    child_entry.borrow_mut().set_just_hidden(
-                        dirty_regions,
-                        clear_rects,
-                        widgets_just_hidden,
-                    );
+                if recurse {
+                    for child_entry in children.iter_mut() {
+                        child_entry.borrow_mut().set_just_hidden(
+                            dirty_regions,
+                            clear_rects,
+                            widgets_just_hidden,
+                            true,
+                        );
+                    }
                 }
             } else {
                 dirty_regions.remove(&self.region.id);
@@ -851,7 +988,8 @@ pub(crate) struct Region {
     pub last_rendered_rect: Option<Rect>,
     pub parent_rect: Rect,
     pub is_container: bool,
-    pub visible: bool,
+    pub explicit_visibility: bool,
+    pub is_within_layer_rect: bool,
 }
 
 impl Region {
@@ -908,19 +1046,26 @@ impl Region {
             let internal_anchor_pos_x = parent_anchor_pos_x + self.anchor_offset.x;
             let internal_anchor_pos_y = parent_anchor_pos_y + self.anchor_offset.y;
 
-            self.rect.pos.x = match self.internal_anchor.h_align {
+            let new_x = match self.internal_anchor.h_align {
                 HAlign::Left => internal_anchor_pos_x,
                 HAlign::Center => internal_anchor_pos_x - (self.size.width() / 2.0),
                 HAlign::Right => internal_anchor_pos_x - self.size.width(),
             };
-            self.rect.pos.y = match self.internal_anchor.v_align {
+            let new_y = match self.internal_anchor.v_align {
                 VAlign::Top => internal_anchor_pos_y,
                 VAlign::Center => internal_anchor_pos_y - (self.size.height() / 2.0),
                 VAlign::Bottom => internal_anchor_pos_y - self.size.height(),
             };
+
+            self.rect.set_pos(Point::new(new_x, new_y));
         }
 
         changed
+    }
+
+    #[inline]
+    pub fn is_visible(&self) -> bool {
+        self.explicit_visibility && self.is_within_layer_rect
     }
 }
 

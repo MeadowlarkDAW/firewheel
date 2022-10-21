@@ -196,17 +196,30 @@ impl PhysicalPoint {
 
 #[derive(Default, Debug, Clone, Copy, PartialEq)]
 pub struct Rect {
-    pub pos: Point,
-    pub size: Size,
+    pos_tl: Point,
+    pos_br: Point,
+    size: Size,
 }
 
 impl Rect {
+    #[inline]
+    pub fn new(pos: Point, size: Size) -> Self {
+        Self {
+            pos_tl: pos,
+            pos_br: Point {
+                x: pos.x + size.width,
+                y: pos.y + size.height,
+            },
+            size,
+        }
+    }
+
     pub fn x(&self) -> f64 {
-        self.pos.x
+        self.pos_tl.x
     }
 
     pub fn y(&self) -> f64 {
-        self.pos.y
+        self.pos_tl.y
     }
 
     pub fn width(&self) -> f64 {
@@ -217,32 +230,34 @@ impl Rect {
         self.size.height
     }
 
-    #[inline]
     pub fn x2(&self) -> f64 {
-        self.pos.x + self.size.width
+        self.pos_br.x
     }
 
-    #[inline]
     pub fn y2(&self) -> f64 {
-        self.pos.y + self.size.height
+        self.pos_br.y
     }
 
-    #[inline]
-    pub fn pos2(&self) -> Point {
-        Point {
-            x: self.x2(),
-            y: self.y2(),
-        }
+    pub fn pos(&self) -> Point {
+        self.pos_tl
+    }
+
+    pub fn pos_br(&self) -> Point {
+        self.pos_br
+    }
+
+    pub fn size(&self) -> Size {
+        self.size
     }
 
     #[inline]
     pub fn center_x(&self) -> f64 {
-        self.pos.x + (self.size.width / 2.0)
+        self.pos_tl.x + (self.size.width / 2.0)
     }
 
     #[inline]
     pub fn center_y(&self) -> f64 {
-        self.pos.y + (self.size.height / 2.0)
+        self.pos_tl.y + (self.size.height / 2.0)
     }
 
     #[inline]
@@ -254,7 +269,32 @@ impl Rect {
     }
 
     #[inline]
+    pub fn set_pos(&mut self, pos: Point) {
+        self.pos_tl = pos;
+        self.pos_br.x = pos.x + self.size.width;
+        self.pos_br.y = pos.y + self.size.height;
+    }
+
+    #[inline]
+    pub fn set_size(&mut self, size: Size) {
+        self.size = size;
+        self.pos_br.x = self.pos_tl.x + size.width;
+        self.pos_br.y = self.pos_tl.y + size.height;
+    }
+
+    #[inline]
     pub fn contains_point(&self, point: Point) -> bool {
-        point.x >= self.x() && point.y >= self.y() && point.x <= self.x2() && point.y <= self.y2()
+        point.x >= self.pos_tl.x
+            && point.y >= self.pos_tl.y
+            && point.x <= self.pos_br.x
+            && point.y <= self.pos_br.y
+    }
+
+    #[inline]
+    pub fn overlaps_with_rect(&self, other: Rect) -> bool {
+        self.pos_br.x >= other.pos_tl.x
+            && other.pos_br.x >= self.pos_tl.x
+            && self.pos_br.y >= other.pos_tl.y
+            && other.pos_br.y >= self.pos_tl.y
     }
 }

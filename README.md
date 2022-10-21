@@ -13,7 +13,7 @@ Goldenrod is an opinionated "do it yourself" UI toolkit focused on performance. 
 
 This toolkit was partly born out of the need for a high-performance UI toolkit for [Meadowlark](https://github.com/MeadowlarkDAW/Meadowlark), whos UI needs would perform innefficiently in most other UI toolkits but at the same time doesn't need a lot of the features present in modern toolkits.
 
-But the bigger reason is how I personally wish a UI toolkit would work. Why do I have to mess around with all these high level concepts such as containers, stylesheets, panels, widget trees, DOMs, automatic bindings to state, reactivity, etc? Just let me manually organize, draw, and place widgets and shapes however I want. I know how my app should look and where all my widgets should should go and how they should be organized, I already designed it in a mockup.
+But the bigger reason is how I personally wish a UI toolkit would work. Why do I have to mess around with all these high level concepts such as container widgets, stylesheets, panels, widget trees, DOMs, automatic bindings to state, reactivity, etc? Just let me manually organize, draw, and place widgets and shapes however I want. I know how my app should look and where all my widgets should should go and how they should be organized, I already designed it in a mockup.
 
 If you are just looking for a easy-to-use/feature rich UI toolkit in Rust, please check out one of these UI toolkits instead (that being said, depending on your definition of "simple", you might still enjoy using Goldenrod ;) )
 * [Vizia](https://github.com/vizia/vizia)
@@ -26,17 +26,16 @@ If you are just looking for a easy-to-use/feature rich UI toolkit in Rust, pleas
 
 ## Goals
 * Layer system
-    * Rendering is done by manually defining isolated "layers", and then blitting those layers together to get the final output. A single widget may render to multiple layers.
-    * Every widget has its own dedicated area in each layer it renders to. Multiple widgets may not have overlapping render areas within the same layer. Because of this restriction, repainting only requires redrawing the areas with dirty widgets as apposed to needing to redraw the whole layer every time. Layers that don't have any dirty widgets don't need to be repainted at all (common in complex desktop app UIs with mutliple distinct panels/sections).
+    * Rendering is done by manually defining isolated "layers", and then blitting those layers together to get the final output. A widget can be assigned to any layer.
+    * Every widget has its own dedicated area in the layer it belongs to. Multiple widgets may not have overlapping render areas within the same layer. Because of this restriction, repainting only requires redrawing the areas with dirty widgets as apposed to needing to redraw the whole layer every time. Layers that don't have any dirty widgets don't need to be repainted at all (common in complex desktop app UIs with mutliple distinct panels/sections).
     * Any layer can be used as a "scroll region", and can even blit pre-rendered areas when scrolling to avoid needing to redraw the entire layer while scrolling.
     * Goldenrod will attempt to automatically pack layers together into as few textures as possible to save GPU memory and therefore increase performance.
 * Widget organization
     * Widgets cannot contain other widgets, nor can they contain references to other widgets. Every widget is solely in charge of its own logic and rendering, and only communicates with (and mutates) the outside world using custom-defined events.
     * There is no "widget tree" or DOM. Every widget is essentially "root level", and you get to organize them in your code however you like.
-    * There are no "panel" widgets. You simply define all backgrounds as a series of rectangles/lines to draw in a single draw pass on a "background" layer, and then the widget layers are blitted on top.
+    * There are no "panel" widgets. You simply define all backgrounds as a series of rectangles and lines to draw in a single draw pass on a "background" layer, and then the widget layers are blitted on top.
 * Layout system
-    * Layout of widgets is performed solely through a list of abstract regions with anchor points (with offsets to those anchor points). These anchor points are anchored to either the layer itself or to a previous anchor in the list. No "Flexbox", "margins", or "padding" logic.
-    * You can layout anchor points in a row, in a column, or in a grid.
+    * Layout of widgets is performed simply via a tree of abstract rectangular regions with anchor points (with offsets to those anchor points). No "Flexbox", "margins", or "padding" logic.
 * Styling & custom drawing
     * No pre-determined stylesheets. You can define whatever custom styling system you want for your widgets/application.
     * Has a relatively easy-to-use GPU-accelerated drawing API provided by [nanovg](https://github.com/inniyah/nanovg).

@@ -6,18 +6,16 @@ pub use keyboard_types::{
     Code, CompositionEvent, CompositionState, Key, KeyState, KeyboardEvent, Location, Modifiers,
 };
 
-pub enum Event<MSG> {
-    User(Box<MSG>),
+pub enum InputEvent {
     Animation(AnimationEvent),
-    Mouse(MouseEvent),
-    LockedMouse(LockedMouseEvent),
+    Pointer(PointerEvent),
+    PointerUnlocked,
     Keyboard(KeyboardEvent),
     TextComposition(CompositionEvent),
-    VisibilityChanged { visible: bool },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MouseButtonState {
+pub enum PointerButtonState {
     JustPressed,
     JustUnpressed,
     StayedUnpressed,
@@ -25,23 +23,12 @@ pub enum MouseButtonState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct MouseEvent {
+pub struct PointerEvent {
     pub position: Point,
-    pub previous_position: Point,
-    pub left_button: MouseButtonState,
-    pub middle_button: MouseButtonState,
-    pub right_button: MouseButtonState,
-    pub scroll_delta_x: f32,
-    pub scroll_delta_y: f32,
-    pub modifiers: Modifiers,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct LockedMouseEvent {
     pub delta: Point,
-    pub left_button: MouseButtonState,
-    pub middle_button: MouseButtonState,
-    pub right_button: MouseButtonState,
+    pub left_button: PointerButtonState,
+    pub middle_button: PointerButtonState,
+    pub right_button: PointerButtonState,
     pub scroll_delta_x: f32,
     pub scroll_delta_y: f32,
     pub modifiers: Modifiers,

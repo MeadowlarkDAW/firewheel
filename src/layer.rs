@@ -2,7 +2,7 @@ use fnv::FnvHashSet;
 
 use crate::anchor::Anchor;
 use crate::canvas::StrongWidgetEntry;
-use crate::event::MouseEvent;
+use crate::event::PointerEvent;
 use crate::size::{Point, Size};
 use crate::{WidgetRegionType, WidgetRequests};
 use std::cmp::Ordering;
@@ -166,14 +166,14 @@ impl<MSG> Layer<MSG> {
         Ok(())
     }
 
-    pub fn set_container_region_visibility(
+    pub fn set_container_region_explicit_visibility(
         &mut self,
         id: ContainerRegionID,
         visible: bool,
         dirty_layers: &mut FnvHashSet<LayerID>,
     ) -> Result<(), ()> {
         self.region_tree
-            .set_container_region_visibility(id, visible)?;
+            .set_container_region_explicit_visibility(id, visible)?;
 
         if self.region_tree.is_dirty() {
             dirty_layers.insert(self.id);
@@ -200,18 +200,12 @@ impl<MSG> Layer<MSG> {
         &mut self,
         assigned_widget: &mut StrongWidgetEntry<MSG>,
         region_info: RegionInfo,
-        listens_to_mouse_events: bool,
         region_type: WidgetRegionType,
         visible: bool,
         dirty_layers: &mut FnvHashSet<LayerID>,
     ) -> Result<(), ()> {
-        self.region_tree.add_widget_region(
-            assigned_widget,
-            region_info,
-            listens_to_mouse_events,
-            region_type,
-            visible,
-        )?;
+        self.region_tree
+            .add_widget_region(assigned_widget, region_info, region_type, visible)?;
 
         if self.region_tree.is_dirty() {
             dirty_layers.insert(self.id);
@@ -256,14 +250,14 @@ impl<MSG> Layer<MSG> {
         Ok(())
     }
 
-    pub fn set_widget_region_visibility(
+    pub fn set_widget_region_explicit_visibility(
         &mut self,
         widget: &mut StrongWidgetEntry<MSG>,
         visible: bool,
         dirty_layers: &mut FnvHashSet<LayerID>,
     ) -> Result<(), ()> {
         self.region_tree
-            .set_widget_region_visibility(widget, visible)?;
+            .set_widget_region_explicit_visibility(widget, visible)?;
 
         if self.region_tree.is_dirty() {
             dirty_layers.insert(self.id);
@@ -274,7 +268,7 @@ impl<MSG> Layer<MSG> {
 
     pub fn mark_widget_region_dirty(
         &mut self,
-        widget: &mut StrongWidgetEntry<MSG>,
+        widget: &StrongWidgetEntry<MSG>,
         dirty_layers: &mut FnvHashSet<LayerID>,
     ) -> Result<(), ()> {
         self.region_tree.mark_widget_region_dirty(widget)?;
@@ -286,9 +280,18 @@ impl<MSG> Layer<MSG> {
         Ok(())
     }
 
-    pub fn handle_mouse_event(
+    pub fn set_widget_region_listens_to_pointer_events(
         &mut self,
-        mut event: MouseEvent,
+        widget: &StrongWidgetEntry<MSG>,
+        listens: bool,
+    ) -> Result<(), ()> {
+        self.region_tree
+            .set_widget_region_listens_to_pointer_events(widget, listens)
+    }
+
+    pub fn handle_pointer_event(
+        &mut self,
+        mut event: PointerEvent,
         msg_out_queue: &mut Vec<MSG>,
     ) -> Option<(StrongWidgetEntry<MSG>, WidgetRequests)> {
         if !self.visible {
@@ -305,9 +308,8 @@ impl<MSG> Layer<MSG> {
 
         // Remove this layer's offset from the position of the mouse event.
         event.position -= self.position;
-        event.previous_position -= self.position;
 
-        self.region_tree.handle_mouse_event(event, msg_out_queue)
+        self.region_tree.handle_pointer_event(event, msg_out_queue)
     }
 
     pub fn is_empty(&self) -> bool {
