@@ -230,6 +230,7 @@ impl<MSG> Canvas<MSG> {
         size: Size,
         z_order: i32,
         position: Point,
+        explicit_visibility: bool,
     ) -> Result<LayerID, LayerError> {
         let id = LayerID {
             id: self.next_layer_id,
@@ -237,7 +238,12 @@ impl<MSG> Canvas<MSG> {
         };
 
         let layer = StrongLayerEntry {
-            shared: Rc::new(RefCell::new(Layer::new(id, size, position)?)),
+            shared: Rc::new(RefCell::new(Layer::new(
+                id,
+                size,
+                position,
+                explicit_visibility,
+            )?)),
         };
         self.layers.insert(id, layer.clone());
 
@@ -329,13 +335,17 @@ impl<MSG> Canvas<MSG> {
             .set_size(size, &mut self.dirty_layers)
     }
 
-    pub fn set_layer_visible(&mut self, layer: LayerID, visible: bool) -> Result<(), LayerError> {
+    pub fn set_layer_explicit_visibility(
+        &mut self,
+        layer: LayerID,
+        explicit_visibility: bool,
+    ) -> Result<(), LayerError> {
         Ok(self
             .layers
             .get_mut(&layer)
             .ok_or_else(|| LayerError::LayerWithIDNotFound(layer))?
             .borrow_mut()
-            .set_visible(visible, &mut self.dirty_layers))
+            .set_explicit_visibility(explicit_visibility, &mut self.dirty_layers))
     }
 
     pub fn add_container_region(
@@ -491,11 +501,7 @@ impl<MSG> Canvas<MSG> {
             .upgrade()
             .unwrap()
             .borrow_mut()
-            .set_widget_region_explicit_visibility(
-                &mut widget_ref.shared,
-                visible,
-                &mut self.dirty_layers,
-            )
+            .set_widget_explicit_visibility(&mut widget_ref.shared, visible, &mut self.dirty_layers)
             .unwrap();
     }
 

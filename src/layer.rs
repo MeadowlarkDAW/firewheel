@@ -63,18 +63,20 @@ pub(crate) struct Layer<MSG> {
     position: Point,
 
     size: Size,
-
-    visible: bool,
 }
 
 impl<MSG> Layer<MSG> {
-    pub fn new(id: LayerID, size: Size, position: Point) -> Result<Self, LayerError> {
+    pub fn new(
+        id: LayerID,
+        size: Size,
+        position: Point,
+        explicit_visibility: bool,
+    ) -> Result<Self, LayerError> {
         Ok(Self {
             id,
-            region_tree: RegionTree::new(size),
+            region_tree: RegionTree::new(size, explicit_visibility),
             position,
             size,
-            visible: true,
         })
     }
 
@@ -82,16 +84,16 @@ impl<MSG> Layer<MSG> {
         self.position = position;
     }
 
-    pub fn set_visible(&mut self, visible: bool, dirty_layers: &mut FnvHashSet<LayerID>) {
-        if self.visible != visible {
-            self.visible = visible;
-            dirty_layers.insert(self.id);
+    pub fn set_explicit_visibility(
+        &mut self,
+        explicit_visibility: bool,
+        dirty_layers: &mut FnvHashSet<LayerID>,
+    ) {
+        self.region_tree
+            .set_layer_explicit_visibility(explicit_visibility);
 
-            if visible {
-                self.region_tree.layer_just_shown();
-            } else {
-                self.region_tree.layer_just_hidden();
-            }
+        if self.region_tree.is_dirty() {
+            dirty_layers.insert(self.id);
         }
     }
 
@@ -244,14 +246,14 @@ impl<MSG> Layer<MSG> {
         Ok(())
     }
 
-    pub fn set_widget_region_explicit_visibility(
+    pub fn set_widget_explicit_visibility(
         &mut self,
         widget: &mut StrongWidgetEntry<MSG>,
         visible: bool,
         dirty_layers: &mut FnvHashSet<LayerID>,
     ) -> Result<(), ()> {
         self.region_tree
-            .set_widget_region_explicit_visibility(widget, visible)?;
+            .set_widget_explicit_visibility(widget, visible)?;
 
         if self.region_tree.is_dirty() {
             dirty_layers.insert(self.id);
@@ -265,7 +267,7 @@ impl<MSG> Layer<MSG> {
         widget: &StrongWidgetEntry<MSG>,
         dirty_layers: &mut FnvHashSet<LayerID>,
     ) -> Result<(), ()> {
-        self.region_tree.mark_widget_region_dirty(widget)?;
+        self.region_tree.mark_widget_dirty(widget)?;
 
         if self.region_tree.is_dirty() {
             dirty_layers.insert(self.id);
@@ -280,7 +282,7 @@ impl<MSG> Layer<MSG> {
         listens: bool,
     ) -> Result<(), ()> {
         self.region_tree
-            .set_widget_region_listens_to_pointer_events(widget, listens)
+            .set_widget_listens_to_pointer_events(widget, listens)
     }
 
     pub fn handle_pointer_event(
@@ -288,7 +290,7 @@ impl<MSG> Layer<MSG> {
         mut event: PointerEvent,
         msg_out_queue: &mut Vec<MSG>,
     ) -> Option<(StrongWidgetEntry<MSG>, WidgetRequests)> {
-        if !self.visible {
+        if !self.region_tree.layer_explicit_visibility() {
             return None;
         }
 
