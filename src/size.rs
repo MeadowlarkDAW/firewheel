@@ -73,6 +73,12 @@ impl Size {
             height: self.height.max(other.height),
         }
     }
+
+    #[inline]
+    pub fn partial_eq_with_epsilon(&self, other: Size) -> bool {
+        ((self.width - other.width).abs() <= f64::EPSILON)
+            && ((self.height - other.height).abs() <= f64::EPSILON)
+    }
 }
 
 /// An actual size in physical coordinates
@@ -127,6 +133,11 @@ impl Point {
             x: (self.x * scale.0).round() as i32,
             y: (self.y * scale.0).round() as i32,
         }
+    }
+
+    #[inline]
+    pub fn partial_eq_with_epsilon(&self, other: Point) -> bool {
+        ((self.x - other.x).abs() <= f64::EPSILON) && ((self.y - other.y).abs() <= f64::EPSILON)
     }
 }
 
@@ -296,5 +307,11 @@ impl Rect {
             && other.pos_br.x >= self.pos_tl.x
             && self.pos_br.y >= other.pos_tl.y
             && other.pos_br.y >= self.pos_tl.y
+    }
+
+    #[inline]
+    pub fn partial_eq_with_epsilon(&self, other: Rect) -> bool {
+        self.pos_tl.partial_eq_with_epsilon(other.pos_tl)
+            && self.pos_br.partial_eq_with_epsilon(other.pos_br)
     }
 }

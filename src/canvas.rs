@@ -45,6 +45,12 @@ pub(crate) struct WeakLayerEntry<MSG> {
 }
 
 impl<MSG> WeakLayerEntry<MSG> {
+    pub fn new() -> Self {
+        Self {
+            shared: Weak::new(),
+        }
+    }
+
     fn upgrade(&self) -> Option<StrongLayerEntry<MSG>> {
         self.shared
             .upgrade()
@@ -68,6 +74,17 @@ pub(crate) struct StrongWidgetEntry<MSG> {
 }
 
 impl<MSG> StrongWidgetEntry<MSG> {
+    pub fn new(widget: Box<dyn Widget<MSG>>, unique_id: u64) -> Self {
+        Self {
+            shared: Rc::new(RefCell::new(widget)),
+            assigned_layer: WeakLayerEntry {
+                shared: Weak::new(),
+            },
+            assigned_region: WeakRegionTreeEntry::new(),
+            unique_id,
+        }
+    }
+
     /*
     pub fn borrow(&self) -> Ref<'_, Box<dyn Widget<MSG>>> {
         RefCell::borrow(&self.shared)
@@ -324,25 +341,14 @@ impl<MSG> Canvas<MSG> {
     pub fn add_container_region(
         &mut self,
         layer: LayerID,
-        size: Size,
-        internal_anchor: Anchor,
-        parent_anchor: Anchor,
-        parent_anchor_type: ParentAnchorType,
-        anchor_offset: Point,
-        visible: bool,
+        region_info: RegionInfo,
+        explicit_visibility: bool,
     ) -> Result<ContainerRegionID, ()> {
         self.layers
             .get_mut(&layer)
             .ok_or_else(|| ())?
             .borrow_mut()
-            .add_container_region(
-                size,
-                internal_anchor,
-                parent_anchor,
-                parent_anchor_type,
-                anchor_offset,
-                visible,
-            )
+            .add_container_region(region_info, explicit_visibility)
     }
 
     pub fn remove_container_region(
@@ -409,8 +415,8 @@ impl<MSG> Canvas<MSG> {
         &mut self,
         mut widget: Box<dyn Widget<MSG>>,
         layer: LayerID,
-        region: RegionInfo,
-        visible: bool,
+        region_info: RegionInfo,
+        explicit_visibility: bool,
         msg_out_queue: &mut Vec<MSG>,
     ) -> Result<WidgetRef<MSG>, ()> {
         let info = widget.on_added(msg_out_queue);
@@ -434,9 +440,9 @@ impl<MSG> Canvas<MSG> {
 
         layer_entry.borrow_mut().add_widget_region(
             &mut widget_entry,
-            region,
+            region_info,
             info.region_type,
-            visible,
+            explicit_visibility,
             &mut self.dirty_layers,
         )?;
 

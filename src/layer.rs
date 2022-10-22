@@ -111,21 +111,11 @@ impl<MSG> Layer<MSG> {
 
     pub fn add_container_region(
         &mut self,
-        size: Size,
-        internal_anchor: Anchor,
-        parent_anchor: Anchor,
-        parent_anchor_type: ParentAnchorType,
-        anchor_offset: Point,
-        visible: bool,
+        region_info: RegionInfo,
+        explicit_visibility: bool,
     ) -> Result<ContainerRegionID, ()> {
-        self.region_tree.new_container_region(
-            size,
-            internal_anchor,
-            parent_anchor,
-            parent_anchor_type,
-            anchor_offset,
-            visible,
-        )
+        self.region_tree
+            .add_container_region(region_info, explicit_visibility)
     }
 
     pub fn remove_container_region(
@@ -201,11 +191,15 @@ impl<MSG> Layer<MSG> {
         assigned_widget: &mut StrongWidgetEntry<MSG>,
         region_info: RegionInfo,
         region_type: WidgetRegionType,
-        visible: bool,
+        explicit_visibility: bool,
         dirty_layers: &mut FnvHashSet<LayerID>,
     ) -> Result<(), ()> {
-        self.region_tree
-            .add_widget_region(assigned_widget, region_info, region_type, visible)?;
+        self.region_tree.add_widget_region(
+            assigned_widget,
+            region_info,
+            region_type,
+            explicit_visibility,
+        )?;
 
         if self.region_tree.is_dirty() {
             dirty_layers.insert(self.id);

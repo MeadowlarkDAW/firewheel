@@ -6,6 +6,7 @@ pub use keyboard_types::{
     Code, CompositionEvent, CompositionState, Key, KeyState, KeyboardEvent, Location, Modifiers,
 };
 
+#[derive(Debug)]
 pub enum InputEvent {
     Animation(AnimationEvent),
     Pointer(PointerEvent),
