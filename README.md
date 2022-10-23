@@ -1,59 +1,108 @@
-# Goldenrod
-[![Documentation](https://docs.rs/goldenrod/badge.svg)][documentation]
-[![Crates.io](https://img.shields.io/crates/v/goldenrod.svg)](https://crates.io/crates/goldenrod)
-[![License](https://img.shields.io/crates/l/goldenrod.svg)](https://github.com/MeadowlarkDAW/goldenrod/blob/main/LICENSE)
+# Firewheel
+[![Documentation](https://docs.rs/firewheel/badge.svg)][documentation]
+[![Crates.io](https://img.shields.io/crates/v/firewheel.svg)](https://crates.io/crates/firewheel)
+[![License](https://img.shields.io/crates/l/firewheel.svg)](https://github.com/MeadowlarkDAW/firewheel/blob/main/LICENSE)
 
-This crate is currently incomplete and just an experiment. There is no guarantee that Goldenrod will ever become something.
+This crate is currently experimental and incomplete.
 
 ---
 
-Goldenrod is an opinionated "do it yourself" UI toolkit focused on performance. It is geared towards making desktop and audio plugin UIs that are complex but "rigid".
+Firewheel is a low-level, retained-mode, event-driven, barebones, "DIY" toolkit for making high-performance UIs. It is *NOT* a complete UI framework with ready-made widgets, but rather a toolkit to aid in building your own widgets and UI systems.
 
-# Why?
+This project was born out of the need for a high-performance UI toolkit for [Meadowlark](https://github.com/MeadowlarkDAW/Meadowlark). Meadowlark's UI is quite unconventional (as far as generic UI toolkits are concerned), because it contains a whole lot of custom widgets, custom layout logic, custom rendering logic (with shaders), and unique performance optimization challenges. So in the end I decided to develop an in-house toolkit that is tailored to the needs of Meadowlark (and to my personal coding workflow).
 
-This toolkit was partly born out of the need for a high-performance UI toolkit for [Meadowlark](https://github.com/MeadowlarkDAW/Meadowlark), whos UI needs would perform innefficiently in most other UI toolkits but at the same time doesn't need a lot of the features present in modern toolkits.
-
-But the bigger reason is how I personally wish a UI toolkit would work. Why do I have to mess around with all these high level concepts such as container widgets, stylesheets, panels, widget trees, DOMs, automatic bindings to state, reactivity, etc? Just let me manually organize, draw, and place widgets and shapes however I want. I know how my app should look and where all my widgets should should go and how they should be organized, I already designed it in a mockup.
-
-If you are just looking for a easy-to-use/feature rich UI toolkit in Rust, please check out one of these UI toolkits instead (that being said, depending on your definition of "simple", you might still enjoy using Goldenrod ;) )
+If you are just looking for a easy-to-use/feature rich UI toolkit in Rust, please check out one of these UI toolkits instead (that being said, depending on your definition of "simple", you may still enjoy using Firewheel ;) )
 * [Vizia](https://github.com/vizia/vizia)
+    * native Rust
+    * retained mode
+    * data-driven
+    * can be used to make audio plugin UIs
 * [Iced](https://github.com/iced-rs/iced)
-* [Tauri](https://github.com/tauri-apps/tauri)
+    * native Rust
+    * immediate mode
+    * data-driven
+    * can be used to make audio plugin UIs
 * [Egui](https://github.com/emilk/egui)
+    * native Rust
+    * immediate mode
+    * data-driven
+    * can be used to make audio plugin UIs
+* [Tauri](https://github.com/tauri-apps/tauri)
+    * web based
+* [Slint](https://github.com/slint-ui/slint)
+    * native-ish Rust
+    * retained mode
+    * data-driven
+* [Druid](https://github.com/linebender/druid)
+    * native Rust
+    * retained mode
+    * data-driven
+* [Relm](https://github.com/antoyo/relm)
+    * Rust wrapper around GTK+
+    * retained mode
+    * event-driven
+* [gtk4-rs](https://github.com/gtk-rs/gtk4-rs)
+    * Rust bindings to GTK4
+    * retained mode
+    * event-driven
+* [gtk3-rs](https://github.com/gtk-rs/gtk3-rs)
+    * Rust bindings to GTK3
+    * retained mode
+    * event-driven
 * [imgui-rs](https://github.com/imgui-rs/imgui-rs)
+    * Rust bindings to imgui
+    * immediate mode
+    * data-driven
+    * can be used to make audio plugin UIs
 
-# Goals/Non-goals
+# How it works
 
-## Goals
 * Layer system
-    * Rendering is done by manually defining isolated "layers", and then blitting those layers together to get the final output. A widget can be assigned to any layer.
-    * Every widget has its own dedicated area in the layer it belongs to. Multiple widgets may not have overlapping render areas within the same layer. Because of this restriction, repainting only requires redrawing the areas with dirty widgets as apposed to needing to redraw the whole layer every time. Layers that don't have any dirty widgets don't need to be repainted at all (common in complex desktop app UIs with mutliple distinct panels/sections).
-    * Any layer can be used as a "scroll region", and can even blit pre-rendered areas when scrolling to avoid needing to redraw the entire layer while scrolling.
-    * Goldenrod will attempt to automatically pack layers together into as few textures as possible to save GPU memory and therefore increase performance.
+    * Rendering is done by defining separate "layers" (textures that widgets paint their contents onto), and then blitting those layers together to get the final output. A widget can be assigned to any layer.
+    * Every widget has its own dedicated rectangular region in the layer it belongs to. A widget may not paint outside of its assigned region, and multiple widgets may not have overlapping regions within the same layer. Because of these restrictions, repainting a layer only requires redrawing the regions with dirty widgets as apposed to redrawing the entire layer every frame. Layers that don't have any dirty widgets don't need to be repainted at all (common in complex desktop app UIs with mutliple distinct panels/sections).
+    * Any layer can effectively be used as a "scroll region" by simply changing its internal offset (like a camera in a game engine). Regions that are outside the layer bounds are automatically culled from both rendering and input logic.
+    * Layers are automatically packed together into as few textures as possible to save GPU memory and therefore increase performance.
 * Widget organization
-    * Widgets cannot contain other widgets, nor can they contain references to other widgets. Every widget is solely in charge of its own logic and rendering, and only communicates with (and mutates) the outside world using custom-defined events.
+    * Widgets cannot contain other widgets, nor can they contain references to other widgets. Every widget is solely in charge of its own logic and rendering, and only communicates with (and mutates) the outside world using custom events.
     * There is no "widget tree" or DOM. Every widget is essentially "root level", and you get to organize them in your code however you like.
-    * There are no "panel" widgets. You simply define all backgrounds as a series of rectangles and lines to draw in a single draw pass on a "background" layer, and then the widget layers are blitted on top.
+    * There are no "container" or "panel" widgets. You simply define all backgrounds as literally a series of rectangles, lines, and/or textures to draw in a single draw pass on a "background" layer, and then the widget layers are blitted on top. You can of course have as many background layers and widget layers as you want in your application.
 * Layout system
-    * Layout of widgets is performed simply via a tree of abstract rectangular regions with anchor points (with offsets to those anchor points). No "Flexbox", "margins", or "padding" logic.
+    * Layout of widgets is performed via a tree of abstract rectangular regions. Each region contains an internal anchor point, a parent achor point, and an offset between those two points. No "Flexbox", "margins", or "padding" logic.
+    * The size, anchors, and anchor offsets are defined manually for each region. However, a change to the size or anchor offset of a container (parent) region will automatically update the position of its child regions.
+    * Only widget regions are allowed to paint to the screen. Container (parent) regions are completely abstract, and a widget region cannot be a container region.
+    * Any region can be set to be explicitly visible/invisible. A region that is explicitly invisible will have it and all its children automatically culled from both rendering and input logic.
+* Pointer (mouse) input logic
+    * Widgets can request to receive/stop receiving pointer input events. Only the widgets that have opted-in will receive pointer input events.
+    * Pointer input starts at the layer with the highest z-order value, and then it works its way down the layer list until a layer captures the event.
+    * Pointer input is optimized by only invoking the layers and parent regions that contain the position of the pointer, and then walking down the region tree until a widget captures the event. Once an event is captured, walking the tree is stopped.
+    * Widgets can request to "lock"/"unlock" the pointer. A widget that has locked the pointer will receive pointer input events even if the pointer is outside the bounds of the widget's assigned region, which can be used to create drag gestures. Only one widget can lock the pointer at a time.
+    * Widgets can request to receive/stop receiving mouse-press events regardless of position, allowing for behavior such as closing a pop-up by clicking outside of it.
+    * A widget can flag itself as being input-only, meaning it only listens to pointer input events and doesn't paint anything to the screen. This can be used to create drag handles or drag-and-drop targets.
+    * Keyboard modifiers are sent along with each pointer input event.
+* Keyboard input logic
+    * Widgets can request to receive/stop receiving keystroke events. Only the widgets that have opted-in will receive keystroke input events.
+    * A widget can also request to receive/stop recieving text composition events. Only one widget at a time can be assigned to receive text composition events.
+* Animation logic
+    * A widget can request to receive/stop recieving the "animation" input event, which is an event sent every frame. Only the widgets that have opted-in will receive this event.
 * Styling & custom drawing
-    * No pre-determined stylesheets. You can define whatever custom styling system you want for your widgets/application.
-    * Has a relatively easy-to-use GPU-accelerated drawing API provided by [nanovg](https://github.com/inniyah/nanovg).
+    * There are no pre-determined stylesheets. You can define whatever custom styling system you want for your widgets/application.
+    * Firewheel has a relatively easy-to-use GPU-accelerated drawing API provided by [femtovg](https://github.com/femtovg/femtovg).
     * Widgets may also use custom shaders for rendering.
 * Portability
-    * Cross-platform (only depending on OpenGL). Bring your own windowing library and event-loop!
-    * Hi-DPI support built-in.
+    * Cross-platform support (only depending on OpenGL (ES) 3.0+). Bring your own windowing library and event-loop!
+    * Hi-DPI support built-in. Firewheel uses logical pixel coordinates.
 
-## Non-goals
-* Only single-line text is supported (at least for now).
+# Non-goals
+* No multi-line text (at least for now).
+* No extensive suite of ready-made widgets. Only a few basic ones will be included such as buttons, toggle buttons, labels, spinners, scrollbars, separators, drop-down menus, and single-line text input.
 * No "Flexbox"-like layout systems, so this library is not meant for web or mobile applications.
-* No windowing library or event-loop logic. You must provide that yourself.
-* This toolkit makes no gaurantees that your UI will perform optimally or correctly if you don't know what you are doing. Using this toolkit requires some knowledge of how to optimally create and use layers for a GUI. (I may create a guide on this later if Goldenrod becomes something worthwile.)
+* No windowing library or event-loop logic. You must provide that yourself. (Look at the examples for how to do this.)
+* This toolkit makes no gaurantees that your UI will perform optimally or correctly if you don't know what you are doing. Using this toolkit requires some knowledge of how to optimally create layers and regions for a GUI. (I may create a guide for this later.)
 
 # FAQ
 
-* What does the name "Goldenrod" mean?
-    * [Goldenrod](https://en.wikipedia.org/wiki/Goldenrod) is a wildflower native to the Midwest USA. This is following a convention in the Meadowlark project of naming things after native fauna/flora from that region.
-    * I may change the name if Goldenrod actually becomes something.
+* Why the name "Firewheel"?
+    * [Firewheel](https://en.wikipedia.org/wiki/Gaillardia_pulchella) is a wildflower native to the Midwest USA. This is following a convention in the Meadowlark project of naming things after native fauna/flora from that region (or things related to nature).
+    * The vibrant colors of this wildflower represent drawing elements on the screen, and "fire" alludes to the high-performance goals of this toolkit.
 
-[documentation]: https://docs.rs/goldenrod/
+[documentation]: https://docs.rs/firewheel/
