@@ -3,57 +3,25 @@
 [![Crates.io](https://img.shields.io/crates/v/firewheel.svg)](https://crates.io/crates/firewheel)
 [![License](https://img.shields.io/crates/l/firewheel.svg)](https://github.com/MeadowlarkDAW/firewheel/blob/main/LICENSE)
 
-This crate is currently experimental and incomplete.
+This crate is a work in progress. It is not yet ready for any kind of use.
 
 ---
 
-Firewheel is a low-level, retained-mode, event-driven, barebones, "DIY" toolkit for making high-performance GUIs. It is *NOT* a complete GUI framework with ready-made widgets, but rather a toolkit to aid in building your own widgets and GUI systems.
+Firewheel is a low-level, retained-mode, event-driven, barebones, "DIY" toolkit for making high-performance GUIs. It is *NOT* a complete GUI framework with an extensive suite of ready-made widgets, but rather a toolkit to aid in building your own widgets and GUI systems.
 
 This project was born out of the need for a high-performance GUI toolkit for [Meadowlark](https://github.com/MeadowlarkDAW/Meadowlark). Meadowlark's GUI is quite unconventional (as far as generic GUI toolkits are concerned), because it contains a whole lot of custom widgets, custom layout logic, custom rendering logic (with shaders), and unique performance optimization challenges. So in the end I decided to develop an in-house toolkit that is tailored to the needs of Meadowlark (and to my personal coding workflow).
 
 If you are just looking for a easy-to-use/feature rich GUI toolkit in Rust, please check out one of these GUI toolkits instead (that being said, depending on your definition of "simple", you may still enjoy using Firewheel ;) )
 * [Vizia](https://github.com/vizia/vizia)
-    * native Rust
-    * retained mode
-    * data-driven
-    * can be used to make audio plugin GUIs
 * [Iced](https://github.com/iced-rs/iced)
-    * native Rust
-    * immediate mode
-    * data-driven
-    * can be used to make audio plugin GUIs
 * [Egui](https://github.com/emilk/egui)
-    * native Rust
-    * immediate mode
-    * data-driven
-    * can be used to make audio plugin GUIs
 * [Tauri](https://github.com/tauri-apps/tauri)
-    * web based
 * [Slint](https://github.com/slint-ui/slint)
-    * native-ish Rust
-    * retained mode
-    * data-driven
 * [Druid](https://github.com/linebender/druid)
-    * native Rust
-    * retained mode
-    * data-driven
 * [Relm](https://github.com/antoyo/relm)
-    * Rust wrapper around GTK+
-    * retained mode
-    * event-driven
 * [gtk4-rs](https://github.com/gtk-rs/gtk4-rs)
-    * Rust bindings to GTK4
-    * retained mode
-    * event-driven
 * [gtk3-rs](https://github.com/gtk-rs/gtk3-rs)
-    * Rust bindings to GTK3
-    * retained mode
-    * event-driven
 * [imgui-rs](https://github.com/imgui-rs/imgui-rs)
-    * Rust bindings to imgui
-    * immediate mode
-    * data-driven
-    * can be used to make audio plugin GUIs
 
 # How it works
 
