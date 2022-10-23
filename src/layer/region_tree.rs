@@ -1,5 +1,5 @@
-use crate::canvas::StrongWidgetEntry;
 use crate::event::{InputEvent, PointerEvent};
+use crate::window_canvas::StrongWidgetEntry;
 use crate::{
     Anchor, EventCapturedStatus, HAlign, Point, Rect, Size, VAlign, WidgetRegionType,
     WidgetRequests,
@@ -31,10 +31,11 @@ pub(crate) struct RegionTree<MSG> {
     widgets_just_hidden: FnvHashSet<u64>,
     layer_rect: Rect,
     layer_explicit_visibility: bool,
+    clear_whole_layer: bool,
 }
 
 impl<MSG> RegionTree<MSG> {
-    pub fn new(layer_size: Size, layer_explicit_visibility: bool) -> Self {
+    pub fn new(layer_size: Size, inner_position: Point, layer_explicit_visibility: bool) -> Self {
         Self {
             next_region_id: 0,
             roots: Vec::new(),
@@ -44,8 +45,9 @@ impl<MSG> RegionTree<MSG> {
             clear_rects: Vec::new(),
             widgets_just_shown: FnvHashSet::default(),
             widgets_just_hidden: FnvHashSet::default(),
-            layer_rect: Rect::new(Point::new(0.0, 0.0), layer_size),
+            layer_rect: Rect::new(inner_position, layer_size),
             layer_explicit_visibility,
+            clear_whole_layer: true,
         }
     }
 
@@ -516,9 +518,29 @@ impl<MSG> RegionTree<MSG> {
         Ok(())
     }
 
+    pub fn set_layer_inner_position(&mut self, position: Point) {
+        if self.layer_rect.pos() != position {
+            self.layer_rect.set_pos(position);
+            self.clear_whole_layer = true;
+
+            for entry in self.roots.iter_mut() {
+                entry.borrow_mut().parent_changed(
+                    self.layer_rect,
+                    self.layer_rect,
+                    self.layer_explicit_visibility,
+                    &mut self.dirty_regions,
+                    &mut self.clear_rects,
+                    &mut self.widgets_just_shown,
+                    &mut self.widgets_just_hidden,
+                );
+            }
+        }
+    }
+
     pub fn set_layer_size(&mut self, size: Size) {
         if self.layer_rect.size() != size {
             self.layer_rect.set_size(size);
+            self.clear_whole_layer = true;
 
             for entry in self.roots.iter_mut() {
                 entry.borrow_mut().parent_changed(
@@ -537,6 +559,7 @@ impl<MSG> RegionTree<MSG> {
     pub fn set_layer_explicit_visibility(&mut self, explicit_visibility: bool) {
         if self.layer_explicit_visibility != explicit_visibility {
             self.layer_explicit_visibility = explicit_visibility;
+            self.clear_whole_layer = true;
 
             for entry in self.roots.iter_mut() {
                 entry.borrow_mut().parent_changed(
@@ -566,12 +589,15 @@ impl<MSG> RegionTree<MSG> {
 
     pub fn handle_pointer_event(
         &mut self,
-        event: PointerEvent,
+        mut event: PointerEvent,
         msg_out_queue: &mut Vec<MSG>,
     ) -> Option<(StrongWidgetEntry<MSG>, WidgetRequests)> {
         if !self.layer_explicit_visibility {
             return None;
         }
+
+        // Add this layer's inner position to the position of the pointer.
+        event.position += self.layer_rect.pos();
 
         for region in self.roots.iter_mut() {
             match region
@@ -1106,11 +1132,11 @@ mod tests {
 
     #[test]
     fn test_region_tree() {
-        let layer_size = Size::new(200.0, 100.0);
-        let layer_rect = Rect::new(Point::new(0.0, 0.0), layer_size);
+        let layer_rect = Rect::new(Point::new(0.0, 0.0), Size::new(200.0, 100.0));
         let layer_explicit_visibility = true;
 
-        let mut region_tree: RegionTree<()> = RegionTree::new(layer_size, true);
+        let mut region_tree: RegionTree<()> =
+            RegionTree::new(layer_rect.size(), layer_rect.pos(), true);
 
         // --- Test adding container regions ----------------------------------------------------------
         // --------------------------------------------------------------------------------------------

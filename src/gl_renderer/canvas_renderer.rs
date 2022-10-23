@@ -1,11 +1,11 @@
 use glow::HasContext as _;
 use std::sync::Arc;
 
-use crate::{size::PhysicalSize, Canvas, ScaleFactor, Size};
+use crate::{size::PhysicalSize, ScaleFactor, Size, WindowCanvas};
 
 use super::layer_renderer::LayerRenderer;
 
-pub struct CanvasRenderer {
+pub struct WindowCanvasRenderer {
     gl: Arc<glow::Context>,
     canvas_size: Size,
     physical_size: PhysicalSize,
@@ -15,7 +15,7 @@ pub struct CanvasRenderer {
     layers: Vec<LayerRenderer>,
 }
 
-impl CanvasRenderer {
+impl WindowCanvasRenderer {
     pub fn new(gl: Arc<glow::Context>, canvas_size: Size, scale_factor: ScaleFactor) -> Self {
         let physical_size = canvas_size.to_physical(scale_factor);
 
@@ -29,7 +29,7 @@ impl CanvasRenderer {
         }
     }
 
-    pub fn render<MSG>(&mut self, canvas: &mut Canvas<MSG>) {
+    pub fn render<MSG>(&mut self, window_canvas: &mut WindowCanvas<MSG>) {
         // TODO: Check if canvas size has changed.
 
         self.clear();

@@ -1,4 +1,5 @@
 use fnv::{FnvHashMap, FnvHashSet};
+use keyboard_types::{CompositionEvent, CompositionState};
 use std::cell::{Ref, RefCell, RefMut};
 use std::hash::Hash;
 use std::rc::{Rc, Weak};
@@ -7,10 +8,7 @@ use crate::anchor::Anchor;
 use crate::event::{InputEvent, KeyboardEventsListen};
 use crate::layer::{Layer, LayerError, LayerID, WeakRegionTreeEntry};
 use crate::widget::{SetPointerLockType, Widget};
-use crate::{
-    ContainerRegionID, EventCapturedStatus, ParentAnchorType, Point, RegionInfo, Size,
-    WidgetRequests,
-};
+use crate::{ContainerRegionID, EventCapturedStatus, Point, RegionInfo, Size, WidgetRequests};
 
 struct StrongLayerEntry<MSG> {
     shared: Rc<RefCell<Layer<MSG>>>,
@@ -45,12 +43,6 @@ pub(crate) struct WeakLayerEntry<MSG> {
 }
 
 impl<MSG> WeakLayerEntry<MSG> {
-    pub fn new() -> Self {
-        Self {
-            shared: Weak::new(),
-        }
-    }
-
     fn upgrade(&self) -> Option<StrongLayerEntry<MSG>> {
         self.shared
             .upgrade()
@@ -74,6 +66,8 @@ pub(crate) struct StrongWidgetEntry<MSG> {
 }
 
 impl<MSG> StrongWidgetEntry<MSG> {
+    // Used by the unit tests.
+    #[allow(unused)]
     pub fn new(widget: Box<dyn Widget<MSG>>, unique_id: u64) -> Self {
         Self {
             shared: Rc::new(RefCell::new(widget)),
@@ -84,12 +78,6 @@ impl<MSG> StrongWidgetEntry<MSG> {
             unique_id,
         }
     }
-
-    /*
-    pub fn borrow(&self) -> Ref<'_, Box<dyn Widget<MSG>>> {
-        RefCell::borrow(&self.shared)
-    }
-    */
 
     pub fn borrow_mut(&mut self) -> RefMut<'_, Box<dyn Widget<MSG>>> {
         RefCell::borrow_mut(&self.shared)
@@ -182,9 +170,13 @@ impl<MSG> WidgetSet<MSG> {
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut StrongWidgetEntry<MSG>> {
         self.entries.iter_mut()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
 }
 
-pub struct Canvas<MSG> {
+pub struct WindowCanvas<MSG> {
     next_layer_id: u64,
     next_widget_id: u64,
 
@@ -195,17 +187,18 @@ pub struct Canvas<MSG> {
 
     widgets: FnvHashSet<StrongWidgetEntry<MSG>>,
     widget_with_pointer_lock: Option<(StrongWidgetEntry<MSG>, SetPointerLockType)>,
-    widgets_to_send_pointer_unlock_event: Vec<StrongWidgetEntry<MSG>>,
+    widgets_to_send_input_event: Vec<(StrongWidgetEntry<MSG>, InputEvent)>,
     widget_with_text_comp_listen: Option<StrongWidgetEntry<MSG>>,
     widgets_with_keyboard_listen: WidgetSet<MSG>,
     widgets_scheduled_for_animation: WidgetSet<MSG>,
+    widgets_with_pointer_down_listen: WidgetSet<MSG>,
     widgets_to_remove_from_animation: Vec<StrongWidgetEntry<MSG>>,
     widget_requests: Vec<(StrongWidgetEntry<MSG>, WidgetRequests)>,
 
     do_repack_layers: bool,
 }
 
-impl<MSG> Canvas<MSG> {
+impl<MSG> WindowCanvas<MSG> {
     pub fn new() -> Self {
         Self {
             next_layer_id: 0,
@@ -215,10 +208,11 @@ impl<MSG> Canvas<MSG> {
             dirty_layers: FnvHashSet::default(),
             widgets: FnvHashSet::default(),
             widget_with_pointer_lock: None,
-            widgets_to_send_pointer_unlock_event: Vec::new(),
+            widgets_to_send_input_event: Vec::new(),
             widget_with_text_comp_listen: None,
             widgets_with_keyboard_listen: WidgetSet::new(),
             widgets_scheduled_for_animation: WidgetSet::new(),
+            widgets_with_pointer_down_listen: WidgetSet::new(),
             widgets_to_remove_from_animation: Vec::new(),
             widget_requests: Vec::new(),
             do_repack_layers: true,
@@ -229,7 +223,8 @@ impl<MSG> Canvas<MSG> {
         &mut self,
         size: Size,
         z_order: i32,
-        position: Point,
+        outer_position: Point,
+        inner_position: Point,
         explicit_visibility: bool,
     ) -> Result<LayerID, LayerError> {
         let id = LayerID {
@@ -241,7 +236,8 @@ impl<MSG> Canvas<MSG> {
             shared: Rc::new(RefCell::new(Layer::new(
                 id,
                 size,
-                position,
+                outer_position,
+                inner_position,
                 explicit_visibility,
             )?)),
         };
@@ -314,7 +310,7 @@ impl<MSG> Canvas<MSG> {
         Ok(())
     }
 
-    pub fn set_layer_position(
+    pub fn set_layer_outer_position(
         &mut self,
         layer: LayerID,
         position: Point,
@@ -324,7 +320,20 @@ impl<MSG> Canvas<MSG> {
             .get_mut(&layer)
             .ok_or_else(|| LayerError::LayerWithIDNotFound(layer))?
             .borrow_mut()
-            .set_position(position))
+            .set_outer_position(position))
+    }
+
+    pub fn set_layer_inner_position(
+        &mut self,
+        layer: LayerID,
+        position: Point,
+    ) -> Result<(), LayerError> {
+        Ok(self
+            .layers
+            .get_mut(&layer)
+            .ok_or_else(|| LayerError::LayerWithIDNotFound(layer))?
+            .borrow_mut()
+            .set_inner_position(position, &mut self.dirty_layers))
     }
 
     pub fn set_layer_size(&mut self, layer: LayerID, size: Size) -> Result<(), LayerError> {
@@ -596,15 +605,46 @@ impl<MSG> Canvas<MSG> {
 
             if set_text_comp {
                 if let Some(last_widget) = self.widget_with_text_comp_listen.take() {
-                    // TODO: send composition end event to widget
-                }
+                    if last_widget.unique_id() != widget_entry.unique_id() {
+                        self.widgets_to_send_input_event.push((
+                            last_widget.clone(),
+                            InputEvent::TextComposition(CompositionEvent {
+                                state: CompositionState::End,
+                                data: String::new(),
+                            }),
+                        ));
+                        self.widgets_to_send_input_event.push((
+                            widget_entry.clone(),
+                            InputEvent::TextComposition(CompositionEvent {
+                                state: CompositionState::Start,
+                                data: String::new(),
+                            }),
+                        ));
 
-                self.widget_with_text_comp_listen = Some(widget_entry.clone());
-                // TODO: send composition start event to widget
+                        self.widget_with_text_comp_listen = Some(widget_entry.clone());
+                    } else {
+                        self.widget_with_text_comp_listen = Some(last_widget);
+                    }
+                } else {
+                    self.widget_with_text_comp_listen = Some(widget_entry.clone());
+                    self.widgets_to_send_input_event.push((
+                        widget_entry.clone(),
+                        InputEvent::TextComposition(CompositionEvent {
+                            state: CompositionState::Start,
+                            data: String::new(),
+                        }),
+                    ));
+                }
             } else {
                 if let Some(last_widget) = self.widget_with_text_comp_listen.take() {
                     if last_widget.unique_id() == widget_entry.unique_id() {
-                        // TODO: send composition end event to widget
+                        self.widgets_to_send_input_event.push((
+                            widget_entry.clone(),
+                            InputEvent::TextComposition(CompositionEvent {
+                                state: CompositionState::End,
+                                data: String::new(),
+                            }),
+                        ));
                     } else {
                         self.widget_with_text_comp_listen = Some(last_widget);
                     }
@@ -615,8 +655,8 @@ impl<MSG> Canvas<MSG> {
             if set_lock_type == SetPointerLockType::Unlock {
                 if let Some((last_widget, lock_type)) = self.widget_with_pointer_lock.take() {
                     if last_widget.unique_id() == widget_entry.unique_id() {
-                        self.widgets_to_send_pointer_unlock_event
-                            .push(widget_entry.clone());
+                        self.widgets_to_send_input_event
+                            .push((widget_entry.clone(), InputEvent::PointerUnlocked));
                     } else {
                         self.widget_with_pointer_lock = Some((last_widget, lock_type));
                     }
@@ -624,12 +664,19 @@ impl<MSG> Canvas<MSG> {
             } else {
                 if let Some((last_widget, _)) = &mut self.widget_with_pointer_lock {
                     if last_widget.unique_id() != widget_entry.unique_id() {
-                        self.widgets_to_send_pointer_unlock_event
-                            .push(last_widget.clone());
+                        self.widgets_to_send_input_event
+                            .push((last_widget.clone(), InputEvent::PointerUnlocked));
                     }
                 }
 
                 self.widget_with_pointer_lock = Some((widget_entry.clone(), set_lock_type));
+            }
+        }
+        if let Some(set_pointer_down_listen) = requests.set_pointer_down_listen {
+            if set_pointer_down_listen {
+                self.widgets_with_pointer_down_listen.insert(&widget_entry);
+            } else {
+                self.widgets_with_pointer_down_listen.remove(&widget_entry);
             }
         }
     }
@@ -699,6 +746,31 @@ impl<MSG> Canvas<MSG> {
                         self.handle_widget_requests(&widget_entry, requests);
                     }
                 } else {
+                    if !self.widgets_with_pointer_down_listen.is_empty() {
+                        if e.any_button_just_pressed() {
+                            let mut widget_requests: Vec<(StrongWidgetEntry<MSG>, WidgetRequests)> =
+                                Vec::new();
+                            std::mem::swap(&mut widget_requests, &mut self.widget_requests);
+
+                            for widget_entry in self.widgets_with_pointer_down_listen.iter_mut() {
+                                let res = {
+                                    widget_entry
+                                        .borrow_mut()
+                                        .on_input_event(event, msg_out_queue)
+                                };
+                                if let EventCapturedStatus::Captured(requests) = res {
+                                    widget_requests.push((widget_entry.clone(), requests));
+                                }
+                            }
+
+                            for (widget_entry, requests) in widget_requests.drain(..) {
+                                self.handle_widget_requests(&widget_entry, requests);
+                            }
+
+                            std::mem::swap(&mut widget_requests, &mut self.widget_requests);
+                        }
+                    }
+
                     let mut widget_requests = None;
                     for (_z_index, layers) in self.layers_ordered.iter_mut().rev() {
                         for layer in layers.iter_mut() {
@@ -776,25 +848,25 @@ impl<MSG> Canvas<MSG> {
             }
         }
 
-        let mut widgets_to_send_pointer_unlock_event: Vec<StrongWidgetEntry<MSG>> = Vec::new();
+        let mut widgets_to_send_input_event: Vec<(StrongWidgetEntry<MSG>, InputEvent)> = Vec::new();
         std::mem::swap(
-            &mut widgets_to_send_pointer_unlock_event,
-            &mut self.widgets_to_send_pointer_unlock_event,
+            &mut widgets_to_send_input_event,
+            &mut self.widgets_to_send_input_event,
         );
-        for mut widget_entry in widgets_to_send_pointer_unlock_event.drain(..) {
+        for (mut widget_entry, event) in widgets_to_send_input_event.drain(..) {
             let res = {
                 widget_entry
                     .borrow_mut()
-                    .on_input_event(&InputEvent::PointerUnlocked, msg_out_queue)
+                    .on_input_event(&event, msg_out_queue)
             };
             if let EventCapturedStatus::Captured(requests) = res {
                 self.handle_widget_requests(&widget_entry, requests);
             }
         }
-        widgets_to_send_pointer_unlock_event.append(&mut self.widgets_to_send_pointer_unlock_event);
+        widgets_to_send_input_event.append(&mut self.widgets_to_send_input_event);
         std::mem::swap(
-            &mut widgets_to_send_pointer_unlock_event,
-            &mut self.widgets_to_send_pointer_unlock_event,
+            &mut widgets_to_send_input_event,
+            &mut self.widgets_to_send_input_event,
         );
 
         let lock_pointer_in_place = self

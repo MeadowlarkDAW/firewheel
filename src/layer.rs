@@ -1,9 +1,9 @@
 use fnv::FnvHashSet;
 
 use crate::anchor::Anchor;
-use crate::canvas::StrongWidgetEntry;
 use crate::event::PointerEvent;
 use crate::size::{Point, Size};
+use crate::window_canvas::StrongWidgetEntry;
 use crate::{WidgetRegionType, WidgetRequests};
 use std::cmp::Ordering;
 use std::error::Error;
@@ -60,7 +60,7 @@ pub(crate) struct Layer<MSG> {
     pub id: LayerID,
 
     region_tree: RegionTree<MSG>,
-    position: Point,
+    outer_position: Point,
 
     size: Size,
 }
@@ -69,19 +69,28 @@ impl<MSG> Layer<MSG> {
     pub fn new(
         id: LayerID,
         size: Size,
-        position: Point,
+        outer_position: Point,
+        inner_position: Point,
         explicit_visibility: bool,
     ) -> Result<Self, LayerError> {
         Ok(Self {
             id,
-            region_tree: RegionTree::new(size, explicit_visibility),
-            position,
+            region_tree: RegionTree::new(size, inner_position, explicit_visibility),
+            outer_position,
             size,
         })
     }
 
-    pub fn set_position(&mut self, position: Point) {
-        self.position = position;
+    pub fn set_outer_position(&mut self, position: Point) {
+        self.outer_position = position;
+    }
+
+    pub fn set_inner_position(&mut self, position: Point, dirty_layers: &mut FnvHashSet<LayerID>) {
+        self.region_tree.set_layer_inner_position(position);
+
+        if self.region_tree.is_dirty() {
+            dirty_layers.insert(self.id);
+        }
     }
 
     pub fn set_explicit_visibility(
@@ -294,16 +303,16 @@ impl<MSG> Layer<MSG> {
             return None;
         }
 
-        if event.position.x < self.position.x
-            || event.position.y < self.position.y
-            || event.position.x > self.position.x + self.size.width()
-            || event.position.y > self.position.y + self.size.height()
+        if event.position.x < self.outer_position.x
+            || event.position.y < self.outer_position.y
+            || event.position.x > self.outer_position.x + self.size.width()
+            || event.position.y > self.outer_position.y + self.size.height()
         {
             return None;
         }
 
         // Remove this layer's offset from the position of the mouse event.
-        event.position -= self.position;
+        event.position -= self.outer_position;
 
         self.region_tree.handle_pointer_event(event, msg_out_queue)
     }

@@ -45,6 +45,7 @@ pub struct WidgetRequests {
     pub set_pointer_events_listen: Option<bool>,
     pub set_keyboard_events_listen: Option<KeyboardEventsListen>,
     pub set_pointer_lock: Option<SetPointerLockType>,
+    pub set_pointer_down_listen: Option<bool>,
 }
 
 impl Default for WidgetRequests {
@@ -55,6 +56,7 @@ impl Default for WidgetRequests {
             set_pointer_events_listen: None,
             set_keyboard_events_listen: None,
             set_pointer_lock: None,
+            set_pointer_down_listen: None,
         }
     }
 }

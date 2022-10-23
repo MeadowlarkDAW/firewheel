@@ -35,6 +35,14 @@ pub struct PointerEvent {
     pub modifiers: Modifiers,
 }
 
+impl PointerEvent {
+    pub fn any_button_just_pressed(&self) -> bool {
+        self.left_button == PointerButtonState::JustPressed
+            || self.right_button == PointerButtonState::JustPressed
+            || self.middle_button == PointerButtonState::JustPressed
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KeyboardEventsListen {
     None,
