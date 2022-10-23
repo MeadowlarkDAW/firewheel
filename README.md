@@ -7,26 +7,26 @@ This crate is currently experimental and incomplete.
 
 ---
 
-Firewheel is a low-level, retained-mode, event-driven, barebones, "DIY" toolkit for making high-performance UIs. It is *NOT* a complete UI framework with ready-made widgets, but rather a toolkit to aid in building your own widgets and UI systems.
+Firewheel is a low-level, retained-mode, event-driven, barebones, "DIY" toolkit for making high-performance GUIs. It is *NOT* a complete GUI framework with ready-made widgets, but rather a toolkit to aid in building your own widgets and GUI systems.
 
-This project was born out of the need for a high-performance UI toolkit for [Meadowlark](https://github.com/MeadowlarkDAW/Meadowlark). Meadowlark's UI is quite unconventional (as far as generic UI toolkits are concerned), because it contains a whole lot of custom widgets, custom layout logic, custom rendering logic (with shaders), and unique performance optimization challenges. So in the end I decided to develop an in-house toolkit that is tailored to the needs of Meadowlark (and to my personal coding workflow).
+This project was born out of the need for a high-performance GUI toolkit for [Meadowlark](https://github.com/MeadowlarkDAW/Meadowlark). Meadowlark's GUI is quite unconventional (as far as generic GUI toolkits are concerned), because it contains a whole lot of custom widgets, custom layout logic, custom rendering logic (with shaders), and unique performance optimization challenges. So in the end I decided to develop an in-house toolkit that is tailored to the needs of Meadowlark (and to my personal coding workflow).
 
-If you are just looking for a easy-to-use/feature rich UI toolkit in Rust, please check out one of these UI toolkits instead (that being said, depending on your definition of "simple", you may still enjoy using Firewheel ;) )
+If you are just looking for a easy-to-use/feature rich GUI toolkit in Rust, please check out one of these GUI toolkits instead (that being said, depending on your definition of "simple", you may still enjoy using Firewheel ;) )
 * [Vizia](https://github.com/vizia/vizia)
     * native Rust
     * retained mode
     * data-driven
-    * can be used to make audio plugin UIs
+    * can be used to make audio plugin GUIs
 * [Iced](https://github.com/iced-rs/iced)
     * native Rust
     * immediate mode
     * data-driven
-    * can be used to make audio plugin UIs
+    * can be used to make audio plugin GUIs
 * [Egui](https://github.com/emilk/egui)
     * native Rust
     * immediate mode
     * data-driven
-    * can be used to make audio plugin UIs
+    * can be used to make audio plugin GUIs
 * [Tauri](https://github.com/tauri-apps/tauri)
     * web based
 * [Slint](https://github.com/slint-ui/slint)
@@ -53,13 +53,13 @@ If you are just looking for a easy-to-use/feature rich UI toolkit in Rust, pleas
     * Rust bindings to imgui
     * immediate mode
     * data-driven
-    * can be used to make audio plugin UIs
+    * can be used to make audio plugin GUIs
 
 # How it works
 
 * Layer system
     * Rendering is done by defining separate "layers" (textures that widgets paint their contents onto), and then blitting those layers together to get the final output. A widget can be assigned to any layer.
-    * Every widget has its own dedicated rectangular region in the layer it belongs to. A widget may not paint outside of its assigned region, and multiple widgets may not have overlapping regions within the same layer. Because of these restrictions, repainting a layer only requires redrawing the regions with dirty widgets as apposed to redrawing the entire layer every frame. Layers that don't have any dirty widgets don't need to be repainted at all (common in complex desktop app UIs with mutliple distinct panels/sections).
+    * Every widget has its own dedicated rectangular region in the layer it belongs to. A widget may not paint outside of its assigned region, and multiple widgets may not have overlapping regions within the same layer. Because of these restrictions, repainting a layer only requires redrawing the regions with dirty widgets as apposed to redrawing the entire layer every frame. Layers that don't have any dirty widgets don't need to be repainted at all (common in complex desktop app GUIs with mutliple distinct panels/sections).
     * Any layer can effectively be used as a "scroll region" by simply changing its internal offset (like a camera in a game engine). Regions that are outside the layer bounds are automatically culled from both rendering and input logic.
     * Layers are automatically packed together into as few textures as possible to save GPU memory and therefore increase performance.
 * Widget organization
@@ -97,7 +97,7 @@ If you are just looking for a easy-to-use/feature rich UI toolkit in Rust, pleas
 * No extensive suite of ready-made widgets. Only a few basic ones will be included such as buttons, toggle buttons, labels, spinners, scrollbars, separators, drop-down menus, and single-line text input.
 * No "Flexbox"-like layout systems, so this library is not meant for web or mobile applications.
 * No windowing library or event-loop logic. You must provide that yourself. (Look at the examples for how to do this.)
-* This toolkit makes no gaurantees that your UI will perform optimally or correctly if you don't know what you are doing. Using this toolkit requires some knowledge of how to optimally create layers and regions for a GUI. (I may create a guide for this later.)
+* This toolkit makes no gaurantees that your GUI will perform optimally or correctly if you don't know what you are doing. Using this toolkit requires some knowledge of how to optimally create layers and regions for a GUI. (I may create a guide for this later.)
 
 # FAQ
 

@@ -1,7 +1,15 @@
 [package]
 name = "firewheel"
-version = "0.1.0"
+version = "0.0.0"
 edition = "2021"
+authors = ["Billy Messenger <BillyDM@tutamail.com>"]
+license = "MIT OR Apache-2.0"
+keywords = ["ui", "gui", "barebones", "performance"]
+categories = ["gui"]
+description = "(WIP) A low-level, barebones, \"DIY\" toolkit for making high-performance GUIs"
+documentation = "https://docs.rs/firewheel"
+repository = "https://github.com/MeadowlarkDAW/firewheel"
+readme = "README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
