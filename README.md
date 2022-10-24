@@ -39,6 +39,7 @@ If you are just looking for a easy-to-use/feature rich GUI toolkit in Rust, plea
     * The size, anchors, and anchor offsets are defined manually for each region. However, a change to the size or anchor offset of a container (parent) region will automatically update the position of its child regions.
     * Only widget regions are allowed to paint to the screen. Container (parent) regions are completely abstract, and a widget region cannot be a container region.
     * Any region can be set to be explicitly visible/invisible. A region that is explicitly invisible will have it and all its children automatically culled from both rendering and input logic.
+    * The user can specify whether child regions should internally be unsorted (default), sorted by x coordinate, or sorted by y coordinate. The sorted variants will allow for further scrolling and pointer input optimizations for long lists of items.
 * Pointer (mouse) input logic
     * Widgets can request to receive/stop receiving pointer input events. Only the widgets that have opted-in will receive pointer input events.
     * Pointer input starts at the layer with the highest z-order value, and then it works its way down the layer list until a layer captures the event.

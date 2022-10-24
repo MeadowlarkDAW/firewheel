@@ -9,7 +9,10 @@ use std::cell::{RefCell, RefMut};
 use std::hash::Hash;
 use std::rc::{Rc, Weak};
 
-// TODO: Write unit tests for this monstrosity.
+// TODO: Let the user specify whether child regions should be internally unsorted
+// (default), sorted by x coordinate, or sorted by y coordinate. Sorted lists will
+// allow for further scrolling and pointer input optimizations for long lists of
+// items.
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RegionInfo {
