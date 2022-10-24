@@ -18,9 +18,13 @@ members = [
     "examples/hello-world",
 ]
 
+[features]
+image-loading = ["femtovg/image-loading"]
+
 [dependencies]
 keyboard-types = { version = "0.6.1", default-features = false }
-nanovg = { version = "1.0", default-features = false, features = ["gl3"] }
+#nanovg = { version = "1.0", default-features = false, features = ["gl3"] }
+femtovg = { git = "https://github.com/femtovg/femtovg", rev = "20dc7ef142004736f1ba1c626dd9c5bb556dde14", default-features = false }
 glow = "0.11"
 raw-window-handle = "0.4"
 log = "0.4"

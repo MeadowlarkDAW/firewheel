@@ -1,9 +1,10 @@
 use fnv::FnvHashSet;
 
 use crate::anchor::Anchor;
+use crate::canvas::StrongWidgetEntry;
 use crate::event::PointerEvent;
+use crate::glow_renderer::LayerRenderer;
 use crate::size::{Point, Size};
-use crate::window_canvas::StrongWidgetEntry;
 use crate::{WidgetRegionType, WidgetRequests};
 use std::cmp::Ordering;
 use std::error::Error;
@@ -58,11 +59,10 @@ impl Hash for LayerID {
 
 pub(crate) struct Layer<MSG> {
     pub id: LayerID,
+    pub renderer: LayerRenderer,
 
-    region_tree: RegionTree<MSG>,
-    outer_position: Point,
-
-    size: Size,
+    pub region_tree: RegionTree<MSG>,
+    pub outer_position: Point,
 }
 
 impl<MSG> Layer<MSG> {
@@ -75,9 +75,9 @@ impl<MSG> Layer<MSG> {
     ) -> Result<Self, LayerError> {
         Ok(Self {
             id,
+            renderer: LayerRenderer::new(),
             region_tree: RegionTree::new(size, inner_position, explicit_visibility),
             outer_position,
-            size,
         })
     }
 
@@ -106,18 +106,12 @@ impl<MSG> Layer<MSG> {
         }
     }
 
-    pub fn set_size(
-        &mut self,
-        size: Size,
-        dirty_layers: &mut FnvHashSet<LayerID>,
-    ) -> Result<(), LayerError> {
-        if self.size != size {
-            self.size = size;
-            self.region_tree.set_layer_size(size);
+    pub fn set_size(&mut self, size: Size, dirty_layers: &mut FnvHashSet<LayerID>) {
+        self.region_tree.set_layer_size(size);
+
+        if self.region_tree.is_dirty() {
             dirty_layers.insert(self.id);
         }
-
-        Ok(())
     }
 
     pub fn add_container_region(
@@ -305,8 +299,8 @@ impl<MSG> Layer<MSG> {
 
         if event.position.x < self.outer_position.x
             || event.position.y < self.outer_position.y
-            || event.position.x > self.outer_position.x + self.size.width()
-            || event.position.y > self.outer_position.y + self.size.height()
+            || event.position.x > self.outer_position.x + self.region_tree.layer_size().width()
+            || event.position.y > self.outer_position.y + self.region_tree.layer_size().height()
         {
             return None;
         }

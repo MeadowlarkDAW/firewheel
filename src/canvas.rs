@@ -6,6 +6,7 @@ use std::rc::{Rc, Weak};
 
 use crate::anchor::Anchor;
 use crate::event::{InputEvent, KeyboardEventsListen};
+use crate::glow_renderer::LayerRenderer;
 use crate::layer::{Layer, LayerError, LayerID, WeakRegionTreeEntry};
 use crate::widget::{SetPointerLockType, Widget};
 use crate::{ContainerRegionID, EventCapturedStatus, Point, RegionInfo, Size, WidgetRequests};
@@ -176,7 +177,7 @@ impl<MSG> WidgetSet<MSG> {
     }
 }
 
-pub struct WindowCanvas<MSG> {
+pub struct Canvas<MSG> {
     next_layer_id: u64,
     next_widget_id: u64,
 
@@ -198,7 +199,7 @@ pub struct WindowCanvas<MSG> {
     do_repack_layers: bool,
 }
 
-impl<MSG> WindowCanvas<MSG> {
+impl<MSG> Canvas<MSG> {
     pub fn new() -> Self {
         Self {
             next_layer_id: 0,
@@ -337,11 +338,12 @@ impl<MSG> WindowCanvas<MSG> {
     }
 
     pub fn set_layer_size(&mut self, layer: LayerID, size: Size) -> Result<(), LayerError> {
-        self.layers
+        Ok(self
+            .layers
             .get_mut(&layer)
             .ok_or_else(|| LayerError::LayerWithIDNotFound(layer))?
             .borrow_mut()
-            .set_size(size, &mut self.dirty_layers)
+            .set_size(size, &mut self.dirty_layers))
     }
 
     pub fn set_layer_explicit_visibility(
@@ -878,11 +880,6 @@ impl<MSG> WindowCanvas<MSG> {
         InputEventResult {
             lock_pointer_in_place,
         }
-    }
-
-    fn pack_layers(&mut self) {
-
-        // TODO
     }
 }
 

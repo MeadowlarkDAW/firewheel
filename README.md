@@ -7,7 +7,7 @@ This crate is a work in progress. It is not yet ready for any kind of use.
 
 ---
 
-Firewheel is a low-level, retained-mode, event-driven, barebones, "DIY" toolkit aimed at making high-performance GUIs. It is *NOT* a complete GUI framework with an extensive suite of ready-made widgets, but rather it is a toolkit to aid in building your own widgets and GUI systems.
+Firewheel is a low-level, barebones, "DIY" toolkit aimed at making high-performance GUIs. It is *NOT* a complete GUI framework with an extensive suite of ready-made widgets, but rather it is a toolkit to aid in building your own widgets and GUI systems.
 
 This project was born out of the need for a high-performance GUI toolkit for [Meadowlark](https://github.com/MeadowlarkDAW/Meadowlark). Meadowlark's GUI is quite unconventional (as far as generic GUI toolkits are concerned), because it contains a whole lot of custom widgets, custom layout logic, custom rendering logic (with shaders), and unique performance optimization challenges. So in the end I decided to develop an in-house toolkit that is tailored to the needs of Meadowlark (and to my personal coding workflow).
 

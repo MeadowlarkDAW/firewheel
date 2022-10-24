@@ -1,5 +1,5 @@
+use crate::canvas::StrongWidgetEntry;
 use crate::event::{InputEvent, PointerEvent};
-use crate::window_canvas::StrongWidgetEntry;
 use crate::{
     Anchor, EventCapturedStatus, HAlign, Point, Rect, Size, VAlign, WidgetRegionType,
     WidgetRequests,
@@ -29,12 +29,12 @@ pub(crate) struct RegionTree<MSG> {
     widget_id_to_assigned_region: FnvHashMap<u64, StrongRegionTreeEntry<MSG>>,
     container_id_to_assigned_region: FnvHashMap<u64, StrongRegionTreeEntry<MSG>>,
     dirty_regions: FnvHashSet<u64>,
-    clear_rects: Vec<Rect>,
+    pub clear_rects: Vec<Rect>,
     widgets_just_shown: FnvHashSet<u64>,
     widgets_just_hidden: FnvHashSet<u64>,
     layer_rect: Rect,
     layer_explicit_visibility: bool,
-    clear_whole_layer: bool,
+    pub clear_whole_layer: bool,
 }
 
 impl<MSG> RegionTree<MSG> {
@@ -580,6 +580,10 @@ impl<MSG> RegionTree<MSG> {
 
     pub fn layer_explicit_visibility(&self) -> bool {
         self.layer_explicit_visibility
+    }
+
+    pub fn layer_size(&self) -> Size {
+        self.layer_rect.size()
     }
 
     pub fn is_dirty(&self) -> bool {
