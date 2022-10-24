@@ -6,8 +6,8 @@ use std::rc::{Rc, Weak};
 
 use crate::anchor::Anchor;
 use crate::event::{InputEvent, KeyboardEventsListen};
-use crate::glow_renderer::LayerRenderer;
 use crate::layer::{Layer, LayerError, LayerID, WeakRegionTreeEntry};
+use crate::renderer::LayerRenderer;
 use crate::widget::{SetPointerLockType, Widget};
 use crate::{ContainerRegionID, EventCapturedStatus, Point, RegionInfo, Size, WidgetRequests};
 
@@ -175,6 +175,17 @@ impl<MSG> WidgetSet<MSG> {
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
+
+    pub fn clear(&mut self) {
+        self.unique_ids.clear();
+        self.entries.clear();
+    }
+
+    /// Used for testing purposes
+    #[allow(unused)]
+    pub fn contains(&self, widget_entry: &StrongWidgetEntry<MSG>) -> bool {
+        self.unique_ids.contains(&widget_entry.unique_id)
+    }
 }
 
 pub struct Canvas<MSG> {
@@ -183,8 +194,6 @@ pub struct Canvas<MSG> {
 
     layers: FnvHashMap<LayerID, StrongLayerEntry<MSG>>,
     layers_ordered: Vec<(i32, Vec<StrongLayerEntry<MSG>>)>,
-
-    dirty_layers: FnvHashSet<LayerID>,
 
     widgets: FnvHashSet<StrongWidgetEntry<MSG>>,
     widget_with_pointer_lock: Option<(StrongWidgetEntry<MSG>, SetPointerLockType)>,
@@ -196,6 +205,8 @@ pub struct Canvas<MSG> {
     widgets_to_remove_from_animation: Vec<StrongWidgetEntry<MSG>>,
     widget_requests: Vec<(StrongWidgetEntry<MSG>, WidgetRequests)>,
 
+    pub(crate) layer_renderers_to_clean_up: Vec<LayerRenderer>,
+
     do_repack_layers: bool,
 }
 
@@ -206,7 +217,6 @@ impl<MSG> Canvas<MSG> {
             next_widget_id: 0,
             layers: FnvHashMap::default(),
             layers_ordered: Vec::new(),
-            dirty_layers: FnvHashSet::default(),
             widgets: FnvHashSet::default(),
             widget_with_pointer_lock: None,
             widgets_to_send_input_event: Vec::new(),
@@ -216,6 +226,7 @@ impl<MSG> Canvas<MSG> {
             widgets_with_pointer_down_listen: WidgetSet::new(),
             widgets_to_remove_from_animation: Vec::new(),
             widget_requests: Vec::new(),
+            layer_renderers_to_clean_up: Vec::new(),
             do_repack_layers: true,
         }
     }
@@ -290,7 +301,11 @@ impl<MSG> Canvas<MSG> {
                     }
                 }
                 if let Some(i) = remove_i {
-                    layers.remove(i);
+                    let mut entry = layers.remove(i);
+
+                    if let Some(renderer) = entry.borrow_mut().renderer.take() {
+                        self.layer_renderers_to_clean_up.push(renderer);
+                    }
 
                     if layers.is_empty() {
                         remove_z_order_i = Some(z_order_i);
@@ -303,8 +318,6 @@ impl<MSG> Canvas<MSG> {
         if let Some(i) = remove_z_order_i {
             self.layers_ordered.remove(i);
         }
-
-        self.dirty_layers.remove(&id);
 
         self.do_repack_layers = true;
 
@@ -334,7 +347,7 @@ impl<MSG> Canvas<MSG> {
             .get_mut(&layer)
             .ok_or_else(|| LayerError::LayerWithIDNotFound(layer))?
             .borrow_mut()
-            .set_inner_position(position, &mut self.dirty_layers))
+            .set_inner_position(position))
     }
 
     pub fn set_layer_size(&mut self, layer: LayerID, size: Size) -> Result<(), LayerError> {
@@ -343,7 +356,7 @@ impl<MSG> Canvas<MSG> {
             .get_mut(&layer)
             .ok_or_else(|| LayerError::LayerWithIDNotFound(layer))?
             .borrow_mut()
-            .set_size(size, &mut self.dirty_layers))
+            .set_size(size))
     }
 
     pub fn set_layer_explicit_visibility(
@@ -356,7 +369,7 @@ impl<MSG> Canvas<MSG> {
             .get_mut(&layer)
             .ok_or_else(|| LayerError::LayerWithIDNotFound(layer))?
             .borrow_mut()
-            .set_explicit_visibility(explicit_visibility, &mut self.dirty_layers))
+            .set_explicit_visibility(explicit_visibility))
     }
 
     pub fn add_container_region(
@@ -381,7 +394,7 @@ impl<MSG> Canvas<MSG> {
             .get_mut(&layer)
             .ok_or_else(|| ())?
             .borrow_mut()
-            .remove_container_region(region, &mut self.dirty_layers)
+            .remove_container_region(region)
     }
 
     pub fn modify_container_region(
@@ -403,7 +416,6 @@ impl<MSG> Canvas<MSG> {
                 new_internal_anchor,
                 new_parent_anchor,
                 new_anchor_offset,
-                &mut self.dirty_layers,
             )
     }
 
@@ -417,7 +429,7 @@ impl<MSG> Canvas<MSG> {
             .get_mut(&layer)
             .ok_or_else(|| ())?
             .borrow_mut()
-            .set_container_region_explicit_visibility(region, visible, &mut self.dirty_layers)
+            .set_container_region_explicit_visibility(region, visible)
     }
 
     pub fn mark_container_region_dirty(
@@ -429,7 +441,7 @@ impl<MSG> Canvas<MSG> {
             .get_mut(&layer)
             .ok_or_else(|| ())?
             .borrow_mut()
-            .mark_container_region_dirty(region, &mut self.dirty_layers)
+            .mark_container_region_dirty(region)
     }
 
     pub fn add_widget(
@@ -464,7 +476,6 @@ impl<MSG> Canvas<MSG> {
             region_info,
             info.region_type,
             explicit_visibility,
-            &mut self.dirty_layers,
         )?;
 
         self.widgets.insert(widget_entry.clone());
@@ -496,7 +507,6 @@ impl<MSG> Canvas<MSG> {
                 new_internal_anchor,
                 new_parent_anchor,
                 new_anchor_offset,
-                &mut self.dirty_layers,
             )
             .unwrap();
     }
@@ -512,7 +522,7 @@ impl<MSG> Canvas<MSG> {
             .upgrade()
             .unwrap()
             .borrow_mut()
-            .set_widget_explicit_visibility(&mut widget_ref.shared, visible, &mut self.dirty_layers)
+            .set_widget_explicit_visibility(&mut widget_ref.shared, visible)
             .unwrap();
     }
 
@@ -524,7 +534,7 @@ impl<MSG> Canvas<MSG> {
             .upgrade()
             .unwrap()
             .borrow_mut()
-            .remove_widget_region(&widget_ref.shared, &mut self.dirty_layers);
+            .remove_widget_region(&widget_ref.shared);
 
         // Remove this widget from all active event listeners.
         if let Some(w) = self.widget_with_pointer_lock.take() {
@@ -572,7 +582,7 @@ impl<MSG> Canvas<MSG> {
                 .upgrade()
                 .unwrap()
                 .borrow_mut()
-                .mark_widget_region_dirty(widget_entry, &mut self.dirty_layers)
+                .mark_widget_region_dirty(widget_entry)
                 .unwrap();
         }
         if let Some(recieve_next_animation_event) = requests.set_recieve_next_animation_event {

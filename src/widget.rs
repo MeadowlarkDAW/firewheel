@@ -1,4 +1,7 @@
-use crate::event::{InputEvent, KeyboardEventsListen};
+use crate::{
+    event::{InputEvent, KeyboardEventsListen},
+    Rect, VG,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WidgetRegionType {
@@ -32,6 +35,9 @@ pub trait Widget<MSG> {
         event: &InputEvent,
         msg_out_queue: &mut Vec<MSG>,
     ) -> EventCapturedStatus;
+
+    #[allow(unused)]
+    fn paint(&mut self, vg: &mut VG, assigned_rect: &Rect, layer_rect: &Rect) {}
 }
 
 pub struct WidgetAddedInfo {

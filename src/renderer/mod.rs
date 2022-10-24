@@ -5,11 +5,14 @@ use std::sync::Arc;
 
 use crate::{size::PhysicalSize, Canvas, Rect, ScaleFactor, Size};
 
+mod layer_renderer;
+pub(crate) use layer_renderer::LayerRenderer;
+
 // TODO: Pack multiple layers into a single texture instead of having one
 // texture per layer.
 
 pub struct Renderer {
-    vg_canvas: femtovg::Canvas<femtovg::renderer::OpenGl>,
+    vg: femtovg::Canvas<femtovg::renderer::OpenGl>,
 
     physical_size: PhysicalSize,
     scale_factor: ScaleFactor,
@@ -21,10 +24,10 @@ impl Renderer {
         F: FnMut(&str) -> *const c_void,
     {
         let vg_renderer = femtovg::renderer::OpenGl::new_from_function(load_fn).unwrap();
-        let vg_canvas = femtovg::Canvas::new(vg_renderer).unwrap();
+        let vg = femtovg::Canvas::new(vg_renderer).unwrap();
 
         Self {
-            vg_canvas,
+            vg,
             physical_size: PhysicalSize::default(),
             scale_factor: ScaleFactor(0.0),
         }
@@ -37,25 +40,29 @@ impl Renderer {
         scale_factor: ScaleFactor,
         clear_color: Color,
     ) {
+        for mut layer_renderer in canvas.layer_renderers_to_clean_up.drain(..) {
+            layer_renderer.clean_up(&mut self.vg);
+        }
+
         if self.physical_size != physical_size || self.scale_factor != scale_factor {
             self.physical_size = physical_size;
             self.scale_factor = scale_factor;
 
-            self.vg_canvas.set_size(
+            self.vg.set_size(
                 physical_size.width,
                 physical_size.height,
                 scale_factor.0 as f32,
             );
         }
 
-        self.vg_canvas
+        self.vg
             .clear_rect(0, 0, physical_size.width, physical_size.height, clear_color);
 
-        self.vg_canvas.save();
-        self.vg_canvas.reset();
+        self.vg.save();
+        self.vg.reset();
 
-        self.vg_canvas.restore();
-        self.vg_canvas.flush();
+        self.vg.restore();
+        self.vg.flush();
     }
 }
 

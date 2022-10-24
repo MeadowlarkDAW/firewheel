@@ -315,3 +315,42 @@ impl Rect {
             && self.pos_br.partial_eq_with_epsilon(other.pos_br)
     }
 }
+
+#[derive(Default, Debug, Clone, Copy, PartialEq)]
+pub struct PhysicalRect {
+    pub x: u32,
+    pub y: u32,
+    pub size: PhysicalSize,
+}
+
+impl PhysicalRect {
+    pub fn from_logical_pos_size(pos: Point, size: Size, scale: ScaleFactor) -> Self {
+        let pos = pos.to_physical(scale);
+        let mut size = size.to_physical(scale);
+
+        let x = if pos.x < 0 {
+            if pos.x.abs() as u32 >= size.width {
+                size.width = 0;
+            } else {
+                size.width -= pos.x.abs() as u32;
+            }
+
+            0
+        } else {
+            pos.x.abs() as u32
+        };
+        let y = if pos.y < 0 {
+            if pos.y.abs() as u32 >= size.height {
+                size.height = 0;
+            } else {
+                size.height -= pos.y.abs() as u32;
+            }
+
+            0
+        } else {
+            pos.y.abs() as u32
+        };
+
+        PhysicalRect { x, y, size }
+    }
+}

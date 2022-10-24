@@ -3,7 +3,7 @@ use fnv::FnvHashSet;
 use crate::anchor::Anchor;
 use crate::canvas::StrongWidgetEntry;
 use crate::event::PointerEvent;
-use crate::glow_renderer::LayerRenderer;
+use crate::renderer::LayerRenderer;
 use crate::size::{Point, Size};
 use crate::{WidgetRegionType, WidgetRequests};
 use std::cmp::Ordering;
@@ -59,7 +59,7 @@ impl Hash for LayerID {
 
 pub(crate) struct Layer<MSG> {
     pub id: LayerID,
-    pub renderer: LayerRenderer,
+    pub renderer: Option<LayerRenderer>,
 
     pub region_tree: RegionTree<MSG>,
     pub outer_position: Point,
@@ -75,7 +75,7 @@ impl<MSG> Layer<MSG> {
     ) -> Result<Self, LayerError> {
         Ok(Self {
             id,
-            renderer: LayerRenderer::new(),
+            renderer: Some(LayerRenderer::new()),
             region_tree: RegionTree::new(size, inner_position, explicit_visibility),
             outer_position,
         })
@@ -85,33 +85,17 @@ impl<MSG> Layer<MSG> {
         self.outer_position = position;
     }
 
-    pub fn set_inner_position(&mut self, position: Point, dirty_layers: &mut FnvHashSet<LayerID>) {
+    pub fn set_inner_position(&mut self, position: Point) {
         self.region_tree.set_layer_inner_position(position);
-
-        if self.region_tree.is_dirty() {
-            dirty_layers.insert(self.id);
-        }
     }
 
-    pub fn set_explicit_visibility(
-        &mut self,
-        explicit_visibility: bool,
-        dirty_layers: &mut FnvHashSet<LayerID>,
-    ) {
+    pub fn set_explicit_visibility(&mut self, explicit_visibility: bool) {
         self.region_tree
             .set_layer_explicit_visibility(explicit_visibility);
-
-        if self.region_tree.is_dirty() {
-            dirty_layers.insert(self.id);
-        }
     }
 
-    pub fn set_size(&mut self, size: Size, dirty_layers: &mut FnvHashSet<LayerID>) {
+    pub fn set_size(&mut self, size: Size) {
         self.region_tree.set_layer_size(size);
-
-        if self.region_tree.is_dirty() {
-            dirty_layers.insert(self.id);
-        }
     }
 
     pub fn add_container_region(
@@ -123,16 +107,8 @@ impl<MSG> Layer<MSG> {
             .add_container_region(region_info, explicit_visibility)
     }
 
-    pub fn remove_container_region(
-        &mut self,
-        id: ContainerRegionID,
-        dirty_layers: &mut FnvHashSet<LayerID>,
-    ) -> Result<(), ()> {
+    pub fn remove_container_region(&mut self, id: ContainerRegionID) -> Result<(), ()> {
         self.region_tree.remove_container_region(id)?;
-
-        if self.region_tree.is_dirty() {
-            dirty_layers.insert(self.id);
-        }
 
         Ok(())
     }
@@ -144,7 +120,6 @@ impl<MSG> Layer<MSG> {
         new_internal_anchor: Option<Anchor>,
         new_parent_anchor: Option<Anchor>,
         new_anchor_offset: Option<Point>,
-        dirty_layers: &mut FnvHashSet<LayerID>,
     ) -> Result<(), ()> {
         self.region_tree.modify_container_region(
             id,
@@ -154,10 +129,6 @@ impl<MSG> Layer<MSG> {
             new_anchor_offset,
         )?;
 
-        if self.region_tree.is_dirty() {
-            dirty_layers.insert(self.id);
-        }
-
         Ok(())
     }
 
@@ -165,28 +136,15 @@ impl<MSG> Layer<MSG> {
         &mut self,
         id: ContainerRegionID,
         visible: bool,
-        dirty_layers: &mut FnvHashSet<LayerID>,
     ) -> Result<(), ()> {
         self.region_tree
             .set_container_region_explicit_visibility(id, visible)?;
 
-        if self.region_tree.is_dirty() {
-            dirty_layers.insert(self.id);
-        }
-
         Ok(())
     }
 
-    pub fn mark_container_region_dirty(
-        &mut self,
-        id: ContainerRegionID,
-        dirty_layers: &mut FnvHashSet<LayerID>,
-    ) -> Result<(), ()> {
+    pub fn mark_container_region_dirty(&mut self, id: ContainerRegionID) -> Result<(), ()> {
         self.region_tree.mark_container_region_dirty(id)?;
-
-        if self.region_tree.is_dirty() {
-            dirty_layers.insert(self.id);
-        }
 
         Ok(())
     }
@@ -197,7 +155,6 @@ impl<MSG> Layer<MSG> {
         region_info: RegionInfo,
         region_type: WidgetRegionType,
         explicit_visibility: bool,
-        dirty_layers: &mut FnvHashSet<LayerID>,
     ) -> Result<(), ()> {
         self.region_tree.add_widget_region(
             assigned_widget,
@@ -206,23 +163,11 @@ impl<MSG> Layer<MSG> {
             explicit_visibility,
         )?;
 
-        if self.region_tree.is_dirty() {
-            dirty_layers.insert(self.id);
-        }
-
         Ok(())
     }
 
-    pub fn remove_widget_region(
-        &mut self,
-        widget: &StrongWidgetEntry<MSG>,
-        dirty_layers: &mut FnvHashSet<LayerID>,
-    ) {
+    pub fn remove_widget_region(&mut self, widget: &StrongWidgetEntry<MSG>) {
         self.region_tree.remove_widget_region(widget);
-
-        if self.region_tree.is_dirty() {
-            dirty_layers.insert(self.id);
-        }
     }
 
     pub fn modify_widget_region(
@@ -232,7 +177,6 @@ impl<MSG> Layer<MSG> {
         new_internal_anchor: Option<Anchor>,
         new_parent_anchor: Option<Anchor>,
         new_anchor_offset: Option<Point>,
-        dirty_layers: &mut FnvHashSet<LayerID>,
     ) -> Result<(), ()> {
         self.region_tree.modify_widget_region(
             widget,
@@ -242,10 +186,6 @@ impl<MSG> Layer<MSG> {
             new_anchor_offset,
         )?;
 
-        if self.region_tree.is_dirty() {
-            dirty_layers.insert(self.id);
-        }
-
         Ok(())
     }
 
@@ -253,28 +193,15 @@ impl<MSG> Layer<MSG> {
         &mut self,
         widget: &mut StrongWidgetEntry<MSG>,
         visible: bool,
-        dirty_layers: &mut FnvHashSet<LayerID>,
     ) -> Result<(), ()> {
         self.region_tree
             .set_widget_explicit_visibility(widget, visible)?;
 
-        if self.region_tree.is_dirty() {
-            dirty_layers.insert(self.id);
-        }
-
         Ok(())
     }
 
-    pub fn mark_widget_region_dirty(
-        &mut self,
-        widget: &StrongWidgetEntry<MSG>,
-        dirty_layers: &mut FnvHashSet<LayerID>,
-    ) -> Result<(), ()> {
+    pub fn mark_widget_region_dirty(&mut self, widget: &StrongWidgetEntry<MSG>) -> Result<(), ()> {
         self.region_tree.mark_widget_dirty(widget)?;
-
-        if self.region_tree.is_dirty() {
-            dirty_layers.insert(self.id);
-        }
 
         Ok(())
     }
@@ -313,6 +240,10 @@ impl<MSG> Layer<MSG> {
 
     pub fn is_empty(&self) -> bool {
         self.region_tree.is_empty()
+    }
+
+    pub fn is_dirty(&self) -> bool {
+        self.region_tree.is_dirty()
     }
 }
 
