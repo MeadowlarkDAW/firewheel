@@ -1,6 +1,7 @@
 use crate::{
     event::{InputEvent, KeyboardEventsListen},
-    Rect, VG,
+    size::PhysicalRect,
+    Rect, ScaleFactor, VG,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -37,7 +38,27 @@ pub trait Widget<MSG> {
     ) -> EventCapturedStatus;
 
     #[allow(unused)]
-    fn paint(&mut self, vg: &mut VG, assigned_rect: &Rect, layer_rect: &Rect) {}
+    fn paint(&mut self, vg: &mut VG, region: &PaintRegionInfo) {}
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct PaintRegionInfo {
+    /// This widget's assigned rectangular region in logical coordinates.
+    pub rect: Rect,
+
+    /// The layer's visible rectangular region in logical coordinates.
+    pub layer_rect: Rect,
+
+    /// This widget's assigned rectangular region in physical coordinates
+    /// (the physical coordinates in the layer's texture, not the screen).
+    pub physical_rect: PhysicalRect,
+
+    /// The layer's visible rectangular region in physical coordinates
+    /// (the physical coordinates in the layer's texture, not the screen).
+    pub layer_physical_rect: PhysicalRect,
+
+    /// The dpi scaling factor.
+    pub scale_factor: ScaleFactor,
 }
 
 pub struct WidgetAddedInfo {

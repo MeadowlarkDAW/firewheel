@@ -1,8 +1,8 @@
 use crate::canvas::StrongWidgetEntry;
 use crate::event::{InputEvent, PointerEvent};
-use crate::size::PhysicalRect;
+use crate::size::{PhysicalPoint, PhysicalRect, PhysicalSize, TextureRect};
 use crate::{
-    Anchor, EventCapturedStatus, HAlign, Point, Rect, Size, VAlign, WidgetRegionType,
+    Anchor, EventCapturedStatus, HAlign, Point, Rect, ScaleFactor, Size, VAlign, WidgetRegionType,
     WidgetRequests,
 };
 use fnv::{FnvHashMap, FnvHashSet};
@@ -28,33 +28,43 @@ pub struct RegionInfo {
 
 pub(crate) struct RegionTree<MSG> {
     pub dirty_widgets: WidgetSet<MSG>,
-    pub physical_rects_to_clear: Vec<PhysicalRect>,
+    pub texture_rects_to_clear: Vec<TextureRect>,
     pub clear_whole_layer: bool,
 
     next_region_id: u64,
     roots: Vec<StrongRegionTreeEntry<MSG>>,
-    widget_id_to_assigned_region: FnvHashMap<u64, StrongRegionTreeEntry<MSG>>,
     container_id_to_assigned_region: FnvHashMap<u64, StrongRegionTreeEntry<MSG>>,
     widgets_just_shown: FnvHashSet<u64>,
     widgets_just_hidden: FnvHashSet<u64>,
     layer_rect: Rect,
+    layer_physical_rect: PhysicalRect,
     layer_explicit_visibility: bool,
+    scale_factor: ScaleFactor,
 }
 
 impl<MSG> RegionTree<MSG> {
-    pub fn new(layer_size: Size, inner_position: Point, layer_explicit_visibility: bool) -> Self {
+    pub fn new(
+        layer_size: Size,
+        inner_position: Point,
+        layer_explicit_visibility: bool,
+        scale_factor: ScaleFactor,
+    ) -> Self {
         Self {
             next_region_id: 0,
             roots: Vec::new(),
-            widget_id_to_assigned_region: FnvHashMap::default(),
             container_id_to_assigned_region: FnvHashMap::default(),
             dirty_widgets: WidgetSet::new(),
-            physical_rects_to_clear: Vec::new(),
+            texture_rects_to_clear: Vec::new(),
             widgets_just_shown: FnvHashSet::default(),
             widgets_just_hidden: FnvHashSet::default(),
             layer_rect: Rect::new(inner_position, layer_size),
+            layer_physical_rect: PhysicalRect::new(
+                inner_position.to_physical(scale_factor),
+                layer_size.to_physical(scale_factor),
+            ),
             layer_explicit_visibility,
             clear_whole_layer: true,
+            scale_factor,
         }
     }
 
@@ -72,9 +82,13 @@ impl<MSG> RegionTree<MSG> {
                     internal_anchor: region_info.internal_anchor,
                     parent_anchor: region_info.parent_anchor,
                     anchor_offset: region_info.anchor_offset,
-                    rect: Rect::new(Point::default(), region_info.size), // This will be overwritten
-                    parent_rect: Rect::default(),                        // This will be overwritten
-                    last_rendered_physical_rect: None,
+                    rect: Rect::new(Point::default(), region_info.size), // The position will be overwritten
+                    physical_rect: PhysicalRect::new(
+                        PhysicalPoint::default(), // The position will be overwritten
+                        region_info.size.to_physical(self.scale_factor),
+                    ),
+                    parent_rect: Rect::default(), // This will be overwritten
+                    last_rendered_texture_rect: None,
                     explicit_visibility,
                     parent_explicit_visibility: false, // This will be overwritten
                     is_within_layer_rect: false,       // This will be overwritten
@@ -126,9 +140,10 @@ impl<MSG> RegionTree<MSG> {
             new_entry.borrow_mut().parent_changed(
                 parent_rect,
                 self.layer_rect,
+                self.scale_factor,
                 parent_explicit_visibility,
                 &mut self.dirty_widgets,
-                &mut self.physical_rects_to_clear,
+                &mut self.texture_rects_to_clear,
                 &mut self.widgets_just_shown,
                 &mut self.widgets_just_hidden,
             );
@@ -144,12 +159,12 @@ impl<MSG> RegionTree<MSG> {
         let mut entry = self
             .container_id_to_assigned_region
             .remove(&id.0)
-            .ok_or_else(|| ())?;
+            .ok_or_else(|| ())?; // TODO: custom error type
         let mut entry_ref = entry.borrow_mut();
 
         if let Some(children) = &entry_ref.children {
             if !children.is_empty() {
-                return Err(());
+                return Err(()); // TODO: custom error type
             }
         } else {
             panic!("region was not a container region");
@@ -170,6 +185,8 @@ impl<MSG> RegionTree<MSG> {
                 }
                 if let Some(i) = remove_i {
                     children.remove(i);
+                } else {
+                    panic!("parent region did not contain child region");
                 }
             } else {
                 panic!("parent region was not a container region");
@@ -185,6 +202,8 @@ impl<MSG> RegionTree<MSG> {
             }
             if let Some(i) = remove_i {
                 self.roots.remove(i);
+            } else {
+                panic!("child region was not assigned to layer");
             }
         }
 
@@ -216,8 +235,9 @@ impl<MSG> RegionTree<MSG> {
             new_anchor_offset,
             None,
             self.layer_rect,
+            self.scale_factor,
             &mut self.dirty_widgets,
-            &mut self.physical_rects_to_clear,
+            &mut self.texture_rects_to_clear,
             &mut self.widgets_just_shown,
             &mut self.widgets_just_hidden,
         );
@@ -236,7 +256,7 @@ impl<MSG> RegionTree<MSG> {
             panic!("region was not a container region");
         }
 
-        entry.mark_dirty(&mut self.dirty_widgets, &mut self.physical_rects_to_clear);
+        entry.mark_dirty(&mut self.dirty_widgets, &mut self.texture_rects_to_clear);
 
         Ok(())
     }
@@ -263,8 +283,9 @@ impl<MSG> RegionTree<MSG> {
             None,
             Some(explicit_visibility),
             self.layer_rect,
+            self.scale_factor,
             &mut self.dirty_widgets,
-            &mut self.physical_rects_to_clear,
+            &mut self.texture_rects_to_clear,
             &mut self.widgets_just_shown,
             &mut self.widgets_just_hidden,
         );
@@ -276,15 +297,11 @@ impl<MSG> RegionTree<MSG> {
         &mut self,
         assigned_widget: &mut StrongWidgetEntry<MSG>,
         region_info: RegionInfo,
-        //listens_to_pointer_events: bool,
         region_type: WidgetRegionType,
         explicit_visibility: bool,
     ) -> Result<(), ()> {
-        if self
-            .widget_id_to_assigned_region
-            .contains_key(&assigned_widget.unique_id())
-        {
-            return Err(());
+        if assigned_widget.assigned_region().upgrade().is_some() {
+            panic!("widget was already assigned a region");
         }
 
         let new_id = ContainerRegionID(self.next_region_id);
@@ -298,8 +315,12 @@ impl<MSG> RegionTree<MSG> {
                     parent_anchor: region_info.parent_anchor,
                     anchor_offset: region_info.anchor_offset,
                     rect: Rect::new(Point::default(), region_info.size), // This will be overwritten
-                    parent_rect: Rect::default(),                        // This will be overwritten
-                    last_rendered_physical_rect: None,
+                    physical_rect: PhysicalRect::new(
+                        PhysicalPoint::default(), // The position will be overwritten
+                        region_info.size.to_physical(self.scale_factor),
+                    ),
+                    parent_rect: Rect::default(), // This will be overwritten
+                    last_rendered_texture_rect: None,
                     explicit_visibility,
                     parent_explicit_visibility: false, // This will be overwritten
                     is_within_layer_rect: false,       // This will be overwritten
@@ -347,15 +368,13 @@ impl<MSG> RegionTree<MSG> {
 
                     (parent_rect, parent_explicit_visibility)
                 } else {
+                    // TODO: custom error type
                     return Err(());
                 };
 
                 (parent_rect, parent_explicit_visibility)
             }
         };
-
-        self.widget_id_to_assigned_region
-            .insert(assigned_widget.unique_id(), entry.clone());
 
         {
             let weak_entry = entry.downgrade();
@@ -371,9 +390,10 @@ impl<MSG> RegionTree<MSG> {
             entry_ref.parent_changed(
                 parent_rect,
                 self.layer_rect,
+                self.scale_factor,
                 parent_explicit_visibility,
                 &mut self.dirty_widgets,
-                &mut self.physical_rects_to_clear,
+                &mut self.texture_rects_to_clear,
                 &mut self.widgets_just_shown,
                 &mut self.widgets_just_hidden,
             );
@@ -382,18 +402,18 @@ impl<MSG> RegionTree<MSG> {
         Ok(())
     }
 
-    pub fn remove_widget_region(&mut self, widget: &StrongWidgetEntry<MSG>) {
-        let mut entry = if let Some(entry) = self
-            .widget_id_to_assigned_region
-            .remove(&widget.unique_id())
-        {
-            entry
-        } else {
-            return;
+    pub fn remove_widget_region(&mut self, widget: &mut StrongWidgetEntry<MSG>) {
+        let mut entry = {
+            if let Some(entry) = widget.assigned_region().upgrade() {
+                entry
+            } else {
+                return;
+            }
         };
+        widget.assigned_region_mut().clear();
 
-        let entry_region_id = entry.region_id;
         let mut entry_ref = entry.borrow_mut();
+        let entry_region_id = entry_ref.region.id;
 
         if entry_ref.children.is_some() {
             panic!("region was not a widget region");
@@ -401,8 +421,8 @@ impl<MSG> RegionTree<MSG> {
 
         self.dirty_widgets
             .remove(&entry_ref.assigned_widget.as_ref().unwrap().widget);
-        if let Some(rect) = entry_ref.region.last_rendered_physical_rect.take() {
-            self.physical_rects_to_clear.push(rect);
+        if let Some(rect) = entry_ref.region.last_rendered_texture_rect.take() {
+            self.texture_rects_to_clear.push(rect);
         }
 
         self.widgets_just_shown.remove(&widget.unique_id());
@@ -423,6 +443,8 @@ impl<MSG> RegionTree<MSG> {
                 }
                 if let Some(i) = remove_i {
                     children.remove(i);
+                } else {
+                    panic!("parent region did not contain child region");
                 }
             } else {
                 panic!("parent region was not a container region");
@@ -438,6 +460,8 @@ impl<MSG> RegionTree<MSG> {
             }
             if let Some(i) = remove_i {
                 self.roots.remove(i);
+            } else {
+                panic!("widget region was not assigned to layer");
             }
         }
     }
@@ -462,8 +486,9 @@ impl<MSG> RegionTree<MSG> {
                 new_anchor_offset,
                 None,
                 self.layer_rect,
+                self.scale_factor,
                 &mut self.dirty_widgets,
-                &mut self.physical_rects_to_clear,
+                &mut self.texture_rects_to_clear,
                 &mut self.widgets_just_shown,
                 &mut self.widgets_just_hidden,
             );
@@ -477,7 +502,7 @@ impl<MSG> RegionTree<MSG> {
             .upgrade()
             .ok_or_else(|| ())?
             .borrow_mut()
-            .mark_dirty(&mut self.dirty_widgets, &mut self.physical_rects_to_clear);
+            .mark_dirty(&mut self.dirty_widgets, &mut self.texture_rects_to_clear);
 
         Ok(())
     }
@@ -499,8 +524,9 @@ impl<MSG> RegionTree<MSG> {
                 None,
                 Some(explicit_visibility),
                 self.layer_rect,
+                self.scale_factor,
                 &mut self.dirty_widgets,
-                &mut self.physical_rects_to_clear,
+                &mut self.texture_rects_to_clear,
                 &mut self.widgets_just_shown,
                 &mut self.widgets_just_hidden,
             );
@@ -529,15 +555,17 @@ impl<MSG> RegionTree<MSG> {
     pub fn set_layer_inner_position(&mut self, position: Point) {
         if self.layer_rect.pos() != position {
             self.layer_rect.set_pos(position);
+            self.layer_physical_rect.pos = self.layer_rect.pos().to_physical(self.scale_factor);
             self.clear_whole_layer = true;
 
             for entry in self.roots.iter_mut() {
                 entry.borrow_mut().parent_changed(
                     self.layer_rect,
                     self.layer_rect,
+                    self.scale_factor,
                     self.layer_explicit_visibility,
                     &mut self.dirty_widgets,
-                    &mut self.physical_rects_to_clear,
+                    &mut self.texture_rects_to_clear,
                     &mut self.widgets_just_shown,
                     &mut self.widgets_just_hidden,
                 );
@@ -545,18 +573,21 @@ impl<MSG> RegionTree<MSG> {
         }
     }
 
-    pub fn set_layer_size(&mut self, size: Size) {
-        if self.layer_rect.size() != size {
+    pub fn set_layer_size(&mut self, size: Size, scale_factor: ScaleFactor) {
+        if self.layer_rect.size() != size || self.scale_factor != scale_factor {
             self.layer_rect.set_size(size);
+            self.layer_physical_rect.size = self.layer_rect.size().to_physical(scale_factor);
+            self.scale_factor = scale_factor;
             self.clear_whole_layer = true;
 
             for entry in self.roots.iter_mut() {
                 entry.borrow_mut().parent_changed(
                     self.layer_rect,
                     self.layer_rect,
+                    self.scale_factor,
                     self.layer_explicit_visibility,
                     &mut self.dirty_widgets,
-                    &mut self.physical_rects_to_clear,
+                    &mut self.texture_rects_to_clear,
                     &mut self.widgets_just_shown,
                     &mut self.widgets_just_hidden,
                 );
@@ -573,9 +604,10 @@ impl<MSG> RegionTree<MSG> {
                 entry.borrow_mut().parent_changed(
                     self.layer_rect,
                     self.layer_rect,
+                    self.scale_factor,
                     self.layer_explicit_visibility,
                     &mut self.dirty_widgets,
-                    &mut self.physical_rects_to_clear,
+                    &mut self.texture_rects_to_clear,
                     &mut self.widgets_just_shown,
                     &mut self.widgets_just_hidden,
                 );
@@ -595,13 +627,21 @@ impl<MSG> RegionTree<MSG> {
         self.layer_rect.size()
     }
 
+    pub fn layer_physical_size(&self) -> PhysicalSize {
+        self.layer_physical_rect.size
+    }
+
+    pub fn layer_physical_internal_offset(&self) -> PhysicalPoint {
+        self.layer_physical_rect.pos
+    }
+
     pub fn layer_rect(&self) -> Rect {
         self.layer_rect
     }
 
     pub fn is_dirty(&self) -> bool {
         !self.dirty_widgets.is_empty()
-            || !self.physical_rects_to_clear.is_empty()
+            || !self.texture_rects_to_clear.is_empty()
             || self.clear_whole_layer
     }
 
@@ -682,6 +722,10 @@ impl<MSG> WeakRegionTreeEntry<MSG> {
 
     pub fn upgrade(&self) -> Option<Rc<RefCell<RegionTreeEntry<MSG>>>> {
         self.shared.upgrade()
+    }
+
+    pub fn clear(&mut self) {
+        self.shared = Weak::new();
     }
 }
 
@@ -778,21 +822,21 @@ impl<MSG> RegionTreeEntry<MSG> {
     fn mark_dirty(
         &mut self,
         dirty_widgets: &mut WidgetSet<MSG>,
-        physical_rects_to_clear: &mut Vec<PhysicalRect>,
+        texture_rects_to_clear: &mut Vec<TextureRect>,
     ) {
         if self.region.is_visible() {
             if let Some(assigned_widget_info) = &self.assigned_widget {
                 if let WidgetRegionType::Painted = assigned_widget_info.region_type {
                     dirty_widgets.insert(&assigned_widget_info.widget);
-                    if let Some(rect) = self.region.last_rendered_physical_rect.take() {
-                        physical_rects_to_clear.push(rect);
+                    if let Some(rect) = self.region.last_rendered_texture_rect.take() {
+                        texture_rects_to_clear.push(rect);
                     }
                 }
             } else if let Some(children) = &mut self.children {
                 for child_entry in children.iter_mut() {
                     child_entry
                         .borrow_mut()
-                        .mark_dirty(dirty_widgets, physical_rects_to_clear);
+                        .mark_dirty(dirty_widgets, texture_rects_to_clear);
                 }
             }
         }
@@ -806,8 +850,9 @@ impl<MSG> RegionTreeEntry<MSG> {
         new_anchor_offset: Option<Point>,
         new_explicit_visibility: Option<bool>,
         layer_rect: Rect,
+        scale_factor: ScaleFactor,
         dirty_widgets: &mut WidgetSet<MSG>,
-        physical_rects_to_clear: &mut Vec<PhysicalRect>,
+        texture_rects_to_clear: &mut Vec<TextureRect>,
         widgets_just_shown: &mut FnvHashSet<u64>,
         widgets_just_hidden: &mut FnvHashSet<u64>,
     ) {
@@ -844,7 +889,7 @@ impl<MSG> RegionTreeEntry<MSG> {
         }
 
         if changed {
-            self.region.update_rect();
+            self.region.update_rect(scale_factor);
             self.region.is_within_layer_rect = layer_rect.overlaps_with_rect(self.region.rect);
             let visibility_changed_to = self.region.sync_visibility();
 
@@ -856,8 +901,8 @@ impl<MSG> RegionTreeEntry<MSG> {
 
                         if let WidgetRegionType::Painted = assigned_widget_info.region_type {
                             dirty_widgets.insert(&assigned_widget_info.widget);
-                            if let Some(rect) = self.region.last_rendered_physical_rect.take() {
-                                physical_rects_to_clear.push(rect);
+                            if let Some(rect) = self.region.last_rendered_texture_rect.take() {
+                                texture_rects_to_clear.push(rect);
                             }
                         }
                     } else {
@@ -866,8 +911,8 @@ impl<MSG> RegionTreeEntry<MSG> {
 
                         if let WidgetRegionType::Painted = assigned_widget_info.region_type {
                             dirty_widgets.remove(&assigned_widget_info.widget);
-                            if let Some(rect) = self.region.last_rendered_physical_rect.take() {
-                                physical_rects_to_clear.push(rect);
+                            if let Some(rect) = self.region.last_rendered_texture_rect.take() {
+                                texture_rects_to_clear.push(rect);
                             }
                         }
                     }
@@ -875,8 +920,8 @@ impl<MSG> RegionTreeEntry<MSG> {
                     if let WidgetRegionType::Painted = assigned_widget_info.region_type {
                         // Mark the region as dirty since it has changed.
                         dirty_widgets.insert(&assigned_widget_info.widget);
-                        if let Some(rect) = self.region.last_rendered_physical_rect.take() {
-                            physical_rects_to_clear.push(rect);
+                        if let Some(rect) = self.region.last_rendered_texture_rect.take() {
+                            texture_rects_to_clear.push(rect);
                         }
                     }
                 }
@@ -885,9 +930,10 @@ impl<MSG> RegionTreeEntry<MSG> {
                     child_entry.borrow_mut().parent_changed(
                         self.region.rect,
                         layer_rect,
+                        scale_factor,
                         self.region.explicit_visibility && self.region.parent_explicit_visibility,
                         dirty_widgets,
-                        physical_rects_to_clear,
+                        texture_rects_to_clear,
                         widgets_just_shown,
                         widgets_just_hidden,
                     );
@@ -900,13 +946,14 @@ impl<MSG> RegionTreeEntry<MSG> {
         &mut self,
         parent_rect: Rect,
         layer_rect: Rect,
+        scale_factor: ScaleFactor,
         parent_explicit_visibility: bool,
         dirty_widgets: &mut WidgetSet<MSG>,
-        physical_rects_to_clear: &mut Vec<PhysicalRect>,
+        texture_rects_to_clear: &mut Vec<TextureRect>,
         widgets_just_shown: &mut FnvHashSet<u64>,
         widgets_just_hidden: &mut FnvHashSet<u64>,
     ) {
-        self.region.update_parent_rect(parent_rect);
+        self.region.update_parent_rect(parent_rect, scale_factor);
         self.region.parent_explicit_visibility = parent_explicit_visibility;
         self.region.is_within_layer_rect = layer_rect.overlaps_with_rect(self.region.rect);
         let visibility_changed_to = self.region.sync_visibility();
@@ -919,8 +966,8 @@ impl<MSG> RegionTreeEntry<MSG> {
 
                     if let WidgetRegionType::Painted = assigned_widget_info.region_type {
                         dirty_widgets.insert(&assigned_widget_info.widget);
-                        if let Some(rect) = self.region.last_rendered_physical_rect.take() {
-                            physical_rects_to_clear.push(rect);
+                        if let Some(rect) = self.region.last_rendered_texture_rect.take() {
+                            texture_rects_to_clear.push(rect);
                         }
                     }
                 } else {
@@ -929,8 +976,8 @@ impl<MSG> RegionTreeEntry<MSG> {
 
                     if let WidgetRegionType::Painted = assigned_widget_info.region_type {
                         dirty_widgets.remove(&assigned_widget_info.widget);
-                        if let Some(rect) = self.region.last_rendered_physical_rect.take() {
-                            physical_rects_to_clear.push(rect);
+                        if let Some(rect) = self.region.last_rendered_texture_rect.take() {
+                            texture_rects_to_clear.push(rect);
                         }
                     }
                 }
@@ -939,8 +986,8 @@ impl<MSG> RegionTreeEntry<MSG> {
                     // Mark the region as dirty as it likely moved because of the
                     // change to the parent rect.
                     dirty_widgets.insert(&assigned_widget_info.widget);
-                    if let Some(rect) = self.region.last_rendered_physical_rect.take() {
-                        physical_rects_to_clear.push(rect);
+                    if let Some(rect) = self.region.last_rendered_texture_rect.take() {
+                        texture_rects_to_clear.push(rect);
                     }
                 }
             }
@@ -949,9 +996,10 @@ impl<MSG> RegionTreeEntry<MSG> {
                 child.borrow_mut().parent_changed(
                     self.region.rect,
                     layer_rect,
+                    scale_factor,
                     self.region.explicit_visibility && self.region.parent_explicit_visibility,
                     dirty_widgets,
-                    physical_rects_to_clear,
+                    texture_rects_to_clear,
                     widgets_just_shown,
                     widgets_just_hidden,
                 );
@@ -967,10 +1015,11 @@ pub struct ContainerRegionID(u64);
 pub(crate) struct Region {
     pub id: u64,
     pub rect: Rect,
+    pub physical_rect: PhysicalRect,
     pub internal_anchor: Anchor,
     pub parent_anchor: Anchor,
     pub anchor_offset: Point,
-    pub last_rendered_physical_rect: Option<PhysicalRect>,
+    pub last_rendered_texture_rect: Option<TextureRect>,
     pub parent_rect: Rect,
     pub explicit_visibility: bool,
     pub parent_explicit_visibility: bool,
@@ -979,11 +1028,11 @@ pub(crate) struct Region {
 }
 
 impl Region {
-    fn update_rect(&mut self) {
-        self.update_parent_rect(self.parent_rect);
+    fn update_rect(&mut self, scale_factor: ScaleFactor) {
+        self.update_parent_rect(self.parent_rect, scale_factor);
     }
 
-    fn update_parent_rect(&mut self, parent_rect: Rect) {
+    fn update_parent_rect(&mut self, parent_rect: Rect, scale_factor: ScaleFactor) {
         let parent_anchor_pos_x = match self.parent_anchor.h_align {
             HAlign::Left => parent_rect.x(),
             HAlign::Center => parent_rect.center_x(),
@@ -1012,6 +1061,7 @@ impl Region {
         };
 
         self.rect.set_pos(Point::new(new_x, new_y));
+        self.physical_rect = self.rect.to_physical(scale_factor);
     }
 
     pub fn sync_visibility(&mut self) -> Option<bool> {
@@ -1049,8 +1099,9 @@ mod tests {
         fn new_test_region(
             id: u64,
             rect: Rect,
+            physical_rect: PhysicalRect,
             region_info: RegionInfo,
-            last_rendered_physical_rect: Option<PhysicalRect>,
+            last_rendered_texture_rect: Option<TextureRect>,
             parent_rect: Rect,
             explicit_visibility: bool,
             parent_explicit_visibility: bool,
@@ -1059,10 +1110,11 @@ mod tests {
             Self {
                 id,
                 rect,
+                physical_rect,
                 internal_anchor: region_info.internal_anchor,
                 parent_anchor: region_info.parent_anchor,
                 anchor_offset: region_info.anchor_offset,
-                last_rendered_physical_rect,
+                last_rendered_texture_rect,
                 parent_rect,
                 explicit_visibility,
                 parent_explicit_visibility,
@@ -1160,9 +1212,10 @@ mod tests {
     fn test_region_tree() {
         let layer_rect = Rect::new(Point::new(0.0, 0.0), Size::new(200.0, 100.0));
         let layer_explicit_visibility = true;
+        let scale_factor = ScaleFactor(1.0);
 
         let mut region_tree: RegionTree<()> =
-            RegionTree::new(layer_rect.size(), layer_rect.pos(), true);
+            RegionTree::new(layer_rect.size(), layer_rect.pos(), true, scale_factor);
 
         // --- Test adding container regions ----------------------------------------------------------
         // --------------------------------------------------------------------------------------------
@@ -1198,6 +1251,7 @@ mod tests {
             &Region::new_test_region(
                 container_root0_id.0,
                 container_root0_expected_rect,
+                container_root0_expected_rect.to_physical(scale_factor),
                 container_root0_region_info,
                 None,
                 layer_rect,
@@ -1243,6 +1297,7 @@ mod tests {
             &Region::new_test_region(
                 container_root1_id.0,
                 container_root1_expected_rect,
+                container_root1_expected_rect.to_physical(scale_factor),
                 container_root1_region_info,
                 None,
                 layer_rect,
@@ -1286,6 +1341,7 @@ mod tests {
             &Region::new_test_region(
                 container_root2_id.0,
                 container_root2_expected_rect,
+                container_root2_expected_rect.to_physical(scale_factor),
                 container_root2_region_info,
                 None,
                 layer_rect,
@@ -1329,6 +1385,7 @@ mod tests {
             &Region::new_test_region(
                 container_root3_id.0,
                 container_root3_expected_rect,
+                container_root3_expected_rect.to_physical(scale_factor),
                 container_root3_region_info,
                 None,
                 layer_rect,
@@ -1378,6 +1435,7 @@ mod tests {
             &Region::new_test_region(
                 container_root0_0_id.0,
                 container_root0_0_expected_rect,
+                container_root0_0_expected_rect.to_physical(scale_factor),
                 container_root0_0_region_info,
                 None,
                 container_root0_expected_rect,
@@ -1389,7 +1447,7 @@ mod tests {
 
         // These should all be empty because we haven't added any widget
         // regions yet.
-        assert!(region_tree.physical_rects_to_clear.is_empty());
+        assert!(region_tree.texture_rects_to_clear.is_empty());
         assert!(region_tree.dirty_widgets.is_empty());
         assert!(region_tree.widgets_just_shown.is_empty());
         assert!(region_tree.widgets_just_hidden.is_empty());
@@ -1433,6 +1491,7 @@ mod tests {
             &Region::new_test_region(
                 widget_root4_region_id,
                 widget_root4_expected_rect,
+                widget_root4_expected_rect.to_physical(scale_factor),
                 widget_root4_region_info,
                 None,
                 layer_rect,
@@ -1482,6 +1541,7 @@ mod tests {
             &Region::new_test_region(
                 widget_root5_region_id,
                 widget_root5_expected_rect,
+                widget_root5_expected_rect.to_physical(scale_factor),
                 widget_root5_region_info,
                 None,
                 layer_rect,
@@ -1533,6 +1593,7 @@ mod tests {
             &Region::new_test_region(
                 widget_root6_region_id,
                 widget_root6_expected_rect,
+                widget_root6_expected_rect.to_physical(scale_factor),
                 widget_root6_region_info,
                 None,
                 layer_rect,
@@ -1591,6 +1652,7 @@ mod tests {
             &Region::new_test_region(
                 widget_root0_0_0_region_id,
                 widget_root0_0_0_expected_rect,
+                widget_root0_0_0_expected_rect.to_physical(scale_factor),
                 widget_root0_0_0_region_info,
                 None,
                 container_root0_0_expected_rect,
@@ -1645,6 +1707,7 @@ mod tests {
             &Region::new_test_region(
                 widget_root1_0_region_id,
                 widget_root1_0_expected_rect,
+                widget_root1_0_expected_rect.to_physical(scale_factor),
                 widget_root1_0_region_info,
                 None,
                 container_root1_expected_rect,
@@ -1699,6 +1762,7 @@ mod tests {
             &Region::new_test_region(
                 widget_root2_0_region_id,
                 widget_root2_0_expected_rect,
+                widget_root2_0_expected_rect.to_physical(scale_factor),
                 widget_root2_0_region_info,
                 None,
                 container_root2_expected_rect,
@@ -1740,8 +1804,8 @@ mod tests {
             );
         }
         assert_eq!(
-            region.last_rendered_physical_rect,
-            expected_region.last_rendered_physical_rect
+            region.last_rendered_texture_rect,
+            expected_region.last_rendered_texture_rect
         );
         if !region
             .parent_rect

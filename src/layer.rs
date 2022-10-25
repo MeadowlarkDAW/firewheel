@@ -1,11 +1,9 @@
-use fnv::FnvHashSet;
-
 use crate::anchor::Anchor;
 use crate::canvas::StrongWidgetEntry;
 use crate::event::PointerEvent;
 use crate::renderer::LayerRenderer;
-use crate::size::{Point, Size};
-use crate::{WidgetRegionType, WidgetRequests};
+use crate::size::{PhysicalPoint, Point, Size};
+use crate::{ScaleFactor, WidgetRegionType, WidgetRequests};
 use std::cmp::Ordering;
 use std::error::Error;
 use std::fmt;
@@ -63,6 +61,7 @@ pub(crate) struct Layer<MSG> {
 
     pub region_tree: RegionTree<MSG>,
     pub outer_position: Point,
+    pub physical_outer_position: PhysicalPoint,
 }
 
 impl<MSG> Layer<MSG> {
@@ -72,17 +71,20 @@ impl<MSG> Layer<MSG> {
         outer_position: Point,
         inner_position: Point,
         explicit_visibility: bool,
+        scale_factor: ScaleFactor,
     ) -> Result<Self, LayerError> {
         Ok(Self {
             id,
             renderer: Some(LayerRenderer::new()),
-            region_tree: RegionTree::new(size, inner_position, explicit_visibility),
+            region_tree: RegionTree::new(size, inner_position, explicit_visibility, scale_factor),
             outer_position,
+            physical_outer_position: outer_position.to_physical(scale_factor),
         })
     }
 
-    pub fn set_outer_position(&mut self, position: Point) {
+    pub fn set_outer_position(&mut self, position: Point, scale_factor: ScaleFactor) {
         self.outer_position = position;
+        self.physical_outer_position = position.to_physical(scale_factor);
     }
 
     pub fn set_inner_position(&mut self, position: Point) {
@@ -94,8 +96,8 @@ impl<MSG> Layer<MSG> {
             .set_layer_explicit_visibility(explicit_visibility);
     }
 
-    pub fn set_size(&mut self, size: Size) {
-        self.region_tree.set_layer_size(size);
+    pub fn set_size(&mut self, size: Size, scale_factor: ScaleFactor) {
+        self.region_tree.set_layer_size(size, scale_factor);
     }
 
     pub fn add_container_region(
@@ -166,7 +168,7 @@ impl<MSG> Layer<MSG> {
         Ok(())
     }
 
-    pub fn remove_widget_region(&mut self, widget: &StrongWidgetEntry<MSG>) {
+    pub fn remove_widget_region(&mut self, widget: &mut StrongWidgetEntry<MSG>) {
         self.region_tree.remove_widget_region(widget);
     }
 

@@ -3,7 +3,7 @@ use std::ops::{Add, AddAssign, Sub, SubAssign};
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ScaleFactor(pub f64);
 
-/// A size in logical coordinates
+/// A size in logical coordinates (points)
 #[derive(Default, Debug, Clone, Copy, PartialEq)]
 pub struct Size {
     width: f64,
@@ -11,7 +11,7 @@ pub struct Size {
 }
 
 impl Size {
-    /// Create a new size in logical coordinates.
+    /// Create a new size in logical coordinates (points).
     ///
     /// If any of the given values are less than zero, then they will
     /// be set to zero.
@@ -23,12 +23,12 @@ impl Size {
         }
     }
 
-    /// Convert to actual physical size
+    /// Convert to physical size (pixels)
     #[inline]
-    pub fn to_physical(&self, scale: ScaleFactor) -> PhysicalSize {
+    pub fn to_physical(&self, scale_factor: ScaleFactor) -> PhysicalSize {
         PhysicalSize {
-            width: (self.width * scale.0).round() as u32,
-            height: (self.height * scale.0).round() as u32,
+            width: (self.width * scale_factor.0).round() as u32,
+            height: (self.height * scale_factor.0).round() as u32,
         }
     }
 
@@ -81,7 +81,7 @@ impl Size {
     }
 }
 
-/// An actual size in physical coordinates
+/// A size in physical coordinates (pixels)
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PhysicalSize {
     pub width: u32,
@@ -89,21 +89,21 @@ pub struct PhysicalSize {
 }
 
 impl PhysicalSize {
-    /// Create a new size in actual physical coordinates
+    /// Create a new size in physical coordinates (pixels)
     pub const fn new(width: u32, height: u32) -> Self {
         Self { width, height }
     }
 
-    /// Convert to logical size
+    /// Convert to logical size (points)
     #[inline]
-    pub fn to_logical(&self, scale: ScaleFactor) -> Size {
+    pub fn to_logical(&self, scale_factor: ScaleFactor) -> Size {
         Size {
-            width: f64::from(self.width) / scale.0,
-            height: f64::from(self.height) / scale.0,
+            width: f64::from(self.width) / scale_factor.0,
+            height: f64::from(self.height) / scale_factor.0,
         }
     }
 
-    /// Convert to logical size using the reciprocal of the scale factor
+    /// Convert to logical size (points) using the reciprocal of the scale factor
     #[inline]
     pub fn to_logical_from_scale_recip(&self, scale_recip: f64) -> Size {
         Size {
@@ -113,7 +113,7 @@ impl PhysicalSize {
     }
 }
 
-/// A point in logical coordinates
+/// A point in logical coordinates (points)
 #[derive(Default, Debug, Clone, Copy, PartialEq)]
 pub struct Point {
     pub x: f64,
@@ -121,17 +121,17 @@ pub struct Point {
 }
 
 impl Point {
-    /// Create a new point in logical coordinates
+    /// Create a new point in logical coordinates (points)
     pub const fn new(x: f64, y: f64) -> Self {
         Self { x, y }
     }
 
-    /// Convert to actual physical coordinates
+    /// Convert to physical coordinates (pixels)
     #[inline]
-    pub fn to_physical(&self, scale: ScaleFactor) -> PhysicalPoint {
+    pub fn to_physical(&self, scale_factor: ScaleFactor) -> PhysicalPoint {
         PhysicalPoint {
-            x: (self.x * scale.0).round() as i32,
-            y: (self.y * scale.0).round() as i32,
+            x: (self.x * scale_factor.0).round() as i32,
+            y: (self.y * scale_factor.0).round() as i32,
         }
     }
 
@@ -173,7 +173,7 @@ impl SubAssign for Point {
     }
 }
 
-/// A point in actual physical coordinates
+/// A point in physical coordinates (pixels)
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PhysicalPoint {
     pub x: i32,
@@ -181,21 +181,21 @@ pub struct PhysicalPoint {
 }
 
 impl PhysicalPoint {
-    /// Create a new point in actual physical coordinates
+    /// Create a new point in physical coordinates (pixels)
     pub const fn new(x: i32, y: i32) -> Self {
         Self { x, y }
     }
 
-    /// Convert to logical coordinates
+    /// Convert to logical coordinates (points)
     #[inline]
-    pub fn to_logical(&self, scale: ScaleFactor) -> Point {
+    pub fn to_logical(&self, scale_factor: ScaleFactor) -> Point {
         Point {
-            x: f64::from(self.x) / scale.0,
-            y: f64::from(self.y) / scale.0,
+            x: f64::from(self.x) / scale_factor.0,
+            y: f64::from(self.y) / scale_factor.0,
         }
     }
 
-    /// Convert to logical size using the reciprocal of the scale factor
+    /// Convert to logical coordinates (points) using the reciprocal of the scale factor
     #[inline]
     pub fn to_logical_from_scale_recip(&self, scale_recip: f64) -> Point {
         Point {
@@ -205,6 +205,7 @@ impl PhysicalPoint {
     }
 }
 
+/// A rectangle in logical coordinates (points)
 #[derive(Default, Debug, Clone, Copy, PartialEq)]
 pub struct Rect {
     pos_tl: Point,
@@ -314,43 +315,103 @@ impl Rect {
         self.pos_tl.partial_eq_with_epsilon(other.pos_tl)
             && self.pos_br.partial_eq_with_epsilon(other.pos_br)
     }
+
+    /// Convert to physical coordinates (pixels)
+    #[inline]
+    pub fn to_physical(&self, scale_factor: ScaleFactor) -> PhysicalRect {
+        PhysicalRect {
+            pos: self.pos_tl.to_physical(scale_factor),
+            size: self.size.to_physical(scale_factor),
+        }
+    }
 }
 
+/// A rectangle in physical coordinates (pixels)
 #[derive(Default, Debug, Clone, Copy, PartialEq)]
 pub struct PhysicalRect {
+    pub pos: PhysicalPoint,
+    pub size: PhysicalSize,
+}
+
+impl PhysicalRect {
+    pub fn new(pos: PhysicalPoint, size: PhysicalSize) -> Self {
+        Self { pos: pos, size }
+    }
+
+    #[inline]
+    pub fn x2(&self) -> i32 {
+        self.pos.x + self.size.width as i32
+    }
+
+    #[inline]
+    pub fn y2(&self) -> i32 {
+        self.pos.y + self.size.height as i32
+    }
+
+    #[inline]
+    pub fn pos_br(&self) -> PhysicalPoint {
+        PhysicalPoint {
+            x: self.x2(),
+            y: self.y2(),
+        }
+    }
+
+    /// Convert to logical coordinates (points)
+    #[inline]
+    pub fn to_logical(&self, scale_factor: ScaleFactor) -> Rect {
+        Rect::new(
+            self.pos.to_logical(scale_factor),
+            self.size.to_logical(scale_factor),
+        )
+    }
+
+    /// Convert to logical coordinates (points) using the reciprocal of the scale factor
+    #[inline]
+    pub fn to_logical_from_scale_recip(&self, scale_recip: f64) -> Rect {
+        Rect::new(
+            self.pos.to_logical_from_scale_recip(scale_recip),
+            self.size.to_logical_from_scale_recip(scale_recip),
+        )
+    }
+}
+
+/// The `clear_rect` method in femtovg wants coordinates in `u32`, not
+/// `i32`, so we use this type to correctly clear the region the next
+/// time the widget needs to repaint.
+#[derive(Default, Debug, Clone, Copy, PartialEq)]
+pub(crate) struct TextureRect {
     pub x: u32,
     pub y: u32,
     pub size: PhysicalSize,
 }
 
-impl PhysicalRect {
-    pub fn from_logical_pos_size(pos: Point, size: Size, scale: ScaleFactor) -> Self {
-        let pos = pos.to_physical(scale);
-        let mut size = size.to_physical(scale);
+impl TextureRect {
+    pub fn from_physical_rect(rect: PhysicalRect) -> Self {
+        let mut size = rect.size;
 
-        let x = if pos.x < 0 {
-            if pos.x.abs() as u32 >= size.width {
+        let x = if rect.pos.x < 0 {
+            if rect.pos.x.abs() as u32 >= rect.size.width {
                 size.width = 0;
             } else {
-                size.width -= pos.x.abs() as u32;
+                size.width -= rect.pos.x.abs() as u32;
             }
 
             0
         } else {
-            pos.x.abs() as u32
+            rect.pos.x.abs() as u32
         };
-        let y = if pos.y < 0 {
-            if pos.y.abs() as u32 >= size.height {
+        let y = if rect.pos.y < 0 {
+            if rect.pos.y.abs() as u32 >= size.height {
                 size.height = 0;
             } else {
-                size.height -= pos.y.abs() as u32;
+                size.height -= rect.pos.y.abs() as u32;
             }
 
             0
         } else {
-            pos.y.abs() as u32
+            rect.pos.y.abs() as u32
         };
 
-        PhysicalRect { x, y, size }
+        TextureRect { x, y, size }
     }
 }

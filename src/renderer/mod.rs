@@ -1,9 +1,7 @@
-use femtovg::{Align, Baseline, Color, Paint, Path};
-use glow::HasContext as _;
+use femtovg::Color;
 use std::ffi::c_void;
-use std::sync::Arc;
 
-use crate::{size::PhysicalSize, Canvas, Rect, ScaleFactor, Size};
+use crate::{size::PhysicalSize, Canvas, ScaleFactor};
 
 mod layer_renderer;
 pub(crate) use layer_renderer::LayerRenderer;
@@ -51,7 +49,9 @@ impl Renderer {
             self.vg.set_size(
                 physical_size.width,
                 physical_size.height,
-                scale_factor.0 as f32,
+                // Widgets will do their own dpi scaling in order to have more control
+                // over snapping to whole pixels.
+                1.0,
             );
         }
 

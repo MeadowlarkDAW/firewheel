@@ -9,7 +9,9 @@ use crate::event::{InputEvent, KeyboardEventsListen};
 use crate::layer::{Layer, LayerError, LayerID, WeakRegionTreeEntry};
 use crate::renderer::LayerRenderer;
 use crate::widget::{SetPointerLockType, Widget};
-use crate::{ContainerRegionID, EventCapturedStatus, Point, RegionInfo, Size, WidgetRequests};
+use crate::{
+    ContainerRegionID, EventCapturedStatus, Point, RegionInfo, ScaleFactor, Size, WidgetRequests,
+};
 
 struct StrongLayerEntry<MSG> {
     shared: Rc<RefCell<Layer<MSG>>>,
@@ -94,6 +96,10 @@ impl<MSG> StrongWidgetEntry<MSG> {
 
     pub fn assigned_region(&self) -> &WeakRegionTreeEntry<MSG> {
         &self.assigned_region
+    }
+
+    pub fn assigned_region_mut(&mut self) -> &mut WeakRegionTreeEntry<MSG> {
+        &mut self.assigned_region
     }
 }
 
@@ -207,11 +213,13 @@ pub struct Canvas<MSG> {
 
     pub(crate) layer_renderers_to_clean_up: Vec<LayerRenderer>,
 
+    scale_factor: ScaleFactor,
+
     do_repack_layers: bool,
 }
 
 impl<MSG> Canvas<MSG> {
-    pub fn new() -> Self {
+    pub fn new(scale_factor: ScaleFactor) -> Self {
         Self {
             next_layer_id: 0,
             next_widget_id: 0,
@@ -227,6 +235,7 @@ impl<MSG> Canvas<MSG> {
             widgets_to_remove_from_animation: Vec::new(),
             widget_requests: Vec::new(),
             layer_renderers_to_clean_up: Vec::new(),
+            scale_factor,
             do_repack_layers: true,
         }
     }
@@ -251,6 +260,7 @@ impl<MSG> Canvas<MSG> {
                 outer_position,
                 inner_position,
                 explicit_visibility,
+                self.scale_factor,
             )?)),
         };
         self.layers.insert(id, layer.clone());
@@ -279,6 +289,7 @@ impl<MSG> Canvas<MSG> {
         Ok(id)
     }
 
+    // TODO: Custom error type
     pub fn remove_layer(&mut self, id: LayerID) -> Result<(), ()> {
         if let Some(layer) = self.layers.get(&id) {
             if !layer.borrow().is_empty() {
@@ -334,7 +345,7 @@ impl<MSG> Canvas<MSG> {
             .get_mut(&layer)
             .ok_or_else(|| LayerError::LayerWithIDNotFound(layer))?
             .borrow_mut()
-            .set_outer_position(position))
+            .set_outer_position(position, self.scale_factor))
     }
 
     pub fn set_layer_inner_position(
@@ -356,7 +367,7 @@ impl<MSG> Canvas<MSG> {
             .get_mut(&layer)
             .ok_or_else(|| LayerError::LayerWithIDNotFound(layer))?
             .borrow_mut()
-            .set_size(size))
+            .set_size(size, self.scale_factor))
     }
 
     pub fn set_layer_explicit_visibility(
@@ -372,6 +383,7 @@ impl<MSG> Canvas<MSG> {
             .set_explicit_visibility(explicit_visibility))
     }
 
+    // TODO: Custom error type
     pub fn add_container_region(
         &mut self,
         layer: LayerID,
@@ -385,6 +397,7 @@ impl<MSG> Canvas<MSG> {
             .add_container_region(region_info, explicit_visibility)
     }
 
+    // TODO: Custom error type
     pub fn remove_container_region(
         &mut self,
         layer: LayerID,
@@ -397,6 +410,7 @@ impl<MSG> Canvas<MSG> {
             .remove_container_region(region)
     }
 
+    // TODO: Custom error type
     pub fn modify_container_region(
         &mut self,
         layer: LayerID,
@@ -419,6 +433,7 @@ impl<MSG> Canvas<MSG> {
             )
     }
 
+    // TODO: Custom error type
     pub fn set_container_region_explicit_visibility(
         &mut self,
         layer: LayerID,
@@ -432,6 +447,7 @@ impl<MSG> Canvas<MSG> {
             .set_container_region_explicit_visibility(region, visible)
     }
 
+    // TODO: Custom error type
     pub fn mark_container_region_dirty(
         &mut self,
         layer: LayerID,
@@ -444,6 +460,7 @@ impl<MSG> Canvas<MSG> {
             .mark_container_region_dirty(region)
     }
 
+    // TODO: Custom error type
     pub fn add_widget(
         &mut self,
         mut widget: Box<dyn Widget<MSG>>,
@@ -534,7 +551,7 @@ impl<MSG> Canvas<MSG> {
             .upgrade()
             .unwrap()
             .borrow_mut()
-            .remove_widget_region(&widget_ref.shared);
+            .remove_widget_region(&mut widget_ref.shared);
 
         // Remove this widget from all active event listeners.
         if let Some(w) = self.widget_with_pointer_lock.take() {
@@ -571,126 +588,15 @@ impl<MSG> Canvas<MSG> {
         }
     }
 
-    fn handle_widget_requests(
-        &mut self,
-        widget_entry: &StrongWidgetEntry<MSG>,
-        requests: WidgetRequests,
-    ) {
-        if requests.repaint {
-            widget_entry
-                .assigned_layer
-                .upgrade()
-                .unwrap()
-                .borrow_mut()
-                .mark_widget_region_dirty(widget_entry)
-                .unwrap();
-        }
-        if let Some(recieve_next_animation_event) = requests.set_recieve_next_animation_event {
-            if recieve_next_animation_event {
-                self.widgets_scheduled_for_animation.insert(widget_entry);
-            } else {
-                self.widgets_scheduled_for_animation.remove(widget_entry);
-            }
-        }
-        if let Some(listens) = requests.set_pointer_events_listen {
-            widget_entry
-                .assigned_layer
-                .upgrade()
-                .unwrap()
-                .borrow_mut()
-                .set_widget_region_listens_to_pointer_events(widget_entry, listens)
-                .unwrap();
-        }
-        if let Some(set_keyboard_events_listen) = requests.set_keyboard_events_listen {
-            let set_text_comp = match set_keyboard_events_listen {
-                KeyboardEventsListen::None => false,
-                KeyboardEventsListen::Keys => {
-                    self.widgets_with_keyboard_listen.insert(&widget_entry);
-                    false
-                }
-                KeyboardEventsListen::TextComposition => true,
-                KeyboardEventsListen::KeysAndTextComposition => {
-                    self.widgets_with_keyboard_listen.insert(&widget_entry);
-                    true
-                }
-            };
-
-            if set_text_comp {
-                if let Some(last_widget) = self.widget_with_text_comp_listen.take() {
-                    if last_widget.unique_id() != widget_entry.unique_id() {
-                        self.widgets_to_send_input_event.push((
-                            last_widget.clone(),
-                            InputEvent::TextComposition(CompositionEvent {
-                                state: CompositionState::End,
-                                data: String::new(),
-                            }),
-                        ));
-                        self.widgets_to_send_input_event.push((
-                            widget_entry.clone(),
-                            InputEvent::TextComposition(CompositionEvent {
-                                state: CompositionState::Start,
-                                data: String::new(),
-                            }),
-                        ));
-
-                        self.widget_with_text_comp_listen = Some(widget_entry.clone());
-                    } else {
-                        self.widget_with_text_comp_listen = Some(last_widget);
-                    }
-                } else {
-                    self.widget_with_text_comp_listen = Some(widget_entry.clone());
-                    self.widgets_to_send_input_event.push((
-                        widget_entry.clone(),
-                        InputEvent::TextComposition(CompositionEvent {
-                            state: CompositionState::Start,
-                            data: String::new(),
-                        }),
-                    ));
-                }
-            } else {
-                if let Some(last_widget) = self.widget_with_text_comp_listen.take() {
-                    if last_widget.unique_id() == widget_entry.unique_id() {
-                        self.widgets_to_send_input_event.push((
-                            widget_entry.clone(),
-                            InputEvent::TextComposition(CompositionEvent {
-                                state: CompositionState::End,
-                                data: String::new(),
-                            }),
-                        ));
-                    } else {
-                        self.widget_with_text_comp_listen = Some(last_widget);
-                    }
-                }
-            }
-        }
-        if let Some(set_lock_type) = requests.set_pointer_lock {
-            if set_lock_type == SetPointerLockType::Unlock {
-                if let Some((last_widget, lock_type)) = self.widget_with_pointer_lock.take() {
-                    if last_widget.unique_id() == widget_entry.unique_id() {
-                        self.widgets_to_send_input_event
-                            .push((widget_entry.clone(), InputEvent::PointerUnlocked));
-                    } else {
-                        self.widget_with_pointer_lock = Some((last_widget, lock_type));
-                    }
-                }
-            } else {
-                if let Some((last_widget, _)) = &mut self.widget_with_pointer_lock {
-                    if last_widget.unique_id() != widget_entry.unique_id() {
-                        self.widgets_to_send_input_event
-                            .push((last_widget.clone(), InputEvent::PointerUnlocked));
-                    }
-                }
-
-                self.widget_with_pointer_lock = Some((widget_entry.clone(), set_lock_type));
-            }
-        }
-        if let Some(set_pointer_down_listen) = requests.set_pointer_down_listen {
-            if set_pointer_down_listen {
-                self.widgets_with_pointer_down_listen.insert(&widget_entry);
-            } else {
-                self.widgets_with_pointer_down_listen.remove(&widget_entry);
-            }
-        }
+    pub fn mark_widget_dirty(&mut self, widget_ref: &mut WidgetRef<MSG>) {
+        widget_ref
+            .shared
+            .assigned_layer
+            .upgrade()
+            .unwrap()
+            .borrow_mut()
+            .mark_widget_region_dirty(&widget_ref.shared)
+            .unwrap();
     }
 
     pub fn handle_input_event(
@@ -889,6 +795,128 @@ impl<MSG> Canvas<MSG> {
 
         InputEventResult {
             lock_pointer_in_place,
+        }
+    }
+
+    fn handle_widget_requests(
+        &mut self,
+        widget_entry: &StrongWidgetEntry<MSG>,
+        requests: WidgetRequests,
+    ) {
+        if requests.repaint {
+            widget_entry
+                .assigned_layer
+                .upgrade()
+                .unwrap()
+                .borrow_mut()
+                .mark_widget_region_dirty(widget_entry)
+                .unwrap();
+        }
+        if let Some(recieve_next_animation_event) = requests.set_recieve_next_animation_event {
+            if recieve_next_animation_event {
+                self.widgets_scheduled_for_animation.insert(widget_entry);
+            } else {
+                self.widgets_scheduled_for_animation.remove(widget_entry);
+            }
+        }
+        if let Some(listens) = requests.set_pointer_events_listen {
+            widget_entry
+                .assigned_layer
+                .upgrade()
+                .unwrap()
+                .borrow_mut()
+                .set_widget_region_listens_to_pointer_events(widget_entry, listens)
+                .unwrap();
+        }
+        if let Some(set_keyboard_events_listen) = requests.set_keyboard_events_listen {
+            let set_text_comp = match set_keyboard_events_listen {
+                KeyboardEventsListen::None => false,
+                KeyboardEventsListen::Keys => {
+                    self.widgets_with_keyboard_listen.insert(&widget_entry);
+                    false
+                }
+                KeyboardEventsListen::TextComposition => true,
+                KeyboardEventsListen::KeysAndTextComposition => {
+                    self.widgets_with_keyboard_listen.insert(&widget_entry);
+                    true
+                }
+            };
+
+            if set_text_comp {
+                if let Some(last_widget) = self.widget_with_text_comp_listen.take() {
+                    if last_widget.unique_id() != widget_entry.unique_id() {
+                        self.widgets_to_send_input_event.push((
+                            last_widget.clone(),
+                            InputEvent::TextComposition(CompositionEvent {
+                                state: CompositionState::End,
+                                data: String::new(),
+                            }),
+                        ));
+                        self.widgets_to_send_input_event.push((
+                            widget_entry.clone(),
+                            InputEvent::TextComposition(CompositionEvent {
+                                state: CompositionState::Start,
+                                data: String::new(),
+                            }),
+                        ));
+
+                        self.widget_with_text_comp_listen = Some(widget_entry.clone());
+                    } else {
+                        self.widget_with_text_comp_listen = Some(last_widget);
+                    }
+                } else {
+                    self.widget_with_text_comp_listen = Some(widget_entry.clone());
+                    self.widgets_to_send_input_event.push((
+                        widget_entry.clone(),
+                        InputEvent::TextComposition(CompositionEvent {
+                            state: CompositionState::Start,
+                            data: String::new(),
+                        }),
+                    ));
+                }
+            } else {
+                if let Some(last_widget) = self.widget_with_text_comp_listen.take() {
+                    if last_widget.unique_id() == widget_entry.unique_id() {
+                        self.widgets_to_send_input_event.push((
+                            widget_entry.clone(),
+                            InputEvent::TextComposition(CompositionEvent {
+                                state: CompositionState::End,
+                                data: String::new(),
+                            }),
+                        ));
+                    } else {
+                        self.widget_with_text_comp_listen = Some(last_widget);
+                    }
+                }
+            }
+        }
+        if let Some(set_lock_type) = requests.set_pointer_lock {
+            if set_lock_type == SetPointerLockType::Unlock {
+                if let Some((last_widget, lock_type)) = self.widget_with_pointer_lock.take() {
+                    if last_widget.unique_id() == widget_entry.unique_id() {
+                        self.widgets_to_send_input_event
+                            .push((widget_entry.clone(), InputEvent::PointerUnlocked));
+                    } else {
+                        self.widget_with_pointer_lock = Some((last_widget, lock_type));
+                    }
+                }
+            } else {
+                if let Some((last_widget, _)) = &mut self.widget_with_pointer_lock {
+                    if last_widget.unique_id() != widget_entry.unique_id() {
+                        self.widgets_to_send_input_event
+                            .push((last_widget.clone(), InputEvent::PointerUnlocked));
+                    }
+                }
+
+                self.widget_with_pointer_lock = Some((widget_entry.clone(), set_lock_type));
+            }
+        }
+        if let Some(set_pointer_down_listen) = requests.set_pointer_down_listen {
+            if set_pointer_down_listen {
+                self.widgets_with_pointer_down_listen.insert(&widget_entry);
+            } else {
+                self.widgets_with_pointer_down_listen.remove(&widget_entry);
+            }
         }
     }
 }

@@ -2,8 +2,8 @@ use femtovg::{Color, ImageFlags, ImageId, Paint, Path, PixelFormat, RenderTarget
 
 use crate::{
     layer::Layer,
-    size::{PhysicalRect, PhysicalSize},
-    ScaleFactor,
+    size::{PhysicalPoint, PhysicalRect, PhysicalSize, TextureRect},
+    PaintRegionInfo, Rect, ScaleFactor,
 };
 
 // TODO: Pack multiple layers into a single texture instead of having one
@@ -67,7 +67,8 @@ impl LayerRenderer {
         vg: &mut femtovg::Canvas<femtovg::renderer::OpenGl>,
         scale_factor: ScaleFactor,
     ) {
-        let physical_size = layer.region_tree.layer_size().to_physical(scale_factor);
+        let physical_size = layer.region_tree.layer_physical_size();
+        let layer_physical_internal_offset = layer.region_tree.layer_physical_internal_offset();
         if physical_size.width == 0 || physical_size.height == 0 {
             return;
         }
@@ -88,7 +89,7 @@ impl LayerRenderer {
 
             if layer.region_tree.clear_whole_layer {
                 layer.region_tree.clear_whole_layer = false;
-                layer.region_tree.physical_rects_to_clear.clear();
+                layer.region_tree.texture_rects_to_clear.clear();
 
                 vg.clear_rect(
                     0,
@@ -98,7 +99,7 @@ impl LayerRenderer {
                     Color::rgba(0, 0, 0, 0),
                 );
             } else {
-                for clear_rect in layer.region_tree.physical_rects_to_clear.drain(..) {
+                for clear_rect in layer.region_tree.texture_rects_to_clear.drain(..) {
                     if clear_rect.size.width == 0 || clear_rect.size.height == 0 {
                         continue;
                     }
@@ -115,30 +116,44 @@ impl LayerRenderer {
 
             // -- Paint the dirty widgets ----------------------------------------------------------
 
-            let layer_rect = layer.region_tree.layer_rect();
+            let mut assigned_region_info = PaintRegionInfo {
+                rect: Rect::default(),
+                layer_rect: layer.region_tree.layer_rect(),
+                physical_rect: PhysicalRect::default(),
+                layer_physical_rect: PhysicalRect {
+                    // Remove the layer's internal offset from the physical region so
+                    // it is in the correct place in the texture.
+                    pos: PhysicalPoint::new(0, 0),
+                    size: physical_size,
+                },
+                scale_factor,
+            };
             for widget_entry in layer.region_tree.dirty_widgets.iter_mut() {
                 vg.save();
 
                 if let Some(assigned_region) = widget_entry.assigned_region().upgrade() {
-                    let assigned_rect = {
+                    let (assigned_rect, physical_rect) = {
                         let mut assigned_region = assigned_region.borrow_mut();
 
-                        // Mark the physical region where the widget is painting to so it can
-                        // be cleared the next time the widget needs to repaint.
-                        let rendered_pos = assigned_region.region.rect.pos() - layer_rect.pos();
-                        assigned_region.region.last_rendered_physical_rect =
-                            Some(PhysicalRect::from_logical_pos_size(
-                                rendered_pos,
-                                assigned_region.region.rect.size(),
-                                scale_factor,
-                            ));
+                        // Remove the layer's internal offset from the physical region so
+                        // it is in the correct place in the texture.
+                        let mut physical_rect = assigned_region.region.physical_rect;
+                        physical_rect.pos.x -= layer_physical_internal_offset.x;
+                        physical_rect.pos.y -= layer_physical_internal_offset.y;
 
-                        assigned_region.region.rect
+                        // The `clear_rect` method in femtovg wants coordinates in `u32`, not
+                        // `i32`, so we use this type to correctly clear the region the next
+                        // time the widget needs to repaint.
+                        let texture_rect = TextureRect::from_physical_rect(physical_rect);
+                        assigned_region.region.last_rendered_texture_rect = Some(texture_rect);
+
+                        (assigned_region.region.rect, physical_rect)
                     };
 
-                    widget_entry
-                        .borrow_mut()
-                        .paint(vg, &assigned_rect, &layer_rect);
+                    assigned_region_info.rect = assigned_rect;
+                    assigned_region_info.physical_rect = physical_rect;
+
+                    widget_entry.borrow_mut().paint(vg, &assigned_region_info);
                 } else {
                     log::error!("Someting went wrong: widget was not assigned a region");
                 }
@@ -154,18 +169,18 @@ impl LayerRenderer {
 
         let mut path = Path::new();
         path.rect(
-            layer.outer_position.x as f32,
-            layer.outer_position.y as f32,
-            layer.region_tree.layer_size().width() as f32,
-            layer.region_tree.layer_size().height() as f32,
+            layer.physical_outer_position.x as f32,
+            layer.physical_outer_position.y as f32,
+            physical_size.width as f32,
+            physical_size.height as f32,
         );
 
         let paint = Paint::image(
             texture_state.texture_id,
             0.0,
             0.0,
-            layer.region_tree.layer_size().width() as f32,
-            layer.region_tree.layer_size().height() as f32,
+            physical_size.width as f32,
+            physical_size.height as f32,
             0.0,
             1.0,
         );
