@@ -3,6 +3,12 @@ use std::ops::{Add, AddAssign, Sub, SubAssign};
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ScaleFactor(pub f64);
 
+impl From<f64> for ScaleFactor {
+    fn from(s: f64) -> Self {
+        Self(s)
+    }
+}
+
 /// A size in logical coordinates (points)
 #[derive(Default, Debug, Clone, Copy, PartialEq)]
 pub struct Size {

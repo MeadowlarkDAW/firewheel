@@ -1,8 +1,8 @@
 use crate::anchor::Anchor;
-use crate::canvas::StrongWidgetEntry;
 use crate::event::PointerEvent;
 use crate::renderer::LayerRenderer;
 use crate::size::{PhysicalPoint, Point, Size};
+use crate::window_canvas::StrongWidgetEntry;
 use crate::{ScaleFactor, WidgetRegionType, WidgetRequests};
 use std::cmp::Ordering;
 use std::error::Error;
@@ -246,6 +246,10 @@ impl<MSG> Layer<MSG> {
 
     pub fn is_dirty(&self) -> bool {
         self.region_tree.is_dirty()
+    }
+
+    pub fn is_visible(&self) -> bool {
+        self.region_tree.is_visible()
     }
 }
 

@@ -1,19 +1,22 @@
+use femtovg::Color;
 use fnv::{FnvHashMap, FnvHashSet};
 use keyboard_types::{CompositionEvent, CompositionState};
 use std::cell::{Ref, RefCell, RefMut};
+use std::ffi::c_void;
 use std::hash::Hash;
 use std::rc::{Rc, Weak};
 
 use crate::anchor::Anchor;
 use crate::event::{InputEvent, KeyboardEventsListen};
 use crate::layer::{Layer, LayerError, LayerID, WeakRegionTreeEntry};
-use crate::renderer::LayerRenderer;
+use crate::renderer::{LayerRenderer, Renderer};
+use crate::size::PhysicalSize;
 use crate::widget::{SetPointerLockType, Widget};
 use crate::{
     ContainerRegionID, EventCapturedStatus, Point, RegionInfo, ScaleFactor, Size, WidgetRequests,
 };
 
-struct StrongLayerEntry<MSG> {
+pub(crate) struct StrongLayerEntry<MSG> {
     shared: Rc<RefCell<Layer<MSG>>>,
 }
 
@@ -22,7 +25,7 @@ impl<MSG> StrongLayerEntry<MSG> {
         RefCell::borrow(&self.shared)
     }
 
-    fn borrow_mut(&mut self) -> RefMut<'_, Layer<MSG>> {
+    pub fn borrow_mut(&mut self) -> RefMut<'_, Layer<MSG>> {
         RefCell::borrow_mut(&self.shared)
     }
 
@@ -194,12 +197,12 @@ impl<MSG> WidgetSet<MSG> {
     }
 }
 
-pub struct Canvas<MSG> {
+pub struct WindowCanvas<MSG> {
     next_layer_id: u64,
     next_widget_id: u64,
 
     layers: FnvHashMap<LayerID, StrongLayerEntry<MSG>>,
-    layers_ordered: Vec<(i32, Vec<StrongLayerEntry<MSG>>)>,
+    pub(crate) layers_ordered: Vec<(i32, Vec<StrongLayerEntry<MSG>>)>,
 
     widgets: FnvHashSet<StrongWidgetEntry<MSG>>,
     widget_with_pointer_lock: Option<(StrongWidgetEntry<MSG>, SetPointerLockType)>,
@@ -213,13 +216,19 @@ pub struct Canvas<MSG> {
 
     pub(crate) layer_renderers_to_clean_up: Vec<LayerRenderer>,
 
+    renderer: Option<Renderer>,
     scale_factor: ScaleFactor,
 
     do_repack_layers: bool,
 }
 
-impl<MSG> Canvas<MSG> {
-    pub fn new(scale_factor: ScaleFactor) -> Self {
+impl<MSG> WindowCanvas<MSG> {
+    pub unsafe fn new_from_function<F>(scale_factor: ScaleFactor, load_fn: F) -> Self
+    where
+        F: FnMut(&str) -> *const c_void,
+    {
+        let renderer = Renderer::new_from_function(load_fn);
+
         Self {
             next_layer_id: 0,
             next_widget_id: 0,
@@ -235,6 +244,7 @@ impl<MSG> Canvas<MSG> {
             widgets_to_remove_from_animation: Vec::new(),
             widget_requests: Vec::new(),
             layer_renderers_to_clean_up: Vec::new(),
+            renderer: Some(renderer),
             scale_factor,
             do_repack_layers: true,
         }
@@ -599,6 +609,10 @@ impl<MSG> Canvas<MSG> {
             .unwrap();
     }
 
+    pub fn set_scale_factor(&mut self, scale_factor: ScaleFactor) {
+        // TODO
+    }
+
     pub fn handle_input_event(
         &mut self,
         event: &InputEvent,
@@ -918,6 +932,14 @@ impl<MSG> Canvas<MSG> {
                 self.widgets_with_pointer_down_listen.remove(&widget_entry);
             }
         }
+    }
+
+    pub fn render(&mut self, window_size: PhysicalSize) {
+        let mut renderer = self.renderer.take().unwrap();
+
+        renderer.render(self, window_size, self.scale_factor);
+
+        self.renderer = Some(renderer);
     }
 }
 

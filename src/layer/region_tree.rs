@@ -1,6 +1,6 @@
-use crate::canvas::StrongWidgetEntry;
 use crate::event::{InputEvent, PointerEvent};
 use crate::size::{PhysicalPoint, PhysicalRect, PhysicalSize, TextureRect};
+use crate::window_canvas::StrongWidgetEntry;
 use crate::{
     Anchor, EventCapturedStatus, HAlign, Point, Rect, ScaleFactor, Size, VAlign, WidgetRegionType,
     WidgetRequests,
@@ -10,7 +10,7 @@ use std::cell::{RefCell, RefMut};
 use std::hash::Hash;
 use std::rc::{Rc, Weak};
 
-use crate::canvas::WidgetSet;
+use crate::window_canvas::WidgetSet;
 
 // TODO: Let the user specify whether child regions should be internally unsorted
 // (default), sorted by x coordinate, or sorted by y coordinate. Sorted lists will
@@ -403,7 +403,7 @@ impl<MSG> RegionTree<MSG> {
     }
 
     pub fn remove_widget_region(&mut self, widget: &mut StrongWidgetEntry<MSG>) {
-        let mut entry = {
+        let entry = {
             if let Some(entry) = widget.assigned_region().upgrade() {
                 entry
             } else {
@@ -619,10 +619,6 @@ impl<MSG> RegionTree<MSG> {
         self.layer_explicit_visibility
     }
 
-    pub fn layer_internal_offset(&self) -> Point {
-        self.layer_rect.pos()
-    }
-
     pub fn layer_size(&self) -> Size {
         self.layer_rect.size()
     }
@@ -647,6 +643,10 @@ impl<MSG> RegionTree<MSG> {
 
     pub fn is_empty(&self) -> bool {
         self.roots.is_empty()
+    }
+
+    pub fn is_visible(&self) -> bool {
+        self.layer_explicit_visibility && !self.roots.is_empty()
     }
 
     pub fn handle_pointer_event(
