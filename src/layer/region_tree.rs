@@ -1049,7 +1049,7 @@ impl<MSG> RegionTreeEntry<MSG> {
             } else if self.region.is_visible() {
                 if let WidgetRegionType::Painted = assigned_widget_info.region_type {
                     // Mark the region as dirty as it likely moved because of the
-                    // change to the parent rect.
+                    // change to the parent rect (or the scale factor has changed).
                     dirty_widgets.insert(&assigned_widget_info.widget);
                     if let Some(rect) = self.region.last_rendered_texture_rect.take() {
                         texture_rects_to_clear.push(rect);

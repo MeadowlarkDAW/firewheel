@@ -717,8 +717,25 @@ impl<MSG> AppWindow<MSG> {
             .unwrap();
     }
 
-    pub fn set_scale_factor(&mut self, scale_factor: ScaleFactor) {
-        // TODO
+    pub fn set_scale_factor(&mut self, scale_factor: ScaleFactor, msg_out_queue: &mut Vec<MSG>) {
+        if self.scale_factor != scale_factor {
+            self.scale_factor = scale_factor;
+
+            for (_z_order, layers) in self.layers_ordered.iter_mut() {
+                for layer_entry in layers.iter_mut() {
+                    let mut layer_entry = layer_entry.borrow_mut();
+                    let size = layer_entry.size();
+                    layer_entry.set_size(
+                        size,
+                        scale_factor,
+                        &mut self.widgets_just_shown,
+                        &mut self.widgets_just_hidden,
+                    );
+                }
+            }
+
+            self.handle_visibility_changes(msg_out_queue);
+        }
     }
 
     pub fn handle_input_event(

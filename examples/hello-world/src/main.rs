@@ -1,4 +1,4 @@
-use firewheel::{vg::Color, AppWindow, PhysicalSize};
+use firewheel::{AppWindow, PhysicalSize};
 use raw_gl_context::{GlConfig, GlContext};
 use winit::{
     event::*,
@@ -28,6 +28,8 @@ fn main() {
 
     let mut window_size = PhysicalSize::new(window.inner_size().width, window.inner_size().height);
 
+    let mut msg_out_queue = Vec::new();
+
     event_loop.run(move |event, _, control_flow| match event {
         Event::WindowEvent {
             ref event,
@@ -41,7 +43,7 @@ fn main() {
                 scale_factor,
                 new_inner_size,
             } => {
-                app_window.set_scale_factor((*scale_factor).into());
+                app_window.set_scale_factor((*scale_factor).into(), &mut msg_out_queue);
                 window_size = PhysicalSize::new(new_inner_size.width, new_inner_size.height);
             }
             _ => {}

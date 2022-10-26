@@ -340,6 +340,10 @@ impl<MSG> Layer<MSG> {
     pub fn is_visible(&self) -> bool {
         self.region_tree.is_visible()
     }
+
+    pub fn size(&self) -> Size {
+        self.region_tree.layer_size()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
