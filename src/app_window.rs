@@ -12,7 +12,7 @@ use crate::renderer::{LayerRenderer, Renderer};
 use crate::size::PhysicalSize;
 use crate::widget::{SetPointerLockType, Widget};
 use crate::{
-    ContainerRegionID, EventCapturedStatus, Point, RegionInfo, ScaleFactor, Size, WidgetRequests,
+    ContainerRegionRef, EventCapturedStatus, Point, RegionInfo, ScaleFactor, Size, WidgetRequests,
 };
 
 pub(crate) struct StrongLayerEntry<MSG> {
@@ -48,6 +48,12 @@ pub(crate) struct WeakLayerEntry<MSG> {
 }
 
 impl<MSG> WeakLayerEntry<MSG> {
+    pub fn new() -> Self {
+        Self {
+            shared: Weak::new(),
+        }
+    }
+
     fn upgrade(&self) -> Option<StrongLayerEntry<MSG>> {
         self.shared
             .upgrade()
@@ -219,6 +225,7 @@ pub struct AppWindow<MSG> {
 
     renderer: Option<Renderer>,
     scale_factor: ScaleFactor,
+    window_visibility: bool,
 
     do_repack_layers: bool,
 }
@@ -249,6 +256,7 @@ impl<MSG> AppWindow<MSG> {
             layer_renderers_to_clean_up: Vec::new(),
             renderer: Some(renderer),
             scale_factor,
+            window_visibility: true,
             do_repack_layers: true,
         }
     }
@@ -273,6 +281,7 @@ impl<MSG> AppWindow<MSG> {
                 outer_position,
                 inner_position,
                 explicit_visibility,
+                self.window_visibility,
                 self.scale_factor,
             )?)),
         };
@@ -428,29 +437,34 @@ impl<MSG> AppWindow<MSG> {
     }
 
     pub fn set_window_visibility(&mut self, visible: bool, msg_out_queue: &mut Vec<MSG>) {
-        for (_z_order, layers) in self.layers_ordered.iter_mut() {
-            for layer_entry in layers.iter_mut() {
-                layer_entry.borrow_mut().set_window_visibility(
-                    visible,
-                    &mut self.widgets_just_shown,
-                    &mut self.widgets_just_hidden,
-                );
-            }
-        }
+        if self.window_visibility != visible {
+            self.window_visibility = visible;
 
-        self.handle_visibility_changes(msg_out_queue);
+            for (_z_order, layers) in self.layers_ordered.iter_mut() {
+                for layer_entry in layers.iter_mut() {
+                    layer_entry.borrow_mut().set_window_visibility(
+                        visible,
+                        &mut self.widgets_just_shown,
+                        &mut self.widgets_just_hidden,
+                    );
+                }
+            }
+
+            self.handle_visibility_changes(msg_out_queue);
+        }
     }
 
     // TODO: Custom error type
     pub fn add_container_region(
         &mut self,
         layer: LayerID,
-        region_info: RegionInfo,
+        region_info: RegionInfo<MSG>,
         explicit_visibility: bool,
-    ) -> Result<ContainerRegionID, ()> {
-        self.layers
-            .get_mut(&layer)
-            .ok_or_else(|| ())?
+    ) -> Result<ContainerRegionRef<MSG>, ()> {
+        let layer_entry = self.layers.get_mut(&layer).ok_or_else(|| ())?;
+        let weak_layer_entry = layer_entry.downgrade();
+
+        layer_entry
             .borrow_mut()
             .add_container_region(
                 region_info,
@@ -460,16 +474,17 @@ impl<MSG> AppWindow<MSG> {
                 &mut self.widgets_just_shown,
                 &mut self.widgets_just_hidden,
             )
+            .map(|mut container_ref| {
+                container_ref.assigned_layer = weak_layer_entry;
+                container_ref
+            })
     }
 
     // TODO: Custom error type
-    pub fn remove_container_region(
-        &mut self,
-        layer: LayerID,
-        region: ContainerRegionID,
-    ) -> Result<(), ()> {
-        self.layers
-            .get_mut(&layer)
+    pub fn remove_container_region(&mut self, region: ContainerRegionRef<MSG>) -> Result<(), ()> {
+        region
+            .assigned_layer
+            .upgrade()
             .ok_or_else(|| ())?
             .borrow_mut()
             .remove_container_region(region)
@@ -478,16 +493,16 @@ impl<MSG> AppWindow<MSG> {
     // TODO: Custom error type
     pub fn modify_container_region(
         &mut self,
-        layer: LayerID,
-        region: ContainerRegionID,
+        region: &mut ContainerRegionRef<MSG>,
         new_size: Option<Size>,
         new_internal_anchor: Option<Anchor>,
         new_parent_anchor: Option<Anchor>,
         new_anchor_offset: Option<Point>,
         msg_out_queue: &mut Vec<MSG>,
     ) -> Result<(), ()> {
-        self.layers
-            .get_mut(&layer)
+        region
+            .assigned_layer
+            .upgrade()
             .ok_or_else(|| ())?
             .borrow_mut()
             .modify_container_region(
@@ -508,13 +523,13 @@ impl<MSG> AppWindow<MSG> {
     // TODO: Custom error type
     pub fn set_container_region_explicit_visibility(
         &mut self,
-        layer: LayerID,
-        region: ContainerRegionID,
+        region: &mut ContainerRegionRef<MSG>,
         visible: bool,
         msg_out_queue: &mut Vec<MSG>,
     ) -> Result<(), ()> {
-        self.layers
-            .get_mut(&layer)
+        region
+            .assigned_layer
+            .upgrade()
             .ok_or_else(|| ())?
             .borrow_mut()
             .set_container_region_explicit_visibility(
@@ -532,11 +547,11 @@ impl<MSG> AppWindow<MSG> {
     // TODO: Custom error type
     pub fn mark_container_region_dirty(
         &mut self,
-        layer: LayerID,
-        region: ContainerRegionID,
+        region: &mut ContainerRegionRef<MSG>,
     ) -> Result<(), ()> {
-        self.layers
-            .get_mut(&layer)
+        region
+            .assigned_layer
+            .upgrade()
             .ok_or_else(|| ())?
             .borrow_mut()
             .mark_container_region_dirty(region)
@@ -547,7 +562,7 @@ impl<MSG> AppWindow<MSG> {
         &mut self,
         mut widget: Box<dyn Widget<MSG>>,
         layer: LayerID,
-        region_info: RegionInfo,
+        region_info: RegionInfo<MSG>,
         explicit_visibility: bool,
         msg_out_queue: &mut Vec<MSG>,
     ) -> Result<WidgetRef<MSG>, ()> {

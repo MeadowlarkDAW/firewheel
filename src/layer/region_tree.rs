@@ -1,13 +1,11 @@
-use crate::app_window::StrongWidgetEntry;
+use crate::app_window::{StrongWidgetEntry, WeakLayerEntry};
 use crate::event::{InputEvent, PointerEvent};
 use crate::size::{PhysicalPoint, PhysicalRect, PhysicalSize, TextureRect};
 use crate::{
-    Anchor, EventCapturedStatus, HAlign, Point, Rect, ScaleFactor, Size, VAlign, WidgetRegionType,
-    WidgetRequests,
+    Anchor, EventCapturedStatus, HAlign, LayerID, Point, Rect, ScaleFactor, Size, VAlign,
+    WidgetRegionType, WidgetRequests,
 };
-use fnv::FnvHashMap;
 use std::cell::{RefCell, RefMut};
-use std::hash::Hash;
 use std::rc::{Rc, Weak};
 
 use crate::app_window::WidgetSet;
@@ -17,12 +15,12 @@ use crate::app_window::WidgetSet;
 // allow for further scrolling and pointer input optimizations for long lists of
 // items.
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct RegionInfo {
+#[derive(Clone)]
+pub struct RegionInfo<MSG> {
     pub size: Size,
     pub internal_anchor: Anchor,
     pub parent_anchor: Anchor,
-    pub parent_anchor_type: ParentAnchorType,
+    pub parent_anchor_type: ParentAnchorType<MSG>,
     pub anchor_offset: Point,
 }
 
@@ -33,11 +31,12 @@ pub(crate) struct RegionTree<MSG> {
 
     next_region_id: u64,
     roots: Vec<StrongRegionTreeEntry<MSG>>,
-    container_id_to_assigned_region: FnvHashMap<u64, StrongRegionTreeEntry<MSG>>,
     layer_rect: Rect,
     layer_physical_rect: PhysicalRect,
     layer_explicit_visibility: bool,
+    window_visibility: bool,
     scale_factor: ScaleFactor,
+    layer_id: LayerID,
 }
 
 impl<MSG> RegionTree<MSG> {
@@ -45,12 +44,13 @@ impl<MSG> RegionTree<MSG> {
         layer_size: Size,
         inner_position: Point,
         layer_explicit_visibility: bool,
+        window_visibility: bool,
         scale_factor: ScaleFactor,
+        layer_id: LayerID,
     ) -> Self {
         Self {
             next_region_id: 0,
             roots: Vec::new(),
-            container_id_to_assigned_region: FnvHashMap::default(),
             dirty_widgets: WidgetSet::new(),
             texture_rects_to_clear: Vec::new(),
             layer_rect: Rect::new(inner_position, layer_size),
@@ -59,24 +59,27 @@ impl<MSG> RegionTree<MSG> {
                 layer_size.to_physical(scale_factor),
             ),
             layer_explicit_visibility,
+            window_visibility,
             clear_whole_layer: true,
             scale_factor,
+            layer_id,
         }
     }
 
     pub fn add_container_region(
         &mut self,
-        region_info: RegionInfo,
+        region_info: RegionInfo<MSG>,
         explicit_visibility: bool,
         widgets_just_shown: &mut WidgetSet<MSG>,
         widgets_just_hidden: &mut WidgetSet<MSG>,
-    ) -> Result<ContainerRegionID, ()> {
-        let new_id = ContainerRegionID(self.next_region_id);
+    ) -> Result<ContainerRegionRef<MSG>, ()> {
+        let new_id = self.next_region_id;
         self.next_region_id += 1;
+
         let mut new_entry = StrongRegionTreeEntry {
             shared: Rc::new(RefCell::new(RegionTreeEntry {
                 region: Region {
-                    id: new_id.0,
+                    id: new_id,
                     internal_anchor: region_info.internal_anchor,
                     parent_anchor: region_info.parent_anchor,
                     anchor_offset: region_info.anchor_offset,
@@ -96,40 +99,49 @@ impl<MSG> RegionTree<MSG> {
                 children: Some(Vec::new()),
                 assigned_widget: None,
             })),
-            region_id: new_id.0,
+            region_id: new_id,
         };
 
         let (parent_rect, parent_explicit_visibility) = match region_info.parent_anchor_type {
             ParentAnchorType::Layer => {
                 self.roots.push(new_entry.clone());
 
-                (self.layer_rect, self.layer_explicit_visibility)
+                (
+                    self.layer_rect,
+                    self.layer_explicit_visibility && self.window_visibility,
+                )
             }
-            ParentAnchorType::ContainerRegion(id) => {
-                let (parent_rect, parent_explicit_visibility) = if let Some(parent_entry) =
-                    self.container_id_to_assigned_region.get_mut(&id.0)
-                {
-                    let (parent_rect, parent_explicit_visibility) = {
-                        let mut parent_entry_ref = parent_entry.borrow_mut();
-                        if let Some(children) = &mut parent_entry_ref.children {
-                            children.push(new_entry.clone());
-                        } else {
-                            panic!("Parent region is not a container region");
-                        }
-                        (
-                            parent_entry_ref.region.rect,
-                            parent_entry_ref.region.explicit_visibility
-                                && parent_entry_ref.region.parent_explicit_visibility,
-                        )
-                    };
-                    {
-                        new_entry.borrow_mut().parent = Some(parent_entry.downgrade());
-                    }
-
-                    (parent_rect, parent_explicit_visibility)
-                } else {
+            ParentAnchorType::ContainerRegion(container_ref) => {
+                if container_ref.assigned_layer_id != self.layer_id {
+                    // TODO: Custom error type
                     return Err(());
-                };
+                }
+
+                let (parent_rect, parent_explicit_visibility) =
+                    if let Some(parent_entry) = container_ref.shared.upgrade() {
+                        let (parent_rect, parent_explicit_visibility) = {
+                            let mut parent_entry_ref = parent_entry.borrow_mut();
+                            if let Some(children) = &mut parent_entry_ref.children {
+                                children.push(new_entry.clone());
+                            } else {
+                                panic!("Parent region is not a container region");
+                            }
+                            (
+                                parent_entry_ref.region.rect,
+                                parent_entry_ref.region.explicit_visibility
+                                    && parent_entry_ref.region.parent_explicit_visibility
+                                    && self.window_visibility,
+                            )
+                        };
+                        {
+                            new_entry.borrow_mut().parent = Some(container_ref.shared.clone());
+                        }
+
+                        (parent_rect, parent_explicit_visibility)
+                    } else {
+                        // TODO: Custom error type
+                        return Err(());
+                    };
 
                 (parent_rect, parent_explicit_visibility)
             }
@@ -147,17 +159,25 @@ impl<MSG> RegionTree<MSG> {
             );
         }
 
-        self.container_id_to_assigned_region
-            .insert(new_id.0, new_entry);
+        let container_ref = ContainerRegionRef {
+            shared: new_entry.downgrade(),
+            assigned_layer: WeakLayerEntry::new(), // This will be overwritten.
+            assigned_layer_id: self.layer_id,
+            _unique_id: new_id,
+        };
 
-        Ok(new_id)
+        Ok(container_ref)
     }
 
-    pub fn remove_container_region(&mut self, id: ContainerRegionID) -> Result<(), ()> {
-        let mut entry = self
-            .container_id_to_assigned_region
-            .remove(&id.0)
-            .ok_or_else(|| ())?; // TODO: custom error type
+    pub fn remove_container_region(
+        &mut self,
+        container_ref: ContainerRegionRef<MSG>,
+    ) -> Result<(), ()> {
+        if container_ref.assigned_layer_id != self.layer_id {
+            panic!("container region was not assigned to this layer");
+        }
+
+        let entry = container_ref.shared.upgrade().take().ok_or_else(|| ())?; // TODO: custom error type
         let mut entry_ref = entry.borrow_mut();
 
         if let Some(children) = &entry_ref.children {
@@ -169,14 +189,14 @@ impl<MSG> RegionTree<MSG> {
         }
 
         // Remove this child entry from its parent.
-        if let Some(parent_entry) = entry_ref.parent.take() {
+        if let Some(parent_entry) = entry_ref.parent.as_mut() {
             let parent_entry = parent_entry.upgrade().unwrap();
             let mut parent_entry = parent_entry.borrow_mut();
 
             if let Some(children) = &mut parent_entry.children {
                 let mut remove_i = None;
                 for (i, e) in children.iter().enumerate() {
-                    if e.region_id == id.0 {
+                    if e.region_id == entry_ref.region.id {
                         remove_i = Some(i);
                         break;
                     }
@@ -193,7 +213,7 @@ impl<MSG> RegionTree<MSG> {
             // This entry had no parent, so remove it from the root entries instead.
             let mut remove_i = None;
             for (i, e) in self.roots.iter().enumerate() {
-                if e.region_id == id.0 {
+                if e.region_id == entry_ref.region.id {
                     remove_i = Some(i);
                     break;
                 }
@@ -201,7 +221,7 @@ impl<MSG> RegionTree<MSG> {
             if let Some(i) = remove_i {
                 self.roots.remove(i);
             } else {
-                panic!("child region was not assigned to layer");
+                panic!("child region was not assigned to this layer");
             }
         }
 
@@ -210,7 +230,7 @@ impl<MSG> RegionTree<MSG> {
 
     pub fn modify_container_region(
         &mut self,
-        id: ContainerRegionID,
+        container_ref: &mut ContainerRegionRef<MSG>,
         new_size: Option<Size>,
         new_internal_anchor: Option<Anchor>,
         new_parent_anchor: Option<Anchor>,
@@ -218,17 +238,9 @@ impl<MSG> RegionTree<MSG> {
         widgets_just_shown: &mut WidgetSet<MSG>,
         widgets_just_hidden: &mut WidgetSet<MSG>,
     ) -> Result<(), ()> {
-        let mut entry = self
-            .container_id_to_assigned_region
-            .get_mut(&id.0)
-            .ok_or_else(|| ())?
-            .borrow_mut();
+        let entry = container_ref.shared.upgrade().ok_or_else(|| ())?;
 
-        if entry.children.is_none() {
-            panic!("region was not a container region");
-        }
-
-        entry.modify(
+        entry.borrow_mut().modify(
             new_size,
             new_internal_anchor,
             new_parent_anchor,
@@ -245,40 +257,29 @@ impl<MSG> RegionTree<MSG> {
         Ok(())
     }
 
-    pub fn mark_container_region_dirty(&mut self, id: ContainerRegionID) -> Result<(), ()> {
-        let mut entry = self
-            .container_id_to_assigned_region
-            .get_mut(&id.0)
-            .ok_or_else(|| ())?
-            .borrow_mut();
+    pub fn mark_container_region_dirty(
+        &mut self,
+        container_ref: &mut ContainerRegionRef<MSG>,
+    ) -> Result<(), ()> {
+        let entry = container_ref.shared.upgrade().ok_or_else(|| ())?;
 
-        if entry.children.is_none() {
-            panic!("region was not a container region");
-        }
-
-        entry.mark_dirty(&mut self.dirty_widgets, &mut self.texture_rects_to_clear);
+        entry
+            .borrow_mut()
+            .mark_dirty(&mut self.dirty_widgets, &mut self.texture_rects_to_clear);
 
         Ok(())
     }
 
     pub fn set_container_region_explicit_visibility(
         &mut self,
-        id: ContainerRegionID,
+        container_ref: &mut ContainerRegionRef<MSG>,
         explicit_visibility: bool,
         widgets_just_shown: &mut WidgetSet<MSG>,
         widgets_just_hidden: &mut WidgetSet<MSG>,
     ) -> Result<(), ()> {
-        let mut entry = self
-            .container_id_to_assigned_region
-            .get_mut(&id.0)
-            .ok_or_else(|| ())?
-            .borrow_mut();
+        let entry = container_ref.shared.upgrade().ok_or_else(|| ())?;
 
-        if entry.children.is_none() {
-            panic!("region was not a container region");
-        }
-
-        entry.modify(
+        entry.borrow_mut().modify(
             None,
             None,
             None,
@@ -298,7 +299,7 @@ impl<MSG> RegionTree<MSG> {
     pub fn add_widget_region(
         &mut self,
         assigned_widget: &mut StrongWidgetEntry<MSG>,
-        region_info: RegionInfo,
+        region_info: RegionInfo<MSG>,
         region_type: WidgetRegionType,
         explicit_visibility: bool,
         widgets_just_shown: &mut WidgetSet<MSG>,
@@ -308,13 +309,13 @@ impl<MSG> RegionTree<MSG> {
             panic!("widget was already assigned a region");
         }
 
-        let new_id = ContainerRegionID(self.next_region_id);
+        let new_id = self.next_region_id;
         self.next_region_id += 1;
 
-        let mut entry = StrongRegionTreeEntry {
+        let mut new_entry = StrongRegionTreeEntry {
             shared: Rc::new(RefCell::new(RegionTreeEntry {
                 region: Region {
-                    id: new_id.0,
+                    id: new_id,
                     internal_anchor: region_info.internal_anchor,
                     parent_anchor: region_info.parent_anchor,
                     anchor_offset: region_info.anchor_offset,
@@ -338,51 +339,59 @@ impl<MSG> RegionTree<MSG> {
                     region_type,
                 }),
             })),
-            region_id: new_id.0,
+            region_id: new_id,
         };
 
-        assigned_widget.set_assigned_region(entry.downgrade());
+        assigned_widget.set_assigned_region(new_entry.downgrade());
 
         let (parent_rect, parent_explicit_visibility) = match region_info.parent_anchor_type {
             ParentAnchorType::Layer => {
-                self.roots.push(entry.clone());
+                self.roots.push(new_entry.clone());
 
-                (self.layer_rect, self.layer_explicit_visibility)
+                (
+                    self.layer_rect,
+                    self.layer_explicit_visibility && self.window_visibility,
+                )
             }
-            ParentAnchorType::ContainerRegion(id) => {
-                let (parent_rect, parent_explicit_visibility) = if let Some(parent_entry) =
-                    self.container_id_to_assigned_region.get_mut(&id.0)
-                {
-                    let (parent_rect, parent_explicit_visibility) = {
-                        let mut parent_entry_ref = parent_entry.borrow_mut();
-                        if let Some(children) = &mut parent_entry_ref.children {
-                            children.push(entry.clone());
-                        } else {
-                            panic!("Parent region is not a container region");
-                        }
-                        (
-                            parent_entry_ref.region.rect,
-                            parent_entry_ref.region.explicit_visibility
-                                && parent_entry_ref.region.parent_explicit_visibility,
-                        )
-                    };
-                    {
-                        entry.borrow_mut().parent = Some(parent_entry.downgrade());
-                    }
-
-                    (parent_rect, parent_explicit_visibility)
-                } else {
-                    // TODO: custom error type
+            ParentAnchorType::ContainerRegion(container_ref) => {
+                if container_ref.assigned_layer_id != self.layer_id {
+                    // TODO: Custom error type
                     return Err(());
-                };
+                }
+
+                let (parent_rect, parent_explicit_visibility) =
+                    if let Some(parent_entry) = container_ref.shared.upgrade() {
+                        let (parent_rect, parent_explicit_visibility) = {
+                            let mut parent_entry_ref = parent_entry.borrow_mut();
+                            if let Some(children) = &mut parent_entry_ref.children {
+                                children.push(new_entry.clone());
+                            } else {
+                                panic!("Parent region is not a container region");
+                            }
+                            (
+                                parent_entry_ref.region.rect,
+                                parent_entry_ref.region.explicit_visibility
+                                    && parent_entry_ref.region.parent_explicit_visibility
+                                    && self.window_visibility,
+                            )
+                        };
+                        {
+                            new_entry.borrow_mut().parent = Some(container_ref.shared.clone());
+                        }
+
+                        (parent_rect, parent_explicit_visibility)
+                    } else {
+                        // TODO: Custom error type
+                        return Err(());
+                    };
 
                 (parent_rect, parent_explicit_visibility)
             }
         };
 
         {
-            let weak_entry = entry.downgrade();
-            let mut entry_ref = entry.borrow_mut();
+            let weak_entry = new_entry.downgrade();
+            let mut entry_ref = new_entry.borrow_mut();
 
             entry_ref
                 .assigned_widget
@@ -438,7 +447,7 @@ impl<MSG> RegionTree<MSG> {
         widgets_just_hidden.remove(widget);
 
         // Remove this child entry from its parent.
-        if let Some(parent_entry) = entry_ref.parent.take() {
+        if let Some(parent_entry) = entry_ref.parent.as_mut() {
             let parent_entry = parent_entry.upgrade().unwrap();
             let mut parent_entry = parent_entry.borrow_mut();
 
@@ -650,8 +659,11 @@ impl<MSG> RegionTree<MSG> {
         widgets_just_shown: &mut WidgetSet<MSG>,
         widgets_just_hidden: &mut WidgetSet<MSG>,
     ) {
+        self.window_visibility = visible;
+
         if self.is_visible() {
-            let parent_explicit_visibility = visible && self.layer_explicit_visibility;
+            let parent_explicit_visibility =
+                self.window_visibility && self.layer_explicit_visibility;
 
             for entry in self.roots.iter_mut() {
                 entry.borrow_mut().parent_changed(
@@ -700,16 +712,6 @@ impl<MSG> RegionTree<MSG> {
 
     pub fn is_visible(&self) -> bool {
         self.layer_explicit_visibility && !self.roots.is_empty()
-    }
-
-    pub fn is_widget_visible(&self, widget: &StrongWidgetEntry<MSG>) -> Result<bool, ()> {
-        Ok(widget
-            .assigned_region()
-            .upgrade()
-            .ok_or_else(|| ())?
-            .borrow()
-            .region
-            .is_visible())
     }
 
     pub fn handle_pointer_event(
@@ -1071,8 +1073,13 @@ impl<MSG> RegionTreeEntry<MSG> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ContainerRegionID(u64);
+#[derive(Clone)]
+pub struct ContainerRegionRef<MSG> {
+    pub(crate) shared: WeakRegionTreeEntry<MSG>,
+    pub(crate) assigned_layer: WeakLayerEntry<MSG>,
+    assigned_layer_id: LayerID,
+    _unique_id: u64,
+}
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Region {
@@ -1146,10 +1153,10 @@ impl Region {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ParentAnchorType {
+#[derive(Clone)]
+pub enum ParentAnchorType<MSG> {
     Layer,
-    ContainerRegion(ContainerRegionID),
+    ContainerRegion(ContainerRegionRef<MSG>),
 }
 
 #[cfg(test)]
@@ -1163,7 +1170,7 @@ mod tests {
             id: u64,
             rect: Rect,
             physical_rect: PhysicalRect,
-            region_info: RegionInfo,
+            region_info: RegionInfo<()>,
             last_rendered_texture_rect: Option<TextureRect>,
             parent_rect: Rect,
             explicit_visibility: bool,
@@ -1262,8 +1269,14 @@ mod tests {
         let mut widgets_just_shown: WidgetSet<()> = WidgetSet::new();
         let mut widgets_just_hidden: WidgetSet<()> = WidgetSet::new();
 
-        let mut region_tree: RegionTree<()> =
-            RegionTree::new(layer_rect.size(), layer_rect.pos(), true, scale_factor);
+        let mut region_tree: RegionTree<()> = RegionTree::new(
+            layer_rect.size(),
+            layer_rect.pos(),
+            true,
+            true,
+            scale_factor,
+            LayerID { id: 0, z_order: 0 },
+        );
 
         // --- Test adding container regions ----------------------------------------------------------
         // --------------------------------------------------------------------------------------------
@@ -1284,9 +1297,9 @@ mod tests {
             anchor_offset: Point::new(20.0, 10.0),
         };
         let container_root0_explicit_visibility = true;
-        let container_root0_id = region_tree
+        let container_root0_ref = region_tree
             .add_container_region(
-                container_root0_region_info,
+                container_root0_region_info.clone(),
                 container_root0_explicit_visibility,
                 &mut widgets_just_shown,
                 &mut widgets_just_hidden,
@@ -1299,7 +1312,7 @@ mod tests {
         assert_region(
             &region_tree.roots[0].borrow().region,
             &Region::new_test_region(
-                container_root0_id.0,
+                container_root0_ref._unique_id,
                 container_root0_expected_rect,
                 container_root0_expected_rect.to_physical(scale_factor),
                 container_root0_region_info,
@@ -1327,9 +1340,9 @@ mod tests {
             anchor_offset: Point::new(-20.0, -10.0),
         };
         let container_root1_explicit_visibility = false;
-        let container_root1_id = region_tree
+        let container_root1_ref = region_tree
             .add_container_region(
-                container_root1_region_info,
+                container_root1_region_info.clone(),
                 container_root1_explicit_visibility,
                 &mut widgets_just_shown,
                 &mut widgets_just_hidden,
@@ -1347,7 +1360,7 @@ mod tests {
         assert_region(
             &region_tree.roots[1].borrow().region,
             &Region::new_test_region(
-                container_root1_id.0,
+                container_root1_ref._unique_id,
                 container_root1_expected_rect,
                 container_root1_expected_rect.to_physical(scale_factor),
                 container_root1_region_info,
@@ -1375,9 +1388,9 @@ mod tests {
             anchor_offset: Point::new(100.0, 100.0),
         };
         let container_root2_explicit_visibility = true;
-        let container_root2_id = region_tree
+        let container_root2_ref = region_tree
             .add_container_region(
-                container_root2_region_info,
+                container_root2_region_info.clone(),
                 container_root2_explicit_visibility,
                 &mut widgets_just_shown,
                 &mut widgets_just_hidden,
@@ -1393,7 +1406,7 @@ mod tests {
         assert_region(
             &region_tree.roots[2].borrow().region,
             &Region::new_test_region(
-                container_root2_id.0,
+                container_root2_ref._unique_id,
                 container_root2_expected_rect,
                 container_root2_expected_rect.to_physical(scale_factor),
                 container_root2_region_info,
@@ -1421,9 +1434,9 @@ mod tests {
             anchor_offset: Point::new(300.0, 100.0),
         };
         let container_root3_explicit_visibility = false;
-        let container_root3_id = region_tree
+        let container_root3_ref = region_tree
             .add_container_region(
-                container_root3_region_info,
+                container_root3_region_info.clone(),
                 container_root3_explicit_visibility,
                 &mut widgets_just_shown,
                 &mut widgets_just_hidden,
@@ -1439,7 +1452,7 @@ mod tests {
         assert_region(
             &region_tree.roots[3].borrow().region,
             &Region::new_test_region(
-                container_root3_id.0,
+                container_root3_ref._unique_id,
                 container_root3_expected_rect,
                 container_root3_expected_rect.to_physical(scale_factor),
                 container_root3_region_info,
@@ -1463,13 +1476,13 @@ mod tests {
                 h_align: HAlign::Center,
                 v_align: VAlign::Center,
             },
-            parent_anchor_type: ParentAnchorType::ContainerRegion(container_root0_id),
+            parent_anchor_type: ParentAnchorType::ContainerRegion(container_root0_ref.clone()),
             anchor_offset: Point::new(-10.0, 4.0),
         };
         let container_root0_0_explicit_visibility = true;
-        let container_root0_0_id = region_tree
+        let container_root0_0_ref = region_tree
             .add_container_region(
-                container_root0_0_region_info,
+                container_root0_0_region_info.clone(),
                 container_root0_0_explicit_visibility,
                 &mut widgets_just_shown,
                 &mut widgets_just_hidden,
@@ -1491,7 +1504,7 @@ mod tests {
                 .borrow()
                 .region,
             &Region::new_test_region(
-                container_root0_0_id.0,
+                container_root0_0_ref._unique_id,
                 container_root0_0_expected_rect,
                 container_root0_0_expected_rect.to_physical(scale_factor),
                 container_root0_0_region_info,
@@ -1534,14 +1547,13 @@ mod tests {
         region_tree
             .add_widget_region(
                 &mut widget_root4_entry,
-                widget_root4_region_info,
+                widget_root4_region_info.clone(),
                 WidgetRegionType::Painted,
                 widget_root4_explicit_visibility,
                 &mut widgets_just_shown,
                 &mut widgets_just_hidden,
             )
             .unwrap();
-        let widget_root4_region_id = container_root0_0_id.0 + 1;
         let widget_root4_expected_rect = Rect::new(
             widget_root4_region_info.anchor_offset,
             widget_root4_region_info.size,
@@ -1549,7 +1561,13 @@ mod tests {
         assert_region(
             &region_tree.roots[4].borrow().region,
             &Region::new_test_region(
-                widget_root4_region_id,
+                widget_root4_entry
+                    .assigned_region()
+                    .upgrade()
+                    .unwrap()
+                    .borrow()
+                    .region
+                    .id,
                 widget_root4_expected_rect,
                 widget_root4_expected_rect.to_physical(scale_factor),
                 widget_root4_region_info,
@@ -1584,14 +1602,13 @@ mod tests {
         region_tree
             .add_widget_region(
                 &mut widget_root5_entry,
-                widget_root5_region_info,
+                widget_root5_region_info.clone(),
                 WidgetRegionType::Painted,
                 widget_root5_explicit_visibility,
                 &mut widgets_just_shown,
                 &mut widgets_just_hidden,
             )
             .unwrap();
-        let widget_root5_region_id = widget_root4_region_id + 1;
         let widget_root5_expected_rect = Rect::new(
             widget_root5_region_info.anchor_offset,
             widget_root5_region_info.size,
@@ -1599,7 +1616,13 @@ mod tests {
         assert_region(
             &region_tree.roots[5].borrow().region,
             &Region::new_test_region(
-                widget_root5_region_id,
+                widget_root5_entry
+                    .assigned_region()
+                    .upgrade()
+                    .unwrap()
+                    .borrow()
+                    .region
+                    .id,
                 widget_root5_expected_rect,
                 widget_root5_expected_rect.to_physical(scale_factor),
                 widget_root5_region_info,
@@ -1636,14 +1659,13 @@ mod tests {
         region_tree
             .add_widget_region(
                 &mut widget_root6_entry,
-                widget_root6_region_info,
+                widget_root6_region_info.clone(),
                 WidgetRegionType::Painted,
                 widget_root6_explicit_visibility,
                 &mut widgets_just_shown,
                 &mut widgets_just_hidden,
             )
             .unwrap();
-        let widget_root6_region_id = widget_root5_region_id + 1;
         let widget_root6_expected_rect = Rect::new(
             widget_root6_region_info.anchor_offset,
             widget_root6_region_info.size,
@@ -1651,7 +1673,13 @@ mod tests {
         assert_region(
             &region_tree.roots[6].borrow().region,
             &Region::new_test_region(
-                widget_root6_region_id,
+                widget_root6_entry
+                    .assigned_region()
+                    .upgrade()
+                    .unwrap()
+                    .borrow()
+                    .region
+                    .id,
                 widget_root6_expected_rect,
                 widget_root6_expected_rect.to_physical(scale_factor),
                 widget_root6_region_info,
@@ -1682,21 +1710,20 @@ mod tests {
                 h_align: HAlign::Left,
                 v_align: VAlign::Top,
             },
-            parent_anchor_type: ParentAnchorType::ContainerRegion(container_root0_0_id),
+            parent_anchor_type: ParentAnchorType::ContainerRegion(container_root0_0_ref.clone()),
             anchor_offset: Point::new(2.0, 2.0),
         };
         let widget_root0_0_0_explicit_visibility = true;
         region_tree
             .add_widget_region(
                 &mut widget_root0_0_0_entry,
-                widget_root0_0_0_region_info,
+                widget_root0_0_0_region_info.clone(),
                 WidgetRegionType::Painted,
                 widget_root0_0_0_explicit_visibility,
                 &mut widgets_just_shown,
                 &mut widgets_just_hidden,
             )
             .unwrap();
-        let widget_root0_0_0_region_id = widget_root6_region_id + 1;
         let widget_root0_0_0_expected_rect = Rect::new(
             container_root0_0_expected_rect.pos() + widget_root0_0_0_region_info.anchor_offset,
             widget_root0_0_0_region_info.size,
@@ -1710,7 +1737,13 @@ mod tests {
                 .borrow()
                 .region,
             &Region::new_test_region(
-                widget_root0_0_0_region_id,
+                widget_root0_0_0_entry
+                    .assigned_region()
+                    .upgrade()
+                    .unwrap()
+                    .borrow()
+                    .region
+                    .id,
                 widget_root0_0_0_expected_rect,
                 widget_root0_0_0_expected_rect.to_physical(scale_factor),
                 widget_root0_0_0_region_info,
@@ -1741,21 +1774,20 @@ mod tests {
                 h_align: HAlign::Left,
                 v_align: VAlign::Top,
             },
-            parent_anchor_type: ParentAnchorType::ContainerRegion(container_root1_id),
+            parent_anchor_type: ParentAnchorType::ContainerRegion(container_root1_ref.clone()),
             anchor_offset: Point::new(2.0, 2.0),
         };
         let widget_root1_0_explicit_visibility = true;
         region_tree
             .add_widget_region(
                 &mut widget_root1_0_entry,
-                widget_root1_0_region_info,
+                widget_root1_0_region_info.clone(),
                 WidgetRegionType::Painted,
                 widget_root1_0_explicit_visibility,
                 &mut widgets_just_shown,
                 &mut widgets_just_hidden,
             )
             .unwrap();
-        let widget_root1_0_region_id = widget_root0_0_0_region_id + 1;
         let widget_root1_0_expected_rect = Rect::new(
             container_root1_expected_rect.pos() + widget_root1_0_region_info.anchor_offset,
             widget_root1_0_region_info.size,
@@ -1765,7 +1797,13 @@ mod tests {
                 .borrow()
                 .region,
             &Region::new_test_region(
-                widget_root1_0_region_id,
+                widget_root1_0_entry
+                    .assigned_region()
+                    .upgrade()
+                    .unwrap()
+                    .borrow()
+                    .region
+                    .id,
                 widget_root1_0_expected_rect,
                 widget_root1_0_expected_rect.to_physical(scale_factor),
                 widget_root1_0_region_info,
@@ -1796,21 +1834,20 @@ mod tests {
                 h_align: HAlign::Left,
                 v_align: VAlign::Top,
             },
-            parent_anchor_type: ParentAnchorType::ContainerRegion(container_root2_id),
+            parent_anchor_type: ParentAnchorType::ContainerRegion(container_root2_ref.clone()),
             anchor_offset: Point::new(2.0, 2.0),
         };
         let widget_root2_0_explicit_visibility = true;
         region_tree
             .add_widget_region(
                 &mut widget_root2_0_entry,
-                widget_root2_0_region_info,
+                widget_root2_0_region_info.clone(),
                 WidgetRegionType::Painted,
                 widget_root2_0_explicit_visibility,
                 &mut widgets_just_shown,
                 &mut widgets_just_hidden,
             )
             .unwrap();
-        let widget_root2_0_region_id = widget_root1_0_region_id + 1;
         let widget_root2_0_expected_rect = Rect::new(
             container_root2_expected_rect.pos() + widget_root2_0_region_info.anchor_offset,
             widget_root2_0_region_info.size,
@@ -1820,7 +1857,13 @@ mod tests {
                 .borrow()
                 .region,
             &Region::new_test_region(
-                widget_root2_0_region_id,
+                widget_root2_0_entry
+                    .assigned_region()
+                    .upgrade()
+                    .unwrap()
+                    .borrow()
+                    .region
+                    .id,
                 widget_root2_0_expected_rect,
                 widget_root2_0_expected_rect.to_physical(scale_factor),
                 widget_root2_0_region_info,

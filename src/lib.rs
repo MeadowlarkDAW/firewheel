@@ -10,7 +10,7 @@ pub mod size;
 
 pub use anchor::{Anchor, HAlign, VAlign};
 pub use app_window::{AppWindow, WidgetRef};
-pub use layer::{ContainerRegionID, LayerError, LayerID, ParentAnchorType, RegionInfo};
+pub use layer::{ContainerRegionRef, LayerError, LayerID, ParentAnchorType, RegionInfo};
 pub use size::*;
 pub use size::{Point, Rect, ScaleFactor, Size};
 pub use widget::{

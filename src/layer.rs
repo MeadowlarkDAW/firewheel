@@ -12,7 +12,7 @@ use std::hash::Hash;
 mod region_tree;
 use region_tree::RegionTree;
 pub(crate) use region_tree::WeakRegionTreeEntry;
-pub use region_tree::{ContainerRegionID, ParentAnchorType, RegionInfo};
+pub use region_tree::{ContainerRegionRef, ParentAnchorType, RegionInfo};
 
 /// The unique identifier for a layer.
 #[derive(Debug, Clone, Copy)]
@@ -71,12 +71,20 @@ impl<MSG> Layer<MSG> {
         outer_position: Point,
         inner_position: Point,
         explicit_visibility: bool,
+        window_visibility: bool,
         scale_factor: ScaleFactor,
     ) -> Result<Self, LayerError> {
         Ok(Self {
             id,
             renderer: Some(LayerRenderer::new()),
-            region_tree: RegionTree::new(size, inner_position, explicit_visibility, scale_factor),
+            region_tree: RegionTree::new(
+                size,
+                inner_position,
+                explicit_visibility,
+                window_visibility,
+                scale_factor,
+                id,
+            ),
             outer_position,
             physical_outer_position: outer_position.to_physical(scale_factor),
         })
@@ -140,11 +148,11 @@ impl<MSG> Layer<MSG> {
 
     pub fn add_container_region(
         &mut self,
-        region_info: RegionInfo,
+        region_info: RegionInfo<MSG>,
         explicit_visibility: bool,
         widgets_just_shown: &mut WidgetSet<MSG>,
         widgets_just_hidden: &mut WidgetSet<MSG>,
-    ) -> Result<ContainerRegionID, ()> {
+    ) -> Result<ContainerRegionRef<MSG>, ()> {
         self.region_tree.add_container_region(
             region_info,
             explicit_visibility,
@@ -153,15 +161,18 @@ impl<MSG> Layer<MSG> {
         )
     }
 
-    pub fn remove_container_region(&mut self, id: ContainerRegionID) -> Result<(), ()> {
-        self.region_tree.remove_container_region(id)?;
+    pub fn remove_container_region(
+        &mut self,
+        container_ref: ContainerRegionRef<MSG>,
+    ) -> Result<(), ()> {
+        self.region_tree.remove_container_region(container_ref)?;
 
         Ok(())
     }
 
     pub fn modify_container_region(
         &mut self,
-        id: ContainerRegionID,
+        container_ref: &mut ContainerRegionRef<MSG>,
         new_size: Option<Size>,
         new_internal_anchor: Option<Anchor>,
         new_parent_anchor: Option<Anchor>,
@@ -170,7 +181,7 @@ impl<MSG> Layer<MSG> {
         widgets_just_hidden: &mut WidgetSet<MSG>,
     ) -> Result<(), ()> {
         self.region_tree.modify_container_region(
-            id,
+            container_ref,
             new_size,
             new_internal_anchor,
             new_parent_anchor,
@@ -184,13 +195,13 @@ impl<MSG> Layer<MSG> {
 
     pub fn set_container_region_explicit_visibility(
         &mut self,
-        id: ContainerRegionID,
+        container_ref: &mut ContainerRegionRef<MSG>,
         visible: bool,
         widgets_just_shown: &mut WidgetSet<MSG>,
         widgets_just_hidden: &mut WidgetSet<MSG>,
     ) -> Result<(), ()> {
         self.region_tree.set_container_region_explicit_visibility(
-            id,
+            container_ref,
             visible,
             widgets_just_shown,
             widgets_just_hidden,
@@ -199,8 +210,12 @@ impl<MSG> Layer<MSG> {
         Ok(())
     }
 
-    pub fn mark_container_region_dirty(&mut self, id: ContainerRegionID) -> Result<(), ()> {
-        self.region_tree.mark_container_region_dirty(id)?;
+    pub fn mark_container_region_dirty(
+        &mut self,
+        container_ref: &mut ContainerRegionRef<MSG>,
+    ) -> Result<(), ()> {
+        self.region_tree
+            .mark_container_region_dirty(container_ref)?;
 
         Ok(())
     }
@@ -208,7 +223,7 @@ impl<MSG> Layer<MSG> {
     pub fn add_widget_region(
         &mut self,
         assigned_widget: &mut StrongWidgetEntry<MSG>,
-        region_info: RegionInfo,
+        region_info: RegionInfo<MSG>,
         region_type: WidgetRegionType,
         explicit_visibility: bool,
         widgets_just_shown: &mut WidgetSet<MSG>,
@@ -289,10 +304,6 @@ impl<MSG> Layer<MSG> {
     ) -> Result<(), ()> {
         self.region_tree
             .set_widget_listens_to_pointer_events(widget, listens)
-    }
-
-    pub fn is_widget_visible(&self, widget: &StrongWidgetEntry<MSG>) -> Result<bool, ()> {
-        self.region_tree.is_widget_visible(widget)
     }
 
     pub fn handle_pointer_event(

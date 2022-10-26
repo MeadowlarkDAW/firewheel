@@ -1,4 +1,3 @@
-use femtovg::Color;
 use std::ffi::c_void;
 
 use crate::{size::PhysicalSize, AppWindow, ScaleFactor};
