@@ -427,6 +427,20 @@ impl<MSG> AppWindow<MSG> {
         Ok(())
     }
 
+    pub fn set_window_visibility(&mut self, visible: bool, msg_out_queue: &mut Vec<MSG>) {
+        for (_z_order, layers) in self.layers_ordered.iter_mut() {
+            for layer_entry in layers.iter_mut() {
+                layer_entry.borrow_mut().set_window_visibility(
+                    visible,
+                    &mut self.widgets_just_shown,
+                    &mut self.widgets_just_hidden,
+                );
+            }
+        }
+
+        self.handle_visibility_changes(msg_out_queue);
+    }
+
     // TODO: Custom error type
     pub fn add_container_region(
         &mut self,

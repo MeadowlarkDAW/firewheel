@@ -644,6 +644,30 @@ impl<MSG> RegionTree<MSG> {
         }
     }
 
+    pub fn set_window_visibility(
+        &mut self,
+        visible: bool,
+        widgets_just_shown: &mut WidgetSet<MSG>,
+        widgets_just_hidden: &mut WidgetSet<MSG>,
+    ) {
+        if self.is_visible() {
+            let parent_explicit_visibility = visible && self.layer_explicit_visibility;
+
+            for entry in self.roots.iter_mut() {
+                entry.borrow_mut().parent_changed(
+                    self.layer_rect,
+                    self.layer_rect,
+                    self.scale_factor,
+                    parent_explicit_visibility,
+                    &mut self.dirty_widgets,
+                    &mut self.texture_rects_to_clear,
+                    widgets_just_shown,
+                    widgets_just_hidden,
+                );
+            }
+        }
+    }
+
     pub fn layer_explicit_visibility(&self) -> bool {
         self.layer_explicit_visibility
     }

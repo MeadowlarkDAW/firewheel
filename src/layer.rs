@@ -113,6 +113,16 @@ impl<MSG> Layer<MSG> {
         );
     }
 
+    pub fn set_window_visibility(
+        &mut self,
+        visible: bool,
+        widgets_just_shown: &mut WidgetSet<MSG>,
+        widgets_just_hidden: &mut WidgetSet<MSG>,
+    ) {
+        self.region_tree
+            .set_window_visibility(visible, widgets_just_shown, widgets_just_hidden);
+    }
+
     pub fn set_size(
         &mut self,
         size: Size,
