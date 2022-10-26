@@ -6,8 +6,9 @@ use std::hash::Hash;
 use std::rc::{Rc, Weak};
 
 use crate::anchor::Anchor;
+use crate::error::FirewheelError;
 use crate::event::{InputEvent, KeyboardEventsListen};
-use crate::layer::{Layer, LayerError, LayerID, WeakRegionTreeEntry};
+use crate::layer::{Layer, LayerID, WeakRegionTreeEntry};
 use crate::renderer::{LayerRenderer, Renderer};
 use crate::size::PhysicalSize;
 use crate::widget::{SetPointerLockType, Widget};
@@ -268,7 +269,7 @@ impl<MSG> AppWindow<MSG> {
         outer_position: Point,
         inner_position: Point,
         explicit_visibility: bool,
-    ) -> Result<LayerID, LayerError> {
+    ) -> Result<LayerID, FirewheelError> {
         let id = LayerID {
             id: self.next_layer_id,
             z_order,
@@ -311,16 +312,13 @@ impl<MSG> AppWindow<MSG> {
         Ok(id)
     }
 
-    // TODO: Custom error type
-    pub fn remove_layer(&mut self, id: LayerID) -> Result<(), ()> {
+    pub fn remove_layer(&mut self, id: LayerID) -> Result<(), FirewheelError> {
         if let Some(layer) = self.layers.get(&id) {
             if !layer.borrow().is_empty() {
-                // TODO: Custom error
-                return Err(());
+                return Err(FirewheelError::LayerNotEmpty);
             }
         } else {
-            // TODO: Custom error
-            return Err(());
+            return Err(FirewheelError::LayerWithIDNotFound(id));
         }
 
         let mut remove_z_order_i = None;
@@ -361,11 +359,11 @@ impl<MSG> AppWindow<MSG> {
         &mut self,
         layer: LayerID,
         position: Point,
-    ) -> Result<(), LayerError> {
+    ) -> Result<(), FirewheelError> {
         Ok(self
             .layers
             .get_mut(&layer)
-            .ok_or_else(|| LayerError::LayerWithIDNotFound(layer))?
+            .ok_or_else(|| FirewheelError::LayerWithIDNotFound(layer))?
             .borrow_mut()
             .set_outer_position(position, self.scale_factor))
     }
@@ -375,11 +373,11 @@ impl<MSG> AppWindow<MSG> {
         layer: LayerID,
         position: Point,
         msg_out_queue: &mut Vec<MSG>,
-    ) -> Result<(), LayerError> {
+    ) -> Result<(), FirewheelError> {
         {
             self.layers
                 .get_mut(&layer)
-                .ok_or_else(|| LayerError::LayerWithIDNotFound(layer))?
+                .ok_or_else(|| FirewheelError::LayerWithIDNotFound(layer))?
                 .borrow_mut()
                 .set_inner_position(
                     position,
@@ -398,10 +396,10 @@ impl<MSG> AppWindow<MSG> {
         layer: LayerID,
         size: Size,
         msg_out_queue: &mut Vec<MSG>,
-    ) -> Result<(), LayerError> {
+    ) -> Result<(), FirewheelError> {
         self.layers
             .get_mut(&layer)
-            .ok_or_else(|| LayerError::LayerWithIDNotFound(layer))?
+            .ok_or_else(|| FirewheelError::LayerWithIDNotFound(layer))?
             .borrow_mut()
             .set_size(
                 size,
@@ -420,10 +418,10 @@ impl<MSG> AppWindow<MSG> {
         layer: LayerID,
         explicit_visibility: bool,
         msg_out_queue: &mut Vec<MSG>,
-    ) -> Result<(), LayerError> {
+    ) -> Result<(), FirewheelError> {
         self.layers
             .get_mut(&layer)
-            .ok_or_else(|| LayerError::LayerWithIDNotFound(layer))?
+            .ok_or_else(|| FirewheelError::LayerWithIDNotFound(layer))?
             .borrow_mut()
             .set_explicit_visibility(
                 explicit_visibility,
@@ -454,14 +452,16 @@ impl<MSG> AppWindow<MSG> {
         }
     }
 
-    // TODO: Custom error type
     pub fn add_container_region(
         &mut self,
         layer: LayerID,
         region_info: RegionInfo<MSG>,
         explicit_visibility: bool,
-    ) -> Result<ContainerRegionRef<MSG>, ()> {
-        let layer_entry = self.layers.get_mut(&layer).ok_or_else(|| ())?;
+    ) -> Result<ContainerRegionRef<MSG>, FirewheelError> {
+        let layer_entry = self
+            .layers
+            .get_mut(&layer)
+            .ok_or_else(|| FirewheelError::LayerWithIDNotFound(layer))?;
         let weak_layer_entry = layer_entry.downgrade();
 
         layer_entry
@@ -480,17 +480,18 @@ impl<MSG> AppWindow<MSG> {
             })
     }
 
-    // TODO: Custom error type
-    pub fn remove_container_region(&mut self, region: ContainerRegionRef<MSG>) -> Result<(), ()> {
+    pub fn remove_container_region(
+        &mut self,
+        region: ContainerRegionRef<MSG>,
+    ) -> Result<(), FirewheelError> {
         region
             .assigned_layer
             .upgrade()
-            .ok_or_else(|| ())?
+            .ok_or_else(|| FirewheelError::ContainerRegionRemoved)?
             .borrow_mut()
             .remove_container_region(region)
     }
 
-    // TODO: Custom error type
     pub fn modify_container_region(
         &mut self,
         region: &mut ContainerRegionRef<MSG>,
@@ -499,11 +500,11 @@ impl<MSG> AppWindow<MSG> {
         new_parent_anchor: Option<Anchor>,
         new_anchor_offset: Option<Point>,
         msg_out_queue: &mut Vec<MSG>,
-    ) -> Result<(), ()> {
+    ) -> Result<(), FirewheelError> {
         region
             .assigned_layer
             .upgrade()
-            .ok_or_else(|| ())?
+            .ok_or_else(|| FirewheelError::ContainerRegionRemoved)?
             .borrow_mut()
             .modify_container_region(
                 region,
@@ -520,17 +521,16 @@ impl<MSG> AppWindow<MSG> {
         Ok(())
     }
 
-    // TODO: Custom error type
     pub fn set_container_region_explicit_visibility(
         &mut self,
         region: &mut ContainerRegionRef<MSG>,
         visible: bool,
         msg_out_queue: &mut Vec<MSG>,
-    ) -> Result<(), ()> {
+    ) -> Result<(), FirewheelError> {
         region
             .assigned_layer
             .upgrade()
-            .ok_or_else(|| ())?
+            .ok_or_else(|| FirewheelError::ContainerRegionRemoved)?
             .borrow_mut()
             .set_container_region_explicit_visibility(
                 region,
@@ -544,20 +544,18 @@ impl<MSG> AppWindow<MSG> {
         Ok(())
     }
 
-    // TODO: Custom error type
     pub fn mark_container_region_dirty(
         &mut self,
         region: &mut ContainerRegionRef<MSG>,
-    ) -> Result<(), ()> {
+    ) -> Result<(), FirewheelError> {
         region
             .assigned_layer
             .upgrade()
-            .ok_or_else(|| ())?
+            .ok_or_else(|| FirewheelError::ContainerRegionRemoved)?
             .borrow_mut()
             .mark_container_region_dirty(region)
     }
 
-    // TODO: Custom error type
     pub fn add_widget(
         &mut self,
         mut widget: Box<dyn Widget<MSG>>,
@@ -565,7 +563,7 @@ impl<MSG> AppWindow<MSG> {
         region_info: RegionInfo<MSG>,
         explicit_visibility: bool,
         msg_out_queue: &mut Vec<MSG>,
-    ) -> Result<WidgetRef<MSG>, ()> {
+    ) -> Result<WidgetRef<MSG>, FirewheelError> {
         let info = widget.on_added(msg_out_queue);
 
         let id = self.next_widget_id;
@@ -574,8 +572,7 @@ impl<MSG> AppWindow<MSG> {
         let mut layer_entry = if let Some(layer) = self.layers.get(&layer) {
             layer.clone()
         } else {
-            // TODO: custom error
-            return Err(());
+            return Err(FirewheelError::LayerWithIDNotFound(layer));
         };
 
         let mut widget_entry = StrongWidgetEntry {
@@ -626,8 +623,7 @@ impl<MSG> AppWindow<MSG> {
                 new_anchor_offset,
                 &mut self.widgets_just_shown,
                 &mut self.widgets_just_hidden,
-            )
-            .unwrap();
+            );
 
         self.handle_visibility_changes(msg_out_queue);
     }
@@ -649,8 +645,7 @@ impl<MSG> AppWindow<MSG> {
                 visible,
                 &mut self.widgets_just_shown,
                 &mut self.widgets_just_hidden,
-            )
-            .unwrap();
+            );
 
         self.handle_visibility_changes(msg_out_queue);
     }
@@ -713,8 +708,7 @@ impl<MSG> AppWindow<MSG> {
             .upgrade()
             .unwrap()
             .borrow_mut()
-            .mark_widget_region_dirty(&widget_ref.shared)
-            .unwrap();
+            .mark_widget_region_dirty(&widget_ref.shared);
     }
 
     pub fn set_scale_factor(&mut self, scale_factor: ScaleFactor, msg_out_queue: &mut Vec<MSG>) {
@@ -963,8 +957,7 @@ impl<MSG> AppWindow<MSG> {
                 .upgrade()
                 .unwrap()
                 .borrow_mut()
-                .mark_widget_region_dirty(widget_entry)
-                .unwrap();
+                .mark_widget_region_dirty(widget_entry);
         }
         if let Some(recieve_next_animation_event) = requests.set_recieve_next_animation_event {
             if recieve_next_animation_event {
@@ -990,8 +983,7 @@ impl<MSG> AppWindow<MSG> {
                 .upgrade()
                 .unwrap()
                 .borrow_mut()
-                .set_widget_region_listens_to_pointer_events(widget_entry, listens)
-                .unwrap();
+                .set_widget_region_listens_to_pointer_events(widget_entry, listens);
         }
         if let Some(set_keyboard_events_listen) = requests.set_keyboard_events_listen {
             let is_visible = {

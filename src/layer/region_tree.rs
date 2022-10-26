@@ -1,14 +1,15 @@
+use std::cell::{RefCell, RefMut};
+use std::rc::{Rc, Weak};
+
+use crate::app_window::WidgetSet;
 use crate::app_window::{StrongWidgetEntry, WeakLayerEntry};
+use crate::error::FirewheelError;
 use crate::event::{InputEvent, PointerEvent};
 use crate::size::{PhysicalPoint, PhysicalRect, PhysicalSize, TextureRect};
 use crate::{
     Anchor, EventCapturedStatus, HAlign, LayerID, Point, Rect, ScaleFactor, Size, VAlign,
     WidgetRegionType, WidgetRequests,
 };
-use std::cell::{RefCell, RefMut};
-use std::rc::{Rc, Weak};
-
-use crate::app_window::WidgetSet;
 
 // TODO: Let the user specify whether child regions should be internally unsorted
 // (default), sorted by x coordinate, or sorted by y coordinate. Sorted lists will
@@ -72,7 +73,7 @@ impl<MSG> RegionTree<MSG> {
         explicit_visibility: bool,
         widgets_just_shown: &mut WidgetSet<MSG>,
         widgets_just_hidden: &mut WidgetSet<MSG>,
-    ) -> Result<ContainerRegionRef<MSG>, ()> {
+    ) -> Result<ContainerRegionRef<MSG>, FirewheelError> {
         let new_id = self.next_region_id;
         self.next_region_id += 1;
 
@@ -113,8 +114,7 @@ impl<MSG> RegionTree<MSG> {
             }
             ParentAnchorType::ContainerRegion(container_ref) => {
                 if container_ref.assigned_layer_id != self.layer_id {
-                    // TODO: Custom error type
-                    return Err(());
+                    return Err(FirewheelError::ParentAnchorRegionNotPartOfLayer);
                 }
 
                 let (parent_rect, parent_explicit_visibility) =
@@ -139,8 +139,7 @@ impl<MSG> RegionTree<MSG> {
 
                         (parent_rect, parent_explicit_visibility)
                     } else {
-                        // TODO: Custom error type
-                        return Err(());
+                        return Err(FirewheelError::ParentAnchorRegionRemoved);
                     };
 
                 (parent_rect, parent_explicit_visibility)
@@ -172,17 +171,21 @@ impl<MSG> RegionTree<MSG> {
     pub fn remove_container_region(
         &mut self,
         container_ref: ContainerRegionRef<MSG>,
-    ) -> Result<(), ()> {
+    ) -> Result<(), FirewheelError> {
         if container_ref.assigned_layer_id != self.layer_id {
             panic!("container region was not assigned to this layer");
         }
 
-        let entry = container_ref.shared.upgrade().take().ok_or_else(|| ())?; // TODO: custom error type
+        let entry = container_ref
+            .shared
+            .upgrade()
+            .take()
+            .ok_or_else(|| FirewheelError::ContainerRegionRemoved)?;
         let mut entry_ref = entry.borrow_mut();
 
         if let Some(children) = &entry_ref.children {
             if !children.is_empty() {
-                return Err(()); // TODO: custom error type
+                return Err(FirewheelError::ContainerRegionNotEmpty);
             }
         } else {
             panic!("region was not a container region");
@@ -237,8 +240,11 @@ impl<MSG> RegionTree<MSG> {
         new_anchor_offset: Option<Point>,
         widgets_just_shown: &mut WidgetSet<MSG>,
         widgets_just_hidden: &mut WidgetSet<MSG>,
-    ) -> Result<(), ()> {
-        let entry = container_ref.shared.upgrade().ok_or_else(|| ())?;
+    ) -> Result<(), FirewheelError> {
+        let entry = container_ref
+            .shared
+            .upgrade()
+            .ok_or_else(|| FirewheelError::ContainerRegionRemoved)?;
 
         entry.borrow_mut().modify(
             new_size,
@@ -260,8 +266,11 @@ impl<MSG> RegionTree<MSG> {
     pub fn mark_container_region_dirty(
         &mut self,
         container_ref: &mut ContainerRegionRef<MSG>,
-    ) -> Result<(), ()> {
-        let entry = container_ref.shared.upgrade().ok_or_else(|| ())?;
+    ) -> Result<(), FirewheelError> {
+        let entry = container_ref
+            .shared
+            .upgrade()
+            .ok_or_else(|| FirewheelError::ContainerRegionRemoved)?;
 
         entry
             .borrow_mut()
@@ -276,8 +285,11 @@ impl<MSG> RegionTree<MSG> {
         explicit_visibility: bool,
         widgets_just_shown: &mut WidgetSet<MSG>,
         widgets_just_hidden: &mut WidgetSet<MSG>,
-    ) -> Result<(), ()> {
-        let entry = container_ref.shared.upgrade().ok_or_else(|| ())?;
+    ) -> Result<(), FirewheelError> {
+        let entry = container_ref
+            .shared
+            .upgrade()
+            .ok_or_else(|| FirewheelError::ContainerRegionRemoved)?;
 
         entry.borrow_mut().modify(
             None,
@@ -304,7 +316,7 @@ impl<MSG> RegionTree<MSG> {
         explicit_visibility: bool,
         widgets_just_shown: &mut WidgetSet<MSG>,
         widgets_just_hidden: &mut WidgetSet<MSG>,
-    ) -> Result<(), ()> {
+    ) -> Result<(), FirewheelError> {
         if assigned_widget.assigned_region().upgrade().is_some() {
             panic!("widget was already assigned a region");
         }
@@ -355,8 +367,7 @@ impl<MSG> RegionTree<MSG> {
             }
             ParentAnchorType::ContainerRegion(container_ref) => {
                 if container_ref.assigned_layer_id != self.layer_id {
-                    // TODO: Custom error type
-                    return Err(());
+                    return Err(FirewheelError::ParentAnchorRegionNotPartOfLayer);
                 }
 
                 let (parent_rect, parent_explicit_visibility) =
@@ -381,8 +392,7 @@ impl<MSG> RegionTree<MSG> {
 
                         (parent_rect, parent_explicit_visibility)
                     } else {
-                        // TODO: Custom error type
-                        return Err(());
+                        return Err(FirewheelError::ParentAnchorRegionRemoved);
                     };
 
                 (parent_rect, parent_explicit_visibility)
@@ -425,7 +435,7 @@ impl<MSG> RegionTree<MSG> {
             if let Some(entry) = widget.assigned_region().upgrade() {
                 entry
             } else {
-                return;
+                panic!("widget was not assigned a region");
             }
         };
         widget.assigned_region_mut().clear();
@@ -493,11 +503,11 @@ impl<MSG> RegionTree<MSG> {
         new_anchor_offset: Option<Point>,
         widgets_just_shown: &mut WidgetSet<MSG>,
         widgets_just_hidden: &mut WidgetSet<MSG>,
-    ) -> Result<(), ()> {
+    ) {
         widget
             .assigned_region()
             .upgrade()
-            .ok_or_else(|| ())?
+            .expect("Widget was not assigned a region")
             .borrow_mut()
             .modify(
                 new_size,
@@ -512,19 +522,15 @@ impl<MSG> RegionTree<MSG> {
                 widgets_just_shown,
                 widgets_just_hidden,
             );
-
-        Ok(())
     }
 
-    pub fn mark_widget_dirty(&mut self, widget: &StrongWidgetEntry<MSG>) -> Result<(), ()> {
+    pub fn mark_widget_dirty(&mut self, widget: &StrongWidgetEntry<MSG>) {
         widget
             .assigned_region()
             .upgrade()
-            .ok_or_else(|| ())?
+            .expect("Widget was not assigned a region")
             .borrow_mut()
             .mark_dirty(&mut self.dirty_widgets, &mut self.texture_rects_to_clear);
-
-        Ok(())
     }
 
     pub fn set_widget_explicit_visibility(
@@ -533,11 +539,11 @@ impl<MSG> RegionTree<MSG> {
         explicit_visibility: bool,
         widgets_just_shown: &mut WidgetSet<MSG>,
         widgets_just_hidden: &mut WidgetSet<MSG>,
-    ) -> Result<(), ()> {
+    ) {
         widget
             .assigned_region()
             .upgrade()
-            .ok_or_else(|| ())?
+            .expect("Widget was not assigned a region")
             .borrow_mut()
             .modify(
                 None,
@@ -552,26 +558,22 @@ impl<MSG> RegionTree<MSG> {
                 widgets_just_shown,
                 widgets_just_hidden,
             );
-
-        Ok(())
     }
 
     pub fn set_widget_listens_to_pointer_events(
         &mut self,
         widget: &StrongWidgetEntry<MSG>,
         listens: bool,
-    ) -> Result<(), ()> {
+    ) {
         widget
             .assigned_region()
             .upgrade()
-            .ok_or_else(|| ())?
+            .expect("Widget was not assigned a region")
             .borrow_mut()
             .assigned_widget
             .as_mut()
             .unwrap()
             .listens_to_pointer_events = listens;
-
-        Ok(())
     }
 
     pub fn set_layer_inner_position(

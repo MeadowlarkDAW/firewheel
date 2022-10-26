@@ -5,12 +5,14 @@ mod renderer;
 
 mod widget;
 
+pub mod error;
 pub mod event;
 pub mod size;
 
 pub use anchor::{Anchor, HAlign, VAlign};
 pub use app_window::{AppWindow, WidgetRef};
-pub use layer::{ContainerRegionRef, LayerError, LayerID, ParentAnchorType, RegionInfo};
+pub use error::FirewheelError;
+pub use layer::{ContainerRegionRef, LayerID, ParentAnchorType, RegionInfo};
 pub use size::*;
 pub use size::{Point, Rect, ScaleFactor, Size};
 pub use widget::{

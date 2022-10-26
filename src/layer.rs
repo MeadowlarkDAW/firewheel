@@ -1,13 +1,13 @@
+use std::cmp::Ordering;
+use std::hash::Hash;
+
 use crate::anchor::Anchor;
 use crate::app_window::{StrongWidgetEntry, WidgetSet};
+use crate::error::FirewheelError;
 use crate::event::PointerEvent;
 use crate::renderer::LayerRenderer;
 use crate::size::{PhysicalPoint, Point, Size};
 use crate::{ScaleFactor, WidgetRegionType, WidgetRequests};
-use std::cmp::Ordering;
-use std::error::Error;
-use std::fmt;
-use std::hash::Hash;
 
 mod region_tree;
 use region_tree::RegionTree;
@@ -73,7 +73,7 @@ impl<MSG> Layer<MSG> {
         explicit_visibility: bool,
         window_visibility: bool,
         scale_factor: ScaleFactor,
-    ) -> Result<Self, LayerError> {
+    ) -> Result<Self, FirewheelError> {
         Ok(Self {
             id,
             renderer: Some(LayerRenderer::new()),
@@ -152,7 +152,7 @@ impl<MSG> Layer<MSG> {
         explicit_visibility: bool,
         widgets_just_shown: &mut WidgetSet<MSG>,
         widgets_just_hidden: &mut WidgetSet<MSG>,
-    ) -> Result<ContainerRegionRef<MSG>, ()> {
+    ) -> Result<ContainerRegionRef<MSG>, FirewheelError> {
         self.region_tree.add_container_region(
             region_info,
             explicit_visibility,
@@ -164,10 +164,8 @@ impl<MSG> Layer<MSG> {
     pub fn remove_container_region(
         &mut self,
         container_ref: ContainerRegionRef<MSG>,
-    ) -> Result<(), ()> {
-        self.region_tree.remove_container_region(container_ref)?;
-
-        Ok(())
+    ) -> Result<(), FirewheelError> {
+        self.region_tree.remove_container_region(container_ref)
     }
 
     pub fn modify_container_region(
@@ -179,7 +177,7 @@ impl<MSG> Layer<MSG> {
         new_anchor_offset: Option<Point>,
         widgets_just_shown: &mut WidgetSet<MSG>,
         widgets_just_hidden: &mut WidgetSet<MSG>,
-    ) -> Result<(), ()> {
+    ) -> Result<(), FirewheelError> {
         self.region_tree.modify_container_region(
             container_ref,
             new_size,
@@ -188,9 +186,7 @@ impl<MSG> Layer<MSG> {
             new_anchor_offset,
             widgets_just_shown,
             widgets_just_hidden,
-        )?;
-
-        Ok(())
+        )
     }
 
     pub fn set_container_region_explicit_visibility(
@@ -199,25 +195,20 @@ impl<MSG> Layer<MSG> {
         visible: bool,
         widgets_just_shown: &mut WidgetSet<MSG>,
         widgets_just_hidden: &mut WidgetSet<MSG>,
-    ) -> Result<(), ()> {
+    ) -> Result<(), FirewheelError> {
         self.region_tree.set_container_region_explicit_visibility(
             container_ref,
             visible,
             widgets_just_shown,
             widgets_just_hidden,
-        )?;
-
-        Ok(())
+        )
     }
 
     pub fn mark_container_region_dirty(
         &mut self,
         container_ref: &mut ContainerRegionRef<MSG>,
-    ) -> Result<(), ()> {
-        self.region_tree
-            .mark_container_region_dirty(container_ref)?;
-
-        Ok(())
+    ) -> Result<(), FirewheelError> {
+        self.region_tree.mark_container_region_dirty(container_ref)
     }
 
     pub fn add_widget_region(
@@ -228,7 +219,7 @@ impl<MSG> Layer<MSG> {
         explicit_visibility: bool,
         widgets_just_shown: &mut WidgetSet<MSG>,
         widgets_just_hidden: &mut WidgetSet<MSG>,
-    ) -> Result<(), ()> {
+    ) -> Result<(), FirewheelError> {
         self.region_tree.add_widget_region(
             assigned_widget,
             region_info,
@@ -236,9 +227,7 @@ impl<MSG> Layer<MSG> {
             explicit_visibility,
             widgets_just_shown,
             widgets_just_hidden,
-        )?;
-
-        Ok(())
+        )
     }
 
     pub fn remove_widget_region(
@@ -260,7 +249,7 @@ impl<MSG> Layer<MSG> {
         new_anchor_offset: Option<Point>,
         widgets_just_shown: &mut WidgetSet<MSG>,
         widgets_just_hidden: &mut WidgetSet<MSG>,
-    ) -> Result<(), ()> {
+    ) {
         self.region_tree.modify_widget_region(
             widget,
             new_size,
@@ -269,9 +258,7 @@ impl<MSG> Layer<MSG> {
             new_anchor_offset,
             widgets_just_shown,
             widgets_just_hidden,
-        )?;
-
-        Ok(())
+        );
     }
 
     pub fn set_widget_explicit_visibility(
@@ -280,30 +267,26 @@ impl<MSG> Layer<MSG> {
         visible: bool,
         widgets_just_shown: &mut WidgetSet<MSG>,
         widgets_just_hidden: &mut WidgetSet<MSG>,
-    ) -> Result<(), ()> {
+    ) {
         self.region_tree.set_widget_explicit_visibility(
             widget,
             visible,
             widgets_just_shown,
             widgets_just_hidden,
-        )?;
-
-        Ok(())
+        );
     }
 
-    pub fn mark_widget_region_dirty(&mut self, widget: &StrongWidgetEntry<MSG>) -> Result<(), ()> {
-        self.region_tree.mark_widget_dirty(widget)?;
-
-        Ok(())
+    pub fn mark_widget_region_dirty(&mut self, widget: &StrongWidgetEntry<MSG>) {
+        self.region_tree.mark_widget_dirty(widget);
     }
 
     pub fn set_widget_region_listens_to_pointer_events(
         &mut self,
         widget: &StrongWidgetEntry<MSG>,
         listens: bool,
-    ) -> Result<(), ()> {
+    ) {
         self.region_tree
-            .set_widget_listens_to_pointer_events(widget, listens)
+            .set_widget_listens_to_pointer_events(widget, listens);
     }
 
     pub fn handle_pointer_event(
@@ -343,22 +326,5 @@ impl<MSG> Layer<MSG> {
 
     pub fn size(&self) -> Size {
         self.region_tree.layer_size()
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum LayerError {
-    LayerWithIDNotFound(LayerID),
-}
-
-impl Error for LayerError {}
-
-impl fmt::Display for LayerError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::LayerWithIDNotFound(id) => {
-                write!(f, "Could not find layer with ID {:?}", id)
-            }
-        }
     }
 }
