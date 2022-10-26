@@ -1,8 +1,8 @@
 use crate::anchor::Anchor;
+use crate::app_window::{StrongWidgetEntry, WidgetSet};
 use crate::event::PointerEvent;
 use crate::renderer::LayerRenderer;
 use crate::size::{PhysicalPoint, Point, Size};
-use crate::window_canvas::StrongWidgetEntry;
 use crate::{ScaleFactor, WidgetRegionType, WidgetRequests};
 use std::cmp::Ordering;
 use std::error::Error;
@@ -87,26 +87,60 @@ impl<MSG> Layer<MSG> {
         self.physical_outer_position = position.to_physical(scale_factor);
     }
 
-    pub fn set_inner_position(&mut self, position: Point) {
-        self.region_tree.set_layer_inner_position(position);
+    pub fn set_inner_position(
+        &mut self,
+        position: Point,
+        widgets_just_shown: &mut WidgetSet<MSG>,
+        widgets_just_hidden: &mut WidgetSet<MSG>,
+    ) {
+        self.region_tree.set_layer_inner_position(
+            position,
+            widgets_just_shown,
+            widgets_just_hidden,
+        );
     }
 
-    pub fn set_explicit_visibility(&mut self, explicit_visibility: bool) {
-        self.region_tree
-            .set_layer_explicit_visibility(explicit_visibility);
+    pub fn set_explicit_visibility(
+        &mut self,
+        explicit_visibility: bool,
+        widgets_just_shown: &mut WidgetSet<MSG>,
+        widgets_just_hidden: &mut WidgetSet<MSG>,
+    ) {
+        self.region_tree.set_layer_explicit_visibility(
+            explicit_visibility,
+            widgets_just_shown,
+            widgets_just_hidden,
+        );
     }
 
-    pub fn set_size(&mut self, size: Size, scale_factor: ScaleFactor) {
-        self.region_tree.set_layer_size(size, scale_factor);
+    pub fn set_size(
+        &mut self,
+        size: Size,
+        scale_factor: ScaleFactor,
+        widgets_just_shown: &mut WidgetSet<MSG>,
+        widgets_just_hidden: &mut WidgetSet<MSG>,
+    ) {
+        self.region_tree.set_layer_size(
+            size,
+            scale_factor,
+            widgets_just_shown,
+            widgets_just_hidden,
+        );
     }
 
     pub fn add_container_region(
         &mut self,
         region_info: RegionInfo,
         explicit_visibility: bool,
+        widgets_just_shown: &mut WidgetSet<MSG>,
+        widgets_just_hidden: &mut WidgetSet<MSG>,
     ) -> Result<ContainerRegionID, ()> {
-        self.region_tree
-            .add_container_region(region_info, explicit_visibility)
+        self.region_tree.add_container_region(
+            region_info,
+            explicit_visibility,
+            widgets_just_shown,
+            widgets_just_hidden,
+        )
     }
 
     pub fn remove_container_region(&mut self, id: ContainerRegionID) -> Result<(), ()> {
@@ -122,6 +156,8 @@ impl<MSG> Layer<MSG> {
         new_internal_anchor: Option<Anchor>,
         new_parent_anchor: Option<Anchor>,
         new_anchor_offset: Option<Point>,
+        widgets_just_shown: &mut WidgetSet<MSG>,
+        widgets_just_hidden: &mut WidgetSet<MSG>,
     ) -> Result<(), ()> {
         self.region_tree.modify_container_region(
             id,
@@ -129,6 +165,8 @@ impl<MSG> Layer<MSG> {
             new_internal_anchor,
             new_parent_anchor,
             new_anchor_offset,
+            widgets_just_shown,
+            widgets_just_hidden,
         )?;
 
         Ok(())
@@ -138,9 +176,15 @@ impl<MSG> Layer<MSG> {
         &mut self,
         id: ContainerRegionID,
         visible: bool,
+        widgets_just_shown: &mut WidgetSet<MSG>,
+        widgets_just_hidden: &mut WidgetSet<MSG>,
     ) -> Result<(), ()> {
-        self.region_tree
-            .set_container_region_explicit_visibility(id, visible)?;
+        self.region_tree.set_container_region_explicit_visibility(
+            id,
+            visible,
+            widgets_just_shown,
+            widgets_just_hidden,
+        )?;
 
         Ok(())
     }
@@ -157,19 +201,29 @@ impl<MSG> Layer<MSG> {
         region_info: RegionInfo,
         region_type: WidgetRegionType,
         explicit_visibility: bool,
+        widgets_just_shown: &mut WidgetSet<MSG>,
+        widgets_just_hidden: &mut WidgetSet<MSG>,
     ) -> Result<(), ()> {
         self.region_tree.add_widget_region(
             assigned_widget,
             region_info,
             region_type,
             explicit_visibility,
+            widgets_just_shown,
+            widgets_just_hidden,
         )?;
 
         Ok(())
     }
 
-    pub fn remove_widget_region(&mut self, widget: &mut StrongWidgetEntry<MSG>) {
-        self.region_tree.remove_widget_region(widget);
+    pub fn remove_widget_region(
+        &mut self,
+        widget: &mut StrongWidgetEntry<MSG>,
+        widgets_just_shown: &mut WidgetSet<MSG>,
+        widgets_just_hidden: &mut WidgetSet<MSG>,
+    ) {
+        self.region_tree
+            .remove_widget_region(widget, widgets_just_shown, widgets_just_hidden);
     }
 
     pub fn modify_widget_region(
@@ -179,6 +233,8 @@ impl<MSG> Layer<MSG> {
         new_internal_anchor: Option<Anchor>,
         new_parent_anchor: Option<Anchor>,
         new_anchor_offset: Option<Point>,
+        widgets_just_shown: &mut WidgetSet<MSG>,
+        widgets_just_hidden: &mut WidgetSet<MSG>,
     ) -> Result<(), ()> {
         self.region_tree.modify_widget_region(
             widget,
@@ -186,6 +242,8 @@ impl<MSG> Layer<MSG> {
             new_internal_anchor,
             new_parent_anchor,
             new_anchor_offset,
+            widgets_just_shown,
+            widgets_just_hidden,
         )?;
 
         Ok(())
@@ -195,9 +253,15 @@ impl<MSG> Layer<MSG> {
         &mut self,
         widget: &mut StrongWidgetEntry<MSG>,
         visible: bool,
+        widgets_just_shown: &mut WidgetSet<MSG>,
+        widgets_just_hidden: &mut WidgetSet<MSG>,
     ) -> Result<(), ()> {
-        self.region_tree
-            .set_widget_explicit_visibility(widget, visible)?;
+        self.region_tree.set_widget_explicit_visibility(
+            widget,
+            visible,
+            widgets_just_shown,
+            widgets_just_hidden,
+        )?;
 
         Ok(())
     }
@@ -215,6 +279,10 @@ impl<MSG> Layer<MSG> {
     ) -> Result<(), ()> {
         self.region_tree
             .set_widget_listens_to_pointer_events(widget, listens)
+    }
+
+    pub fn is_widget_visible(&self, widget: &StrongWidgetEntry<MSG>) -> Result<bool, ()> {
+        self.region_tree.is_widget_visible(widget)
     }
 
     pub fn handle_pointer_event(

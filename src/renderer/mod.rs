@@ -1,7 +1,7 @@
 use femtovg::Color;
 use std::ffi::c_void;
 
-use crate::{size::PhysicalSize, ScaleFactor, WindowCanvas};
+use crate::{size::PhysicalSize, AppWindow, ScaleFactor};
 
 mod layer_renderer;
 pub(crate) use layer_renderer::LayerRenderer;
@@ -33,11 +33,11 @@ impl Renderer {
 
     pub fn render<MSG>(
         &mut self,
-        window_canvas: &mut WindowCanvas<MSG>,
+        app_window: &mut AppWindow<MSG>,
         physical_size: PhysicalSize,
         scale_factor: ScaleFactor,
     ) {
-        for mut layer_renderer in window_canvas.layer_renderers_to_clean_up.drain(..) {
+        for mut layer_renderer in app_window.layer_renderers_to_clean_up.drain(..) {
             layer_renderer.clean_up(&mut self.vg);
         }
 
@@ -57,7 +57,7 @@ impl Renderer {
         self.vg.save();
         self.vg.reset();
 
-        for (_z_order, layer_entries) in window_canvas.layers_ordered.iter_mut() {
+        for (_z_order, layer_entries) in app_window.layers_ordered.iter_mut() {
             for layer_entry in layer_entries.iter_mut() {
                 let mut layer = layer_entry.borrow_mut();
                 if layer.is_visible() {

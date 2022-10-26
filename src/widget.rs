@@ -1,3 +1,5 @@
+use std::any::Any;
+
 use crate::{
     event::{InputEvent, KeyboardEventsListen},
     size::PhysicalRect,
@@ -20,12 +22,12 @@ pub trait Widget<MSG> {
     fn on_removed(&mut self, msg_out_queue: &mut Vec<MSG>) {}
 
     #[allow(unused)]
-    fn on_visibility_changed(&mut self, visible: bool, msg_out_queue: &mut Vec<MSG>) {}
+    fn on_visibility_hidden(&mut self, msg_out_queue: &mut Vec<MSG>) {}
 
     #[allow(unused)]
-    fn on_user_message(
+    fn on_user_event(
         &mut self,
-        msg: MSG,
+        event: Box<dyn Any>,
         msg_out_queue: &mut Vec<MSG>,
     ) -> Option<WidgetRequests> {
         None
@@ -63,7 +65,6 @@ pub struct PaintRegionInfo {
 
 pub struct WidgetAddedInfo {
     pub region_type: WidgetRegionType,
-    pub requests: WidgetRequests,
 }
 
 pub struct WidgetRequests {

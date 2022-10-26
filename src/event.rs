@@ -10,9 +10,13 @@ pub use keyboard_types::{
 pub enum InputEvent {
     Animation(AnimationEvent),
     Pointer(PointerEvent),
+    PointerLocked,
     PointerUnlocked,
     Keyboard(KeyboardEvent),
     TextComposition(CompositionEvent),
+    TextCompositionFocused,
+    TextCompositionUnfocused,
+    VisibilityShown,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

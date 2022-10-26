@@ -1,4 +1,4 @@
-use firewheel::{vg::Color, PhysicalSize, WindowCanvas};
+use firewheel::{vg::Color, AppWindow, PhysicalSize};
 use raw_gl_context::{GlConfig, GlContext};
 use winit::{
     event::*,
@@ -19,8 +19,8 @@ fn main() {
     let context = GlContext::create(&window, gl_config).unwrap();
     context.make_current();
     gl::load_with(|s| context.get_proc_address(s) as _);
-    let mut window_canvas = unsafe {
-        WindowCanvas::<()>::new_from_function(window.scale_factor().into(), |s| {
+    let mut app_window = unsafe {
+        AppWindow::<()>::new_from_function(window.scale_factor().into(), |s| {
             context.get_proc_address(s) as _
         })
     };
@@ -41,7 +41,7 @@ fn main() {
                 scale_factor,
                 new_inner_size,
             } => {
-                window_canvas.set_scale_factor((*scale_factor).into());
+                app_window.set_scale_factor((*scale_factor).into());
                 window_size = PhysicalSize::new(new_inner_size.width, new_inner_size.height);
             }
             _ => {}
@@ -54,7 +54,7 @@ fn main() {
                 gl::Clear(gl::COLOR_BUFFER_BIT);
             }
 
-            window_canvas.render(window_size);
+            app_window.render(window_size);
 
             context.swap_buffers();
             context.make_not_current();

@@ -1,6 +1,5 @@
-use femtovg::Color;
 use fnv::{FnvHashMap, FnvHashSet};
-use keyboard_types::{CompositionEvent, CompositionState};
+use std::any::Any;
 use std::cell::{Ref, RefCell, RefMut};
 use std::ffi::c_void;
 use std::hash::Hash;
@@ -197,12 +196,14 @@ impl<MSG> WidgetSet<MSG> {
     }
 }
 
-pub struct WindowCanvas<MSG> {
+pub struct AppWindow<MSG> {
+    pub(crate) layers_ordered: Vec<(i32, Vec<StrongLayerEntry<MSG>>)>,
+    pub(crate) layer_renderers_to_clean_up: Vec<LayerRenderer>,
+
     next_layer_id: u64,
     next_widget_id: u64,
 
     layers: FnvHashMap<LayerID, StrongLayerEntry<MSG>>,
-    pub(crate) layers_ordered: Vec<(i32, Vec<StrongLayerEntry<MSG>>)>,
 
     widgets: FnvHashSet<StrongWidgetEntry<MSG>>,
     widget_with_pointer_lock: Option<(StrongWidgetEntry<MSG>, SetPointerLockType)>,
@@ -213,8 +214,8 @@ pub struct WindowCanvas<MSG> {
     widgets_with_pointer_down_listen: WidgetSet<MSG>,
     widgets_to_remove_from_animation: Vec<StrongWidgetEntry<MSG>>,
     widget_requests: Vec<(StrongWidgetEntry<MSG>, WidgetRequests)>,
-
-    pub(crate) layer_renderers_to_clean_up: Vec<LayerRenderer>,
+    widgets_just_shown: WidgetSet<MSG>,
+    widgets_just_hidden: WidgetSet<MSG>,
 
     renderer: Option<Renderer>,
     scale_factor: ScaleFactor,
@@ -222,7 +223,7 @@ pub struct WindowCanvas<MSG> {
     do_repack_layers: bool,
 }
 
-impl<MSG> WindowCanvas<MSG> {
+impl<MSG> AppWindow<MSG> {
     pub unsafe fn new_from_function<F>(scale_factor: ScaleFactor, load_fn: F) -> Self
     where
         F: FnMut(&str) -> *const c_void,
@@ -243,6 +244,8 @@ impl<MSG> WindowCanvas<MSG> {
             widgets_with_pointer_down_listen: WidgetSet::new(),
             widgets_to_remove_from_animation: Vec::new(),
             widget_requests: Vec::new(),
+            widgets_just_shown: WidgetSet::new(),
+            widgets_just_hidden: WidgetSet::new(),
             layer_renderers_to_clean_up: Vec::new(),
             renderer: Some(renderer),
             scale_factor,
@@ -362,35 +365,66 @@ impl<MSG> WindowCanvas<MSG> {
         &mut self,
         layer: LayerID,
         position: Point,
+        msg_out_queue: &mut Vec<MSG>,
     ) -> Result<(), LayerError> {
-        Ok(self
-            .layers
-            .get_mut(&layer)
-            .ok_or_else(|| LayerError::LayerWithIDNotFound(layer))?
-            .borrow_mut()
-            .set_inner_position(position))
+        {
+            self.layers
+                .get_mut(&layer)
+                .ok_or_else(|| LayerError::LayerWithIDNotFound(layer))?
+                .borrow_mut()
+                .set_inner_position(
+                    position,
+                    &mut self.widgets_just_shown,
+                    &mut self.widgets_just_hidden,
+                );
+        }
+
+        self.handle_visibility_changes(msg_out_queue);
+
+        Ok(())
     }
 
-    pub fn set_layer_size(&mut self, layer: LayerID, size: Size) -> Result<(), LayerError> {
-        Ok(self
-            .layers
+    pub fn set_layer_size(
+        &mut self,
+        layer: LayerID,
+        size: Size,
+        msg_out_queue: &mut Vec<MSG>,
+    ) -> Result<(), LayerError> {
+        self.layers
             .get_mut(&layer)
             .ok_or_else(|| LayerError::LayerWithIDNotFound(layer))?
             .borrow_mut()
-            .set_size(size, self.scale_factor))
+            .set_size(
+                size,
+                self.scale_factor,
+                &mut self.widgets_just_shown,
+                &mut self.widgets_just_hidden,
+            );
+
+        self.handle_visibility_changes(msg_out_queue);
+
+        Ok(())
     }
 
     pub fn set_layer_explicit_visibility(
         &mut self,
         layer: LayerID,
         explicit_visibility: bool,
+        msg_out_queue: &mut Vec<MSG>,
     ) -> Result<(), LayerError> {
-        Ok(self
-            .layers
+        self.layers
             .get_mut(&layer)
             .ok_or_else(|| LayerError::LayerWithIDNotFound(layer))?
             .borrow_mut()
-            .set_explicit_visibility(explicit_visibility))
+            .set_explicit_visibility(
+                explicit_visibility,
+                &mut self.widgets_just_shown,
+                &mut self.widgets_just_hidden,
+            );
+
+        self.handle_visibility_changes(msg_out_queue);
+
+        Ok(())
     }
 
     // TODO: Custom error type
@@ -404,7 +438,14 @@ impl<MSG> WindowCanvas<MSG> {
             .get_mut(&layer)
             .ok_or_else(|| ())?
             .borrow_mut()
-            .add_container_region(region_info, explicit_visibility)
+            .add_container_region(
+                region_info,
+                explicit_visibility,
+                // No widgets will ever be shown or hidden as a result of
+                // adding a container region.
+                &mut self.widgets_just_shown,
+                &mut self.widgets_just_hidden,
+            )
     }
 
     // TODO: Custom error type
@@ -429,6 +470,7 @@ impl<MSG> WindowCanvas<MSG> {
         new_internal_anchor: Option<Anchor>,
         new_parent_anchor: Option<Anchor>,
         new_anchor_offset: Option<Point>,
+        msg_out_queue: &mut Vec<MSG>,
     ) -> Result<(), ()> {
         self.layers
             .get_mut(&layer)
@@ -440,7 +482,13 @@ impl<MSG> WindowCanvas<MSG> {
                 new_internal_anchor,
                 new_parent_anchor,
                 new_anchor_offset,
-            )
+                &mut self.widgets_just_shown,
+                &mut self.widgets_just_hidden,
+            )?;
+
+        self.handle_visibility_changes(msg_out_queue);
+
+        Ok(())
     }
 
     // TODO: Custom error type
@@ -449,12 +497,22 @@ impl<MSG> WindowCanvas<MSG> {
         layer: LayerID,
         region: ContainerRegionID,
         visible: bool,
+        msg_out_queue: &mut Vec<MSG>,
     ) -> Result<(), ()> {
         self.layers
             .get_mut(&layer)
             .ok_or_else(|| ())?
             .borrow_mut()
-            .set_container_region_explicit_visibility(region, visible)
+            .set_container_region_explicit_visibility(
+                region,
+                visible,
+                &mut self.widgets_just_shown,
+                &mut self.widgets_just_hidden,
+            )?;
+
+        self.handle_visibility_changes(msg_out_queue);
+
+        Ok(())
     }
 
     // TODO: Custom error type
@@ -503,11 +561,13 @@ impl<MSG> WindowCanvas<MSG> {
             region_info,
             info.region_type,
             explicit_visibility,
+            &mut self.widgets_just_shown,
+            &mut self.widgets_just_hidden,
         )?;
 
         self.widgets.insert(widget_entry.clone());
 
-        self.handle_widget_requests(&widget_entry, info.requests);
+        self.handle_visibility_changes(msg_out_queue);
 
         Ok(WidgetRef {
             shared: widget_entry,
@@ -521,6 +581,7 @@ impl<MSG> WindowCanvas<MSG> {
         new_internal_anchor: Option<Anchor>,
         new_parent_anchor: Option<Anchor>,
         new_anchor_offset: Option<Point>,
+        msg_out_queue: &mut Vec<MSG>,
     ) {
         widget_ref
             .shared
@@ -534,14 +595,19 @@ impl<MSG> WindowCanvas<MSG> {
                 new_internal_anchor,
                 new_parent_anchor,
                 new_anchor_offset,
+                &mut self.widgets_just_shown,
+                &mut self.widgets_just_hidden,
             )
             .unwrap();
+
+        self.handle_visibility_changes(msg_out_queue);
     }
 
     pub fn set_widget_explicit_visibility(
         &mut self,
         widget_ref: &mut WidgetRef<MSG>,
         visible: bool,
+        msg_out_queue: &mut Vec<MSG>,
     ) {
         widget_ref
             .shared
@@ -549,8 +615,15 @@ impl<MSG> WindowCanvas<MSG> {
             .upgrade()
             .unwrap()
             .borrow_mut()
-            .set_widget_explicit_visibility(&mut widget_ref.shared, visible)
+            .set_widget_explicit_visibility(
+                &mut widget_ref.shared,
+                visible,
+                &mut self.widgets_just_shown,
+                &mut self.widgets_just_hidden,
+            )
             .unwrap();
+
+        self.handle_visibility_changes(msg_out_queue);
     }
 
     pub fn remove_widget(&mut self, mut widget_ref: WidgetRef<MSG>, msg_out_queue: &mut Vec<MSG>) {
@@ -561,9 +634,18 @@ impl<MSG> WindowCanvas<MSG> {
             .upgrade()
             .unwrap()
             .borrow_mut()
-            .remove_widget_region(&mut widget_ref.shared);
+            .remove_widget_region(
+                &mut widget_ref.shared,
+                &mut self.widgets_just_shown,
+                &mut self.widgets_just_hidden,
+            );
 
         // Remove this widget from all active event listeners.
+        self.widgets_scheduled_for_animation
+            .remove(&widget_ref.shared);
+        self.widgets_with_keyboard_listen.remove(&widget_ref.shared);
+        self.widgets_with_pointer_down_listen
+            .remove(&widget_ref.shared);
         if let Some(w) = self.widget_with_pointer_lock.take() {
             if w.0.unique_id != widget_ref.unique_id() {
                 self.widget_with_pointer_lock = Some(w);
@@ -574,24 +656,21 @@ impl<MSG> WindowCanvas<MSG> {
                 self.widget_with_text_comp_listen = Some(w);
             }
         }
-        self.widgets_with_keyboard_listen.remove(&widget_ref.shared);
-        self.widgets_scheduled_for_animation
-            .remove(&widget_ref.shared);
 
         widget_ref.shared.borrow_mut().on_removed(msg_out_queue);
     }
 
-    pub fn send_message_to_widget(
+    pub fn send_user_event_to_widget(
         &mut self,
         widget_ref: &mut WidgetRef<MSG>,
-        msg: MSG,
+        event: Box<dyn Any>,
         msg_out_queue: &mut Vec<MSG>,
     ) {
         let res = {
             widget_ref
                 .shared
                 .borrow_mut()
-                .on_user_message(msg, msg_out_queue)
+                .on_user_event(event, msg_out_queue)
         };
         if let Some(requests) = res {
             self.handle_widget_requests(&widget_ref.shared, requests);
@@ -778,8 +857,13 @@ impl<MSG> WindowCanvas<MSG> {
                     self.handle_widget_requests(&widget_entry, requests);
                 }
             }
+            e => {
+                log::warn!("Input event {:?} is reserved for internal use", e);
+            }
         }
 
+        // Handle any extra events that have occurred as a result of handling
+        // widget requests.
         let mut widgets_to_send_input_event: Vec<(StrongWidgetEntry<MSG>, InputEvent)> = Vec::new();
         std::mem::swap(
             &mut widgets_to_send_input_event,
@@ -812,12 +896,22 @@ impl<MSG> WindowCanvas<MSG> {
         }
     }
 
+    pub fn render(&mut self, window_size: PhysicalSize) {
+        let mut renderer = self.renderer.take().unwrap();
+
+        renderer.render(self, window_size, self.scale_factor);
+
+        self.renderer = Some(renderer);
+    }
+
     fn handle_widget_requests(
         &mut self,
         widget_entry: &StrongWidgetEntry<MSG>,
         requests: WidgetRequests,
     ) {
         if requests.repaint {
+            // Note, the widget won't actually get marked dirty if it is
+            // currently hidden.
             widget_entry
                 .assigned_layer
                 .upgrade()
@@ -828,7 +922,18 @@ impl<MSG> WindowCanvas<MSG> {
         }
         if let Some(recieve_next_animation_event) = requests.set_recieve_next_animation_event {
             if recieve_next_animation_event {
-                self.widgets_scheduled_for_animation.insert(widget_entry);
+                let is_visible = {
+                    widget_entry
+                        .assigned_region
+                        .upgrade()
+                        .unwrap()
+                        .borrow()
+                        .region
+                        .is_visible()
+                };
+                if is_visible {
+                    self.widgets_scheduled_for_animation.insert(widget_entry);
+                }
             } else {
                 self.widgets_scheduled_for_animation.remove(widget_entry);
             }
@@ -843,36 +948,47 @@ impl<MSG> WindowCanvas<MSG> {
                 .unwrap();
         }
         if let Some(set_keyboard_events_listen) = requests.set_keyboard_events_listen {
-            let set_text_comp = match set_keyboard_events_listen {
-                KeyboardEventsListen::None => false,
-                KeyboardEventsListen::Keys => {
-                    self.widgets_with_keyboard_listen.insert(&widget_entry);
-                    false
+            let is_visible = {
+                widget_entry
+                    .assigned_region
+                    .upgrade()
+                    .unwrap()
+                    .borrow()
+                    .region
+                    .is_visible()
+            };
+
+            let set_text_comp = if is_visible {
+                match set_keyboard_events_listen {
+                    KeyboardEventsListen::None => {
+                        self.widgets_with_keyboard_listen.remove(&widget_entry);
+                        false
+                    }
+                    KeyboardEventsListen::Keys => {
+                        self.widgets_with_keyboard_listen.insert(&widget_entry);
+                        false
+                    }
+                    KeyboardEventsListen::TextComposition => {
+                        self.widgets_with_keyboard_listen.remove(&widget_entry);
+                        true
+                    }
+                    KeyboardEventsListen::KeysAndTextComposition => {
+                        self.widgets_with_keyboard_listen.insert(&widget_entry);
+                        true
+                    }
                 }
-                KeyboardEventsListen::TextComposition => true,
-                KeyboardEventsListen::KeysAndTextComposition => {
-                    self.widgets_with_keyboard_listen.insert(&widget_entry);
-                    true
-                }
+            } else {
+                self.widgets_with_keyboard_listen.remove(&widget_entry);
+                false
             };
 
             if set_text_comp {
                 if let Some(last_widget) = self.widget_with_text_comp_listen.take() {
                     if last_widget.unique_id() != widget_entry.unique_id() {
-                        self.widgets_to_send_input_event.push((
-                            last_widget.clone(),
-                            InputEvent::TextComposition(CompositionEvent {
-                                state: CompositionState::End,
-                                data: String::new(),
-                            }),
-                        ));
-                        self.widgets_to_send_input_event.push((
-                            widget_entry.clone(),
-                            InputEvent::TextComposition(CompositionEvent {
-                                state: CompositionState::Start,
-                                data: String::new(),
-                            }),
-                        ));
+                        self.widgets_to_send_input_event
+                            .push((last_widget.clone(), InputEvent::TextCompositionUnfocused));
+                        self.widgets_to_send_input_event
+                            .push((widget_entry.clone(), InputEvent::TextCompositionFocused));
 
                         self.widget_with_text_comp_listen = Some(widget_entry.clone());
                     } else {
@@ -880,24 +996,14 @@ impl<MSG> WindowCanvas<MSG> {
                     }
                 } else {
                     self.widget_with_text_comp_listen = Some(widget_entry.clone());
-                    self.widgets_to_send_input_event.push((
-                        widget_entry.clone(),
-                        InputEvent::TextComposition(CompositionEvent {
-                            state: CompositionState::Start,
-                            data: String::new(),
-                        }),
-                    ));
+                    self.widgets_to_send_input_event
+                        .push((widget_entry.clone(), InputEvent::TextCompositionFocused));
                 }
             } else {
                 if let Some(last_widget) = self.widget_with_text_comp_listen.take() {
                     if last_widget.unique_id() == widget_entry.unique_id() {
-                        self.widgets_to_send_input_event.push((
-                            widget_entry.clone(),
-                            InputEvent::TextComposition(CompositionEvent {
-                                state: CompositionState::End,
-                                data: String::new(),
-                            }),
-                        ));
+                        self.widgets_to_send_input_event
+                            .push((widget_entry.clone(), InputEvent::TextCompositionUnfocused));
                     } else {
                         self.widget_with_text_comp_listen = Some(last_widget);
                     }
@@ -905,7 +1011,17 @@ impl<MSG> WindowCanvas<MSG> {
             }
         }
         if let Some(set_lock_type) = requests.set_pointer_lock {
-            if set_lock_type == SetPointerLockType::Unlock {
+            let is_visible = {
+                widget_entry
+                    .assigned_region
+                    .upgrade()
+                    .unwrap()
+                    .borrow()
+                    .region
+                    .is_visible()
+            };
+
+            if set_lock_type == SetPointerLockType::Unlock || !is_visible {
                 if let Some((last_widget, lock_type)) = self.widget_with_pointer_lock.take() {
                     if last_widget.unique_id() == widget_entry.unique_id() {
                         self.widgets_to_send_input_event
@@ -919,14 +1035,28 @@ impl<MSG> WindowCanvas<MSG> {
                     if last_widget.unique_id() != widget_entry.unique_id() {
                         self.widgets_to_send_input_event
                             .push((last_widget.clone(), InputEvent::PointerUnlocked));
+                    } else {
+                        self.widget_with_pointer_lock = Some((widget_entry.clone(), set_lock_type));
                     }
+                } else {
+                    self.widget_with_pointer_lock = Some((widget_entry.clone(), set_lock_type));
+                    self.widgets_to_send_input_event
+                        .push((widget_entry.clone(), InputEvent::PointerLocked));
                 }
-
-                self.widget_with_pointer_lock = Some((widget_entry.clone(), set_lock_type));
             }
         }
         if let Some(set_pointer_down_listen) = requests.set_pointer_down_listen {
-            if set_pointer_down_listen {
+            let is_visible = {
+                widget_entry
+                    .assigned_region
+                    .upgrade()
+                    .unwrap()
+                    .borrow()
+                    .region
+                    .is_visible()
+            };
+
+            if set_pointer_down_listen && is_visible {
                 self.widgets_with_pointer_down_listen.insert(&widget_entry);
             } else {
                 self.widgets_with_pointer_down_listen.remove(&widget_entry);
@@ -934,12 +1064,52 @@ impl<MSG> WindowCanvas<MSG> {
         }
     }
 
-    pub fn render(&mut self, window_size: PhysicalSize) {
-        let mut renderer = self.renderer.take().unwrap();
+    fn handle_visibility_changes(&mut self, msg_out_queue: &mut Vec<MSG>) {
+        // Handle widgets that have just been shown.
+        let mut widget_requests: Vec<(StrongWidgetEntry<MSG>, WidgetRequests)> = Vec::new();
+        std::mem::swap(&mut widget_requests, &mut self.widget_requests);
+        for widget_entry in self.widgets_just_shown.iter_mut() {
+            let status = {
+                widget_entry
+                    .borrow_mut()
+                    .on_input_event(&InputEvent::VisibilityShown, msg_out_queue)
+            };
+            if let EventCapturedStatus::Captured(requests) = status {
+                widget_requests.push((widget_entry.clone(), requests));
+            }
+        }
+        self.widgets_just_shown.clear();
+        for (widget_entry, requests) in widget_requests.drain(..) {
+            self.handle_widget_requests(&widget_entry, requests);
+        }
+        std::mem::swap(&mut widget_requests, &mut self.widget_requests);
 
-        renderer.render(self, window_size, self.scale_factor);
+        // Handle widgets that have just been hidden.
+        for widget_entry in self.widgets_just_hidden.iter_mut() {
+            {
+                widget_entry
+                    .borrow_mut()
+                    .on_visibility_hidden(msg_out_queue);
+            }
 
-        self.renderer = Some(renderer);
+            // Remove all event listeners for this widget (except for pointer
+            // input events, because the region tree already culls pointer
+            // input events from hidden widgets).
+            self.widgets_scheduled_for_animation.remove(widget_entry);
+            self.widgets_with_keyboard_listen.remove(widget_entry);
+            self.widgets_with_pointer_down_listen.remove(widget_entry);
+            if let Some((last_widget, lock_type)) = self.widget_with_pointer_lock.take() {
+                if last_widget.unique_id() != widget_entry.unique_id() {
+                    self.widget_with_pointer_lock = Some((last_widget, lock_type));
+                }
+            }
+            if let Some(last_widget) = self.widget_with_text_comp_listen.take() {
+                if last_widget.unique_id() != widget_entry.unique_id() {
+                    self.widget_with_text_comp_listen = Some(last_widget);
+                }
+            }
+        }
+        self.widgets_just_hidden.clear();
     }
 }
 
