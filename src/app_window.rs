@@ -974,10 +974,10 @@ impl<MSG> AppWindow<MSG> {
         }
     }
 
-    pub fn render(&mut self, window_size: PhysicalSize) {
+    pub fn render(&mut self, window_size: PhysicalSize, clear_color: [f32; 4]) {
         let mut renderer = self.renderer.take().unwrap();
 
-        renderer.render(self, window_size, self.scale_factor);
+        renderer.render(self, window_size, self.scale_factor, clear_color);
 
         self.renderer = Some(renderer);
     }

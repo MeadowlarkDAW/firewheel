@@ -43,6 +43,7 @@ impl Renderer {
         app_window: &mut AppWindow<MSG>,
         physical_size: PhysicalSize,
         scale_factor: ScaleFactor,
+        clear_color: [f32; 4],
     ) {
         for mut layer_renderer in app_window.widget_layer_renderers_to_clean_up.drain(..) {
             layer_renderer.clean_up(&mut self.vg, &mut self.glow_context);
@@ -53,6 +54,14 @@ impl Renderer {
 
         unsafe {
             self.glow_context.bind_framebuffer(glow::FRAMEBUFFER, None);
+
+            self.glow_context.clear_color(
+                clear_color[0],
+                clear_color[1],
+                clear_color[2],
+                clear_color[3],
+            );
+            self.glow_context.clear(glow::COLOR_BUFFER_BIT);
         }
 
         if self.physical_size != physical_size || self.scale_factor != scale_factor {

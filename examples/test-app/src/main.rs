@@ -18,7 +18,6 @@ fn main() {
 
     let context = GlContext::create(&window, gl_config).unwrap();
     context.make_current();
-    gl::load_with(|s| context.get_proc_address(s) as _);
     let mut app_window = unsafe {
         AppWindow::<()>::new_from_function(window.scale_factor().into(), |s| {
             context.get_proc_address(s) as _
@@ -51,12 +50,7 @@ fn main() {
         Event::RedrawRequested(window_id) if window_id == window.id() => {
             context.make_current();
 
-            unsafe {
-                gl::ClearColor(0.06, 0.06, 0.06, 1.0);
-                gl::Clear(gl::COLOR_BUFFER_BIT);
-            }
-
-            app_window.render(window_size);
+            app_window.render(window_size, [0.06, 0.06, 0.06, 1.0]);
 
             context.swap_buffers();
             context.make_not_current();
