@@ -10,7 +10,10 @@ use winit::{
 fn main() {
     env_logger::init();
     let event_loop = EventLoop::new();
-    let window = WindowBuilder::new().build(&event_loop).unwrap();
+    let window = WindowBuilder::new()
+        .with_title("Firewheel Test App")
+        .build(&event_loop)
+        .unwrap();
 
     let gl_config = GlConfig {
         vsync: true,
@@ -100,7 +103,7 @@ impl BackgroundNode for TestBackgroundNode {
             region.physical_rect.pos.y as f32,
             region.physical_rect.size.width as f32,
             region.physical_rect.size.height as f32,
-            10.0 * region.scale_factor.as_f32(),
+            20.0 * region.scale_factor.as_f32(),
         );
 
         let paint = Paint::linear_gradient(
