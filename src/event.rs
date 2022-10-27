@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use crate::{layer::LayerID, Point, Size};
+use crate::Point;
 
 pub use keyboard_types::{
     Code, CompositionEvent, CompositionState, Key, KeyState, KeyboardEvent, Location, Modifiers,
@@ -59,15 +59,6 @@ impl Default for KeyboardEventsListen {
     fn default() -> Self {
         KeyboardEventsListen::None
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct DrawRegionModifiedEvent {
-    pub layer: LayerID,
-    pub position: Point,
-    pub prev_position: Point,
-    pub size: Size,
-    pub prev_size: Size,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

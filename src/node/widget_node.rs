@@ -2,12 +2,13 @@ use std::any::Any;
 
 use crate::{
     event::{InputEvent, KeyboardEventsListen},
-    size::PhysicalRect,
-    Rect, ScaleFactor, VG,
+    VG,
 };
 
+use super::PaintRegionInfo;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum WidgetRegionType {
+pub enum WidgetNodeType {
     /// This widget paints stuff into this region.
     Painted,
     /// This widget does not paint anything into this region,
@@ -15,8 +16,8 @@ pub enum WidgetRegionType {
     PointerOnly,
 }
 
-pub trait Widget<MSG> {
-    fn on_added(&mut self, msg_out_queue: &mut Vec<MSG>) -> WidgetAddedInfo;
+pub trait WidgetNode<MSG> {
+    fn on_added(&mut self, msg_out_queue: &mut Vec<MSG>) -> WidgetNodeType;
 
     #[allow(unused)]
     fn on_removed(&mut self, msg_out_queue: &mut Vec<MSG>) {}
@@ -29,7 +30,7 @@ pub trait Widget<MSG> {
         &mut self,
         event: Box<dyn Any>,
         msg_out_queue: &mut Vec<MSG>,
-    ) -> Option<WidgetRequests> {
+    ) -> Option<WidgetNodeRequests> {
         None
     }
 
@@ -43,31 +44,7 @@ pub trait Widget<MSG> {
     fn paint(&mut self, vg: &mut VG, region: &PaintRegionInfo) {}
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct PaintRegionInfo {
-    /// This widget's assigned rectangular region in logical coordinates.
-    pub rect: Rect,
-
-    /// The layer's visible rectangular region in logical coordinates.
-    pub layer_rect: Rect,
-
-    /// This widget's assigned rectangular region in physical coordinates
-    /// (the physical coordinates in the layer's texture, not the screen).
-    pub physical_rect: PhysicalRect,
-
-    /// The layer's visible rectangular region in physical coordinates
-    /// (the physical coordinates in the layer's texture, not the screen).
-    pub layer_physical_rect: PhysicalRect,
-
-    /// The dpi scaling factor.
-    pub scale_factor: ScaleFactor,
-}
-
-pub struct WidgetAddedInfo {
-    pub region_type: WidgetRegionType,
-}
-
-pub struct WidgetRequests {
+pub struct WidgetNodeRequests {
     pub repaint: bool,
     pub set_recieve_next_animation_event: Option<bool>,
     pub set_pointer_events_listen: Option<bool>,
@@ -76,7 +53,7 @@ pub struct WidgetRequests {
     pub set_pointer_down_listen: Option<bool>,
 }
 
-impl Default for WidgetRequests {
+impl Default for WidgetNodeRequests {
     fn default() -> Self {
         Self {
             repaint: false,
@@ -91,7 +68,7 @@ impl Default for WidgetRequests {
 
 pub enum EventCapturedStatus {
     NotCaptured,
-    Captured(WidgetRequests),
+    Captured(WidgetNodeRequests),
 }
 
 impl Default for EventCapturedStatus {

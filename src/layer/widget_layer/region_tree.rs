@@ -1,14 +1,15 @@
 use std::cell::{RefCell, RefMut};
 use std::rc::{Rc, Weak};
 
-use crate::app_window::WidgetSet;
-use crate::app_window::{StrongWidgetEntry, WeakLayerEntry};
 use crate::error::FirewheelError;
 use crate::event::{InputEvent, PointerEvent};
+use crate::layer::WeakWidgetLayerEntry;
+use crate::node::StrongWidgetNodeEntry;
 use crate::size::{PhysicalPoint, PhysicalRect, PhysicalSize, TextureRect};
+use crate::widget_node_set::WidgetNodeSet;
 use crate::{
-    Anchor, EventCapturedStatus, HAlign, LayerID, Point, Rect, ScaleFactor, Size, VAlign,
-    WidgetRegionType, WidgetRequests,
+    Anchor, EventCapturedStatus, HAlign, Point, Rect, ScaleFactor, Size, VAlign,
+    WidgetNodeRequests, WidgetNodeType,
 };
 
 // TODO: Let the user specify whether child regions should be internally unsorted
@@ -26,7 +27,7 @@ pub struct RegionInfo<MSG> {
 }
 
 pub(crate) struct RegionTree<MSG> {
-    pub dirty_widgets: WidgetSet<MSG>,
+    pub dirty_widgets: WidgetNodeSet<MSG>,
     pub texture_rects_to_clear: Vec<TextureRect>,
     pub clear_whole_layer: bool,
 
@@ -37,7 +38,7 @@ pub(crate) struct RegionTree<MSG> {
     layer_explicit_visibility: bool,
     window_visibility: bool,
     scale_factor: ScaleFactor,
-    layer_id: LayerID,
+    layer_id: u64,
 }
 
 impl<MSG> RegionTree<MSG> {
@@ -47,12 +48,12 @@ impl<MSG> RegionTree<MSG> {
         layer_explicit_visibility: bool,
         window_visibility: bool,
         scale_factor: ScaleFactor,
-        layer_id: LayerID,
+        layer_id: u64,
     ) -> Self {
         Self {
             next_region_id: 0,
             roots: Vec::new(),
-            dirty_widgets: WidgetSet::new(),
+            dirty_widgets: WidgetNodeSet::new(),
             texture_rects_to_clear: Vec::new(),
             layer_rect: Rect::new(inner_position, layer_size),
             layer_physical_rect: PhysicalRect::new(
@@ -71,8 +72,8 @@ impl<MSG> RegionTree<MSG> {
         &mut self,
         region_info: RegionInfo<MSG>,
         explicit_visibility: bool,
-        widgets_just_shown: &mut WidgetSet<MSG>,
-        widgets_just_hidden: &mut WidgetSet<MSG>,
+        widgets_just_shown: &mut WidgetNodeSet<MSG>,
+        widgets_just_hidden: &mut WidgetNodeSet<MSG>,
     ) -> Result<ContainerRegionRef<MSG>, FirewheelError> {
         let new_id = self.next_region_id;
         self.next_region_id += 1;
@@ -160,7 +161,7 @@ impl<MSG> RegionTree<MSG> {
 
         let container_ref = ContainerRegionRef {
             shared: new_entry.downgrade(),
-            assigned_layer: WeakLayerEntry::new(), // This will be overwritten.
+            assigned_layer: WeakWidgetLayerEntry::new(), // This will be overwritten.
             assigned_layer_id: self.layer_id,
             _unique_id: new_id,
         };
@@ -238,8 +239,8 @@ impl<MSG> RegionTree<MSG> {
         new_internal_anchor: Option<Anchor>,
         new_parent_anchor: Option<Anchor>,
         new_anchor_offset: Option<Point>,
-        widgets_just_shown: &mut WidgetSet<MSG>,
-        widgets_just_hidden: &mut WidgetSet<MSG>,
+        widgets_just_shown: &mut WidgetNodeSet<MSG>,
+        widgets_just_hidden: &mut WidgetNodeSet<MSG>,
     ) -> Result<(), FirewheelError> {
         let entry = container_ref
             .shared
@@ -283,8 +284,8 @@ impl<MSG> RegionTree<MSG> {
         &mut self,
         container_ref: &mut ContainerRegionRef<MSG>,
         explicit_visibility: bool,
-        widgets_just_shown: &mut WidgetSet<MSG>,
-        widgets_just_hidden: &mut WidgetSet<MSG>,
+        widgets_just_shown: &mut WidgetNodeSet<MSG>,
+        widgets_just_hidden: &mut WidgetNodeSet<MSG>,
     ) -> Result<(), FirewheelError> {
         let entry = container_ref
             .shared
@@ -310,12 +311,12 @@ impl<MSG> RegionTree<MSG> {
 
     pub fn add_widget_region(
         &mut self,
-        assigned_widget: &mut StrongWidgetEntry<MSG>,
+        assigned_widget: &mut StrongWidgetNodeEntry<MSG>,
         region_info: RegionInfo<MSG>,
-        region_type: WidgetRegionType,
+        node_type: WidgetNodeType,
         explicit_visibility: bool,
-        widgets_just_shown: &mut WidgetSet<MSG>,
-        widgets_just_hidden: &mut WidgetSet<MSG>,
+        widgets_just_shown: &mut WidgetNodeSet<MSG>,
+        widgets_just_hidden: &mut WidgetNodeSet<MSG>,
     ) -> Result<(), FirewheelError> {
         if assigned_widget.assigned_region().upgrade().is_some() {
             panic!("widget was already assigned a region");
@@ -348,7 +349,7 @@ impl<MSG> RegionTree<MSG> {
                 assigned_widget: Some(RegionAssignedWidget {
                     widget: assigned_widget.clone(),
                     listens_to_pointer_events: false,
-                    region_type,
+                    node_type,
                 }),
             })),
             region_id: new_id,
@@ -427,9 +428,9 @@ impl<MSG> RegionTree<MSG> {
 
     pub fn remove_widget_region(
         &mut self,
-        widget: &mut StrongWidgetEntry<MSG>,
-        widgets_just_shown: &mut WidgetSet<MSG>,
-        widgets_just_hidden: &mut WidgetSet<MSG>,
+        widget: &mut StrongWidgetNodeEntry<MSG>,
+        widgets_just_shown: &mut WidgetNodeSet<MSG>,
+        widgets_just_hidden: &mut WidgetNodeSet<MSG>,
     ) {
         let entry = {
             if let Some(entry) = widget.assigned_region().upgrade() {
@@ -496,13 +497,13 @@ impl<MSG> RegionTree<MSG> {
 
     pub fn modify_widget_region(
         &mut self,
-        widget: &StrongWidgetEntry<MSG>,
+        widget: &StrongWidgetNodeEntry<MSG>,
         new_size: Option<Size>,
         new_internal_anchor: Option<Anchor>,
         new_parent_anchor: Option<Anchor>,
         new_anchor_offset: Option<Point>,
-        widgets_just_shown: &mut WidgetSet<MSG>,
-        widgets_just_hidden: &mut WidgetSet<MSG>,
+        widgets_just_shown: &mut WidgetNodeSet<MSG>,
+        widgets_just_hidden: &mut WidgetNodeSet<MSG>,
     ) {
         widget
             .assigned_region()
@@ -524,7 +525,7 @@ impl<MSG> RegionTree<MSG> {
             );
     }
 
-    pub fn mark_widget_dirty(&mut self, widget: &StrongWidgetEntry<MSG>) {
+    pub fn mark_widget_dirty(&mut self, widget: &StrongWidgetNodeEntry<MSG>) {
         widget
             .assigned_region()
             .upgrade()
@@ -535,10 +536,10 @@ impl<MSG> RegionTree<MSG> {
 
     pub fn set_widget_explicit_visibility(
         &mut self,
-        widget: &StrongWidgetEntry<MSG>,
+        widget: &StrongWidgetNodeEntry<MSG>,
         explicit_visibility: bool,
-        widgets_just_shown: &mut WidgetSet<MSG>,
-        widgets_just_hidden: &mut WidgetSet<MSG>,
+        widgets_just_shown: &mut WidgetNodeSet<MSG>,
+        widgets_just_hidden: &mut WidgetNodeSet<MSG>,
     ) {
         widget
             .assigned_region()
@@ -562,7 +563,7 @@ impl<MSG> RegionTree<MSG> {
 
     pub fn set_widget_listens_to_pointer_events(
         &mut self,
-        widget: &StrongWidgetEntry<MSG>,
+        widget: &StrongWidgetNodeEntry<MSG>,
         listens: bool,
     ) {
         widget
@@ -579,8 +580,8 @@ impl<MSG> RegionTree<MSG> {
     pub fn set_layer_inner_position(
         &mut self,
         position: Point,
-        widgets_just_shown: &mut WidgetSet<MSG>,
-        widgets_just_hidden: &mut WidgetSet<MSG>,
+        widgets_just_shown: &mut WidgetNodeSet<MSG>,
+        widgets_just_hidden: &mut WidgetNodeSet<MSG>,
     ) {
         if self.layer_rect.pos() != position {
             self.layer_rect.set_pos(position);
@@ -606,8 +607,8 @@ impl<MSG> RegionTree<MSG> {
         &mut self,
         size: Size,
         scale_factor: ScaleFactor,
-        widgets_just_shown: &mut WidgetSet<MSG>,
-        widgets_just_hidden: &mut WidgetSet<MSG>,
+        widgets_just_shown: &mut WidgetNodeSet<MSG>,
+        widgets_just_hidden: &mut WidgetNodeSet<MSG>,
     ) {
         if self.layer_rect.size() != size || self.scale_factor != scale_factor {
             self.layer_rect.set_size(size);
@@ -633,8 +634,8 @@ impl<MSG> RegionTree<MSG> {
     pub fn set_layer_explicit_visibility(
         &mut self,
         explicit_visibility: bool,
-        widgets_just_shown: &mut WidgetSet<MSG>,
-        widgets_just_hidden: &mut WidgetSet<MSG>,
+        widgets_just_shown: &mut WidgetNodeSet<MSG>,
+        widgets_just_hidden: &mut WidgetNodeSet<MSG>,
     ) {
         if self.layer_explicit_visibility != explicit_visibility {
             self.layer_explicit_visibility = explicit_visibility;
@@ -658,8 +659,8 @@ impl<MSG> RegionTree<MSG> {
     pub fn set_window_visibility(
         &mut self,
         visible: bool,
-        widgets_just_shown: &mut WidgetSet<MSG>,
-        widgets_just_hidden: &mut WidgetSet<MSG>,
+        widgets_just_shown: &mut WidgetNodeSet<MSG>,
+        widgets_just_hidden: &mut WidgetNodeSet<MSG>,
     ) {
         self.window_visibility = visible;
 
@@ -720,7 +721,7 @@ impl<MSG> RegionTree<MSG> {
         &mut self,
         mut event: PointerEvent,
         msg_out_queue: &mut Vec<MSG>,
-    ) -> Option<(StrongWidgetEntry<MSG>, WidgetRequests)> {
+    ) -> Option<(StrongWidgetNodeEntry<MSG>, WidgetNodeRequests)> {
         if !self.layer_explicit_visibility {
             return None;
         }
@@ -807,17 +808,17 @@ impl<MSG> Clone for WeakRegionTreeEntry<MSG> {
 
 enum PointerCapturedStatus<MSG> {
     Captured {
-        widget: StrongWidgetEntry<MSG>,
-        requests: WidgetRequests,
+        widget: StrongWidgetNodeEntry<MSG>,
+        requests: WidgetNodeRequests,
     },
     InRegionButNotCaptured,
     NotInRegion,
 }
 
 struct RegionAssignedWidget<MSG> {
-    widget: StrongWidgetEntry<MSG>,
+    widget: StrongWidgetNodeEntry<MSG>,
     listens_to_pointer_events: bool,
-    region_type: WidgetRegionType,
+    node_type: WidgetNodeType,
 }
 
 pub(crate) struct RegionTreeEntry<MSG> {
@@ -888,12 +889,12 @@ impl<MSG> RegionTreeEntry<MSG> {
 
     fn mark_dirty(
         &mut self,
-        dirty_widgets: &mut WidgetSet<MSG>,
+        dirty_widgets: &mut WidgetNodeSet<MSG>,
         texture_rects_to_clear: &mut Vec<TextureRect>,
     ) {
         if self.region.is_visible() {
             if let Some(assigned_widget_info) = &self.assigned_widget {
-                if let WidgetRegionType::Painted = assigned_widget_info.region_type {
+                if let WidgetNodeType::Painted = assigned_widget_info.node_type {
                     dirty_widgets.insert(&assigned_widget_info.widget);
                     if let Some(rect) = self.region.last_rendered_texture_rect.take() {
                         texture_rects_to_clear.push(rect);
@@ -918,10 +919,10 @@ impl<MSG> RegionTreeEntry<MSG> {
         new_explicit_visibility: Option<bool>,
         layer_rect: Rect,
         scale_factor: ScaleFactor,
-        dirty_widgets: &mut WidgetSet<MSG>,
+        dirty_widgets: &mut WidgetNodeSet<MSG>,
         texture_rects_to_clear: &mut Vec<TextureRect>,
-        widgets_just_shown: &mut WidgetSet<MSG>,
-        widgets_just_hidden: &mut WidgetSet<MSG>,
+        widgets_just_shown: &mut WidgetNodeSet<MSG>,
+        widgets_just_hidden: &mut WidgetNodeSet<MSG>,
     ) {
         let mut changed = false;
         if let Some(new_size) = new_size {
@@ -966,7 +967,7 @@ impl<MSG> RegionTreeEntry<MSG> {
                         widgets_just_shown.insert(&assigned_widget_info.widget);
                         widgets_just_hidden.remove(&assigned_widget_info.widget);
 
-                        if let WidgetRegionType::Painted = assigned_widget_info.region_type {
+                        if let WidgetNodeType::Painted = assigned_widget_info.node_type {
                             dirty_widgets.insert(&assigned_widget_info.widget);
                             if let Some(rect) = self.region.last_rendered_texture_rect.take() {
                                 texture_rects_to_clear.push(rect);
@@ -976,7 +977,7 @@ impl<MSG> RegionTreeEntry<MSG> {
                         widgets_just_hidden.insert(&assigned_widget_info.widget);
                         widgets_just_shown.remove(&assigned_widget_info.widget);
 
-                        if let WidgetRegionType::Painted = assigned_widget_info.region_type {
+                        if let WidgetNodeType::Painted = assigned_widget_info.node_type {
                             dirty_widgets.remove(&assigned_widget_info.widget);
                             if let Some(rect) = self.region.last_rendered_texture_rect.take() {
                                 texture_rects_to_clear.push(rect);
@@ -984,7 +985,7 @@ impl<MSG> RegionTreeEntry<MSG> {
                         }
                     }
                 } else if self.region.is_visible() {
-                    if let WidgetRegionType::Painted = assigned_widget_info.region_type {
+                    if let WidgetNodeType::Painted = assigned_widget_info.node_type {
                         // Mark the region as dirty since it has changed.
                         dirty_widgets.insert(&assigned_widget_info.widget);
                         if let Some(rect) = self.region.last_rendered_texture_rect.take() {
@@ -1015,10 +1016,10 @@ impl<MSG> RegionTreeEntry<MSG> {
         layer_rect: Rect,
         scale_factor: ScaleFactor,
         parent_explicit_visibility: bool,
-        dirty_widgets: &mut WidgetSet<MSG>,
+        dirty_widgets: &mut WidgetNodeSet<MSG>,
         texture_rects_to_clear: &mut Vec<TextureRect>,
-        widgets_just_shown: &mut WidgetSet<MSG>,
-        widgets_just_hidden: &mut WidgetSet<MSG>,
+        widgets_just_shown: &mut WidgetNodeSet<MSG>,
+        widgets_just_hidden: &mut WidgetNodeSet<MSG>,
     ) {
         self.region.update_parent_rect(parent_rect, scale_factor);
         self.region.parent_explicit_visibility = parent_explicit_visibility;
@@ -1031,7 +1032,7 @@ impl<MSG> RegionTreeEntry<MSG> {
                     widgets_just_shown.insert(&assigned_widget_info.widget);
                     widgets_just_hidden.remove(&assigned_widget_info.widget);
 
-                    if let WidgetRegionType::Painted = assigned_widget_info.region_type {
+                    if let WidgetNodeType::Painted = assigned_widget_info.node_type {
                         dirty_widgets.insert(&assigned_widget_info.widget);
                         if let Some(rect) = self.region.last_rendered_texture_rect.take() {
                             texture_rects_to_clear.push(rect);
@@ -1041,7 +1042,7 @@ impl<MSG> RegionTreeEntry<MSG> {
                     widgets_just_hidden.insert(&assigned_widget_info.widget);
                     widgets_just_shown.remove(&assigned_widget_info.widget);
 
-                    if let WidgetRegionType::Painted = assigned_widget_info.region_type {
+                    if let WidgetNodeType::Painted = assigned_widget_info.node_type {
                         dirty_widgets.remove(&assigned_widget_info.widget);
                         if let Some(rect) = self.region.last_rendered_texture_rect.take() {
                             texture_rects_to_clear.push(rect);
@@ -1049,7 +1050,7 @@ impl<MSG> RegionTreeEntry<MSG> {
                     }
                 }
             } else if self.region.is_visible() {
-                if let WidgetRegionType::Painted = assigned_widget_info.region_type {
+                if let WidgetNodeType::Painted = assigned_widget_info.node_type {
                     // Mark the region as dirty as it likely moved because of the
                     // change to the parent rect (or the scale factor has changed).
                     dirty_widgets.insert(&assigned_widget_info.widget);
@@ -1078,8 +1079,8 @@ impl<MSG> RegionTreeEntry<MSG> {
 #[derive(Clone)]
 pub struct ContainerRegionRef<MSG> {
     pub(crate) shared: WeakRegionTreeEntry<MSG>,
-    pub(crate) assigned_layer: WeakLayerEntry<MSG>,
-    assigned_layer_id: LayerID,
+    pub(crate) assigned_layer: WeakWidgetLayerEntry<MSG>,
+    assigned_layer_id: u64,
     _unique_id: u64,
 }
 
@@ -1164,7 +1165,7 @@ pub enum ParentAnchorType<MSG> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Widget, WidgetAddedInfo, WidgetRegionType};
+    use crate::{WidgetNode, WidgetNodeType};
     use std::cell::Ref;
 
     impl Region {
@@ -1206,12 +1207,10 @@ mod tests {
         id: u64,
     }
 
-    impl Widget<()> for EmptyPaintedTestWidget {
-        fn on_added(&mut self, _msg_out_queue: &mut Vec<()>) -> WidgetAddedInfo {
+    impl WidgetNode<()> for EmptyPaintedTestWidget {
+        fn on_added(&mut self, _msg_out_queue: &mut Vec<()>) -> WidgetNodeType {
             println!("empty painted test widget {} added", self.id);
-            WidgetAddedInfo {
-                region_type: WidgetRegionType::Painted,
-            }
+            WidgetNodeType::Painted
         }
 
         #[allow(unused)]
@@ -1236,12 +1235,10 @@ mod tests {
         id: u64,
     }
 
-    impl Widget<()> for EmptyPointerOnlyTestWidget {
-        fn on_added(&mut self, _msg_out_queue: &mut Vec<()>) -> WidgetAddedInfo {
+    impl WidgetNode<()> for EmptyPointerOnlyTestWidget {
+        fn on_added(&mut self, _msg_out_queue: &mut Vec<()>) -> WidgetNodeType {
             println!("empty pointer only test widget {} added", self.id);
-            WidgetAddedInfo {
-                region_type: WidgetRegionType::PointerOnly,
-            }
+            WidgetNodeType::PointerOnly
         }
 
         #[allow(unused)]
@@ -1268,8 +1265,8 @@ mod tests {
         let layer_explicit_visibility = true;
         let scale_factor = ScaleFactor(1.0);
 
-        let mut widgets_just_shown: WidgetSet<()> = WidgetSet::new();
-        let mut widgets_just_hidden: WidgetSet<()> = WidgetSet::new();
+        let mut widgets_just_shown: WidgetNodeSet<()> = WidgetNodeSet::new();
+        let mut widgets_just_hidden: WidgetNodeSet<()> = WidgetNodeSet::new();
 
         let mut region_tree: RegionTree<()> = RegionTree::new(
             layer_rect.size(),
@@ -1277,7 +1274,7 @@ mod tests {
             true,
             true,
             scale_factor,
-            LayerID { id: 0, z_order: 0 },
+            0,
         );
 
         // --- Test adding container regions ----------------------------------------------------------
@@ -1530,8 +1527,12 @@ mod tests {
 
         // widget_root4: Tests the case of adding a widget region at root
         // level that is explicitly visible and within layer bounds.
-        let mut widget_root4_entry =
-            StrongWidgetEntry::new(Box::new(EmptyPaintedTestWidget { id: 0 }), 0);
+        let mut widget_root4_entry = StrongWidgetNodeEntry::new(
+            Rc::new(RefCell::new(Box::new(EmptyPaintedTestWidget { id: 0 }))),
+            WeakWidgetLayerEntry::new(),
+            WeakRegionTreeEntry::new(),
+            0,
+        );
         let widget_root4_region_info = RegionInfo {
             size: Size::new(10.0, 8.0),
             internal_anchor: Anchor {
@@ -1550,7 +1551,7 @@ mod tests {
             .add_widget_region(
                 &mut widget_root4_entry,
                 widget_root4_region_info.clone(),
-                WidgetRegionType::Painted,
+                WidgetNodeType::Painted,
                 widget_root4_explicit_visibility,
                 &mut widgets_just_shown,
                 &mut widgets_just_hidden,
@@ -1585,8 +1586,12 @@ mod tests {
 
         // widget_root5: Tests the case of adding a widget region at root
         // level that is explicitly invisible and within layer bounds.
-        let mut widget_root5_entry =
-            StrongWidgetEntry::new(Box::new(EmptyPaintedTestWidget { id: 1 }), 1);
+        let mut widget_root5_entry = StrongWidgetNodeEntry::new(
+            Rc::new(RefCell::new(Box::new(EmptyPaintedTestWidget { id: 1 }))),
+            WeakWidgetLayerEntry::new(),
+            WeakRegionTreeEntry::new(),
+            1,
+        );
         let widget_root5_region_info = RegionInfo {
             size: Size::new(10.0, 8.0),
             internal_anchor: Anchor {
@@ -1605,7 +1610,7 @@ mod tests {
             .add_widget_region(
                 &mut widget_root5_entry,
                 widget_root5_region_info.clone(),
-                WidgetRegionType::Painted,
+                WidgetNodeType::Painted,
                 widget_root5_explicit_visibility,
                 &mut widgets_just_shown,
                 &mut widgets_just_hidden,
@@ -1642,8 +1647,12 @@ mod tests {
 
         // widget_root6: Tests the case of adding a widget region at root
         // level that is explicitly invisible and within layer bounds.
-        let mut widget_root6_entry =
-            StrongWidgetEntry::new(Box::new(EmptyPaintedTestWidget { id: 2 }), 2);
+        let mut widget_root6_entry = StrongWidgetNodeEntry::new(
+            Rc::new(RefCell::new(Box::new(EmptyPaintedTestWidget { id: 2 }))),
+            WeakWidgetLayerEntry::new(),
+            WeakRegionTreeEntry::new(),
+            2,
+        );
         let widget_root6_region_info = RegionInfo {
             size: Size::new(10.0, 8.0),
             internal_anchor: Anchor {
@@ -1662,7 +1671,7 @@ mod tests {
             .add_widget_region(
                 &mut widget_root6_entry,
                 widget_root6_region_info.clone(),
-                WidgetRegionType::Painted,
+                WidgetNodeType::Painted,
                 widget_root6_explicit_visibility,
                 &mut widgets_just_shown,
                 &mut widgets_just_hidden,
@@ -1700,8 +1709,12 @@ mod tests {
         // widget_root0_0_0: Tests the case of adding a widget region that
         // is a child of a container region that is explicitly visible and
         // within layer bounds.
-        let mut widget_root0_0_0_entry =
-            StrongWidgetEntry::new(Box::new(EmptyPaintedTestWidget { id: 3 }), 3);
+        let mut widget_root0_0_0_entry = StrongWidgetNodeEntry::new(
+            Rc::new(RefCell::new(Box::new(EmptyPaintedTestWidget { id: 3 }))),
+            WeakWidgetLayerEntry::new(),
+            WeakRegionTreeEntry::new(),
+            3,
+        );
         let widget_root0_0_0_region_info = RegionInfo {
             size: Size::new(10.0, 8.0),
             internal_anchor: Anchor {
@@ -1720,7 +1733,7 @@ mod tests {
             .add_widget_region(
                 &mut widget_root0_0_0_entry,
                 widget_root0_0_0_region_info.clone(),
-                WidgetRegionType::Painted,
+                WidgetNodeType::Painted,
                 widget_root0_0_0_explicit_visibility,
                 &mut widgets_just_shown,
                 &mut widgets_just_hidden,
@@ -1764,8 +1777,12 @@ mod tests {
         // widget_root1_0: Tests the case of adding a widget region that
         // is a child of a container region that is explicitly invisible
         // and within layer bounds.
-        let mut widget_root1_0_entry =
-            StrongWidgetEntry::new(Box::new(EmptyPaintedTestWidget { id: 4 }), 4);
+        let mut widget_root1_0_entry = StrongWidgetNodeEntry::new(
+            Rc::new(RefCell::new(Box::new(EmptyPaintedTestWidget { id: 4 }))),
+            WeakWidgetLayerEntry::new(),
+            WeakRegionTreeEntry::new(),
+            4,
+        );
         let widget_root1_0_region_info = RegionInfo {
             size: Size::new(10.0, 8.0),
             internal_anchor: Anchor {
@@ -1784,7 +1801,7 @@ mod tests {
             .add_widget_region(
                 &mut widget_root1_0_entry,
                 widget_root1_0_region_info.clone(),
-                WidgetRegionType::Painted,
+                WidgetNodeType::Painted,
                 widget_root1_0_explicit_visibility,
                 &mut widgets_just_shown,
                 &mut widgets_just_hidden,
@@ -1824,8 +1841,12 @@ mod tests {
         // widget_root2_0: Tests the case of adding a widget region that
         // is a child of a container region that is explicitly visible
         // but not within layer bounds.
-        let mut widget_root2_0_entry =
-            StrongWidgetEntry::new(Box::new(EmptyPaintedTestWidget { id: 5 }), 5);
+        let mut widget_root2_0_entry = StrongWidgetNodeEntry::new(
+            Rc::new(RefCell::new(Box::new(EmptyPaintedTestWidget { id: 5 }))),
+            WeakWidgetLayerEntry::new(),
+            WeakRegionTreeEntry::new(),
+            5,
+        );
         let widget_root2_0_region_info = RegionInfo {
             size: Size::new(10.0, 8.0),
             internal_anchor: Anchor {
@@ -1844,7 +1865,7 @@ mod tests {
             .add_widget_region(
                 &mut widget_root2_0_entry,
                 widget_root2_0_region_info.clone(),
-                WidgetRegionType::Painted,
+                WidgetNodeType::Painted,
                 widget_root2_0_explicit_visibility,
                 &mut widgets_just_shown,
                 &mut widgets_just_hidden,

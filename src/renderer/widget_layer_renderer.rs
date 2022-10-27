@@ -1,60 +1,21 @@
-use femtovg::{Color, ImageFlags, ImageId, Paint, Path, PixelFormat, RenderTarget};
+use femtovg::{Color, Paint, Path, RenderTarget};
 
 use crate::{
-    layer::Layer,
-    size::{PhysicalPoint, PhysicalRect, PhysicalSize, TextureRect},
+    layer::WidgetLayer,
+    size::{PhysicalPoint, PhysicalRect, TextureRect},
     PaintRegionInfo, Rect, ScaleFactor,
 };
+
+use super::TextureState;
 
 // TODO: Pack multiple layers into a single texture instead of having one
 // texture per layer.
 
-struct TextureState {
-    texture_id: ImageId,
-    physical_size: PhysicalSize,
-}
-
-impl TextureState {
-    fn new(
-        physical_size: PhysicalSize,
-        vg: &mut femtovg::Canvas<femtovg::renderer::OpenGl>,
-    ) -> Self {
-        let texture_id = vg
-            .create_image_empty(
-                physical_size.width as usize,
-                physical_size.height as usize,
-                PixelFormat::Rgba8,
-                ImageFlags::NEAREST,
-            )
-            .unwrap();
-
-        Self {
-            texture_id,
-            physical_size,
-        }
-    }
-
-    fn resize(
-        &mut self,
-        physical_size: PhysicalSize,
-        vg: &mut femtovg::Canvas<femtovg::renderer::OpenGl>,
-    ) {
-        vg.realloc_image(
-            self.texture_id,
-            physical_size.width as usize,
-            physical_size.height as usize,
-            PixelFormat::Rgba8,
-            ImageFlags::NEAREST,
-        )
-        .unwrap();
-    }
-}
-
-pub(crate) struct LayerRenderer {
+pub(crate) struct WidgetLayerRenderer {
     texture_state: Option<TextureState>,
 }
 
-impl LayerRenderer {
+impl WidgetLayerRenderer {
     pub fn new() -> Self {
         Self {
             texture_state: None,
@@ -63,7 +24,7 @@ impl LayerRenderer {
 
     pub fn render<MSG>(
         &mut self,
-        layer: &mut Layer<MSG>,
+        layer: &mut WidgetLayer<MSG>,
         vg: &mut femtovg::Canvas<femtovg::renderer::OpenGl>,
         scale_factor: ScaleFactor,
     ) {

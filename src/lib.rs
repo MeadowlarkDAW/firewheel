@@ -1,23 +1,25 @@
 mod anchor;
 mod app_window;
 mod layer;
+mod node;
 mod renderer;
 
-mod widget;
+pub(crate) mod widget_node_set;
 
 pub mod error;
 pub mod event;
 pub mod size;
 
 pub use anchor::{Anchor, HAlign, VAlign};
-pub use app_window::{AppWindow, WidgetRef};
+pub use app_window::AppWindow;
 pub use error::FirewheelError;
-pub use layer::{ContainerRegionRef, LayerID, ParentAnchorType, RegionInfo};
+pub use layer::{ContainerRegionRef, ParentAnchorType, RegionInfo};
+pub use node::{
+    BackgroundNode, EventCapturedStatus, PaintRegionInfo, SetPointerLockType, WidgetNode,
+    WidgetNodeRef, WidgetNodeRequests, WidgetNodeType,
+};
 pub use size::*;
 pub use size::{Point, Rect, ScaleFactor, Size};
-pub use widget::{
-    EventCapturedStatus, PaintRegionInfo, Widget, WidgetAddedInfo, WidgetRegionType, WidgetRequests,
-};
 
 pub use femtovg as vg;
 pub type VG = femtovg::Canvas<femtovg::renderer::OpenGl>;

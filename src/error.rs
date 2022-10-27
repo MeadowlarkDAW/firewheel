@@ -1,11 +1,9 @@
 use std::error::Error;
 use std::fmt;
 
-use crate::LayerID;
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum FirewheelError {
-    LayerWithIDNotFound(LayerID),
+    LayerRemoved,
     LayerNotEmpty,
     ParentAnchorRegionNotPartOfLayer,
     ParentAnchorRegionRemoved,
@@ -18,8 +16,8 @@ impl Error for FirewheelError {}
 impl fmt::Display for FirewheelError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::LayerWithIDNotFound(id) => {
-                write!(f, "Could not find layer with ID {:?}", id)
+            Self::LayerRemoved => {
+                write!(f, "Layer is invalid because it has been removed")
             }
             Self::LayerNotEmpty => {
                 write!(f, "Could not remove layer: layer is not empty")

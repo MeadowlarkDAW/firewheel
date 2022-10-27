@@ -1,228 +1,45 @@
-use fnv::{FnvHashMap, FnvHashSet};
 use std::any::Any;
-use std::cell::{Ref, RefCell, RefMut};
+use std::cell::RefCell;
 use std::ffi::c_void;
-use std::hash::Hash;
-use std::rc::{Rc, Weak};
+use std::rc::Rc;
 
 use crate::anchor::Anchor;
 use crate::error::FirewheelError;
 use crate::event::{InputEvent, KeyboardEventsListen};
-use crate::layer::{Layer, LayerID, WeakRegionTreeEntry};
-use crate::renderer::{LayerRenderer, Renderer};
-use crate::size::PhysicalSize;
-use crate::widget::{SetPointerLockType, Widget};
-use crate::{
-    ContainerRegionRef, EventCapturedStatus, Point, RegionInfo, ScaleFactor, Size, WidgetRequests,
+use crate::layer::{
+    BackgroundLayer, StrongBackgroundLayerEntry, StrongLayerEntry, StrongWidgetLayerEntry,
+    WeakRegionTreeEntry, WidgetLayer, WidgetLayerRef,
 };
-
-pub(crate) struct StrongLayerEntry<MSG> {
-    shared: Rc<RefCell<Layer<MSG>>>,
-}
-
-impl<MSG> StrongLayerEntry<MSG> {
-    fn borrow(&self) -> Ref<'_, Layer<MSG>> {
-        RefCell::borrow(&self.shared)
-    }
-
-    pub fn borrow_mut(&mut self) -> RefMut<'_, Layer<MSG>> {
-        RefCell::borrow_mut(&self.shared)
-    }
-
-    fn downgrade(&self) -> WeakLayerEntry<MSG> {
-        WeakLayerEntry {
-            shared: Rc::downgrade(&self.shared),
-        }
-    }
-}
-
-impl<MSG> Clone for StrongLayerEntry<MSG> {
-    fn clone(&self) -> Self {
-        Self {
-            shared: Rc::clone(&self.shared),
-        }
-    }
-}
-
-pub(crate) struct WeakLayerEntry<MSG> {
-    shared: Weak<RefCell<Layer<MSG>>>,
-}
-
-impl<MSG> WeakLayerEntry<MSG> {
-    pub fn new() -> Self {
-        Self {
-            shared: Weak::new(),
-        }
-    }
-
-    fn upgrade(&self) -> Option<StrongLayerEntry<MSG>> {
-        self.shared
-            .upgrade()
-            .map(|shared| StrongLayerEntry { shared })
-    }
-}
-
-impl<MSG> Clone for WeakLayerEntry<MSG> {
-    fn clone(&self) -> Self {
-        Self {
-            shared: Weak::clone(&self.shared),
-        }
-    }
-}
-
-pub(crate) struct StrongWidgetEntry<MSG> {
-    shared: Rc<RefCell<Box<dyn Widget<MSG>>>>,
-    assigned_layer: WeakLayerEntry<MSG>,
-    assigned_region: WeakRegionTreeEntry<MSG>,
-    unique_id: u64,
-}
-
-impl<MSG> StrongWidgetEntry<MSG> {
-    // Used by the unit tests.
-    #[allow(unused)]
-    pub fn new(widget: Box<dyn Widget<MSG>>, unique_id: u64) -> Self {
-        Self {
-            shared: Rc::new(RefCell::new(widget)),
-            assigned_layer: WeakLayerEntry {
-                shared: Weak::new(),
-            },
-            assigned_region: WeakRegionTreeEntry::new(),
-            unique_id,
-        }
-    }
-
-    pub fn borrow_mut(&mut self) -> RefMut<'_, Box<dyn Widget<MSG>>> {
-        RefCell::borrow_mut(&self.shared)
-    }
-
-    pub fn unique_id(&self) -> u64 {
-        self.unique_id
-    }
-
-    pub fn set_assigned_region(&mut self, region: WeakRegionTreeEntry<MSG>) {
-        self.assigned_region = region;
-    }
-
-    pub fn assigned_region(&self) -> &WeakRegionTreeEntry<MSG> {
-        &self.assigned_region
-    }
-
-    pub fn assigned_region_mut(&mut self) -> &mut WeakRegionTreeEntry<MSG> {
-        &mut self.assigned_region
-    }
-}
-
-impl<MSG> Clone for StrongWidgetEntry<MSG> {
-    fn clone(&self) -> Self {
-        Self {
-            shared: Rc::clone(&self.shared),
-            assigned_layer: self.assigned_layer.clone(),
-            assigned_region: self.assigned_region.clone(),
-            unique_id: self.unique_id,
-        }
-    }
-}
-
-impl<MSG> PartialEq for StrongWidgetEntry<MSG> {
-    fn eq(&self, other: &Self) -> bool {
-        self.unique_id.eq(&other.unique_id)
-    }
-}
-
-impl<MSG> Eq for StrongWidgetEntry<MSG> {}
-
-impl<MSG> Hash for StrongWidgetEntry<MSG> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.unique_id.hash(state)
-    }
-}
-
-#[derive(PartialEq, Eq, Hash)]
-pub struct WidgetRef<MSG> {
-    shared: StrongWidgetEntry<MSG>,
-}
-
-impl<MSG> WidgetRef<MSG> {
-    pub fn unique_id(&self) -> u64 {
-        self.shared.unique_id
-    }
-}
-
-/// A set of widgets optimized for iteration.
-pub(crate) struct WidgetSet<MSG> {
-    unique_ids: FnvHashSet<u64>,
-    entries: Vec<StrongWidgetEntry<MSG>>,
-}
-
-impl<MSG> WidgetSet<MSG> {
-    pub fn new() -> Self {
-        Self {
-            unique_ids: FnvHashSet::default(),
-            entries: Vec::new(),
-        }
-    }
-
-    pub fn insert(&mut self, widget_entry: &StrongWidgetEntry<MSG>) {
-        if self.unique_ids.insert(widget_entry.unique_id) {
-            self.entries.push(widget_entry.clone());
-        }
-    }
-
-    pub fn remove(&mut self, widget_entry: &StrongWidgetEntry<MSG>) {
-        if self.unique_ids.remove(&widget_entry.unique_id()) {
-            let mut remove_i = None;
-            for (i, entry) in self.entries.iter().enumerate() {
-                if entry.unique_id == widget_entry.unique_id() {
-                    remove_i = Some(i);
-                    break;
-                }
-            }
-            if let Some(i) = remove_i {
-                self.entries.remove(i);
-            }
-        }
-    }
-
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut StrongWidgetEntry<MSG>> {
-        self.entries.iter_mut()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
-    }
-
-    pub fn clear(&mut self) {
-        self.unique_ids.clear();
-        self.entries.clear();
-    }
-
-    /// Used for testing purposes
-    #[allow(unused)]
-    pub fn contains(&self, widget_entry: &StrongWidgetEntry<MSG>) -> bool {
-        self.unique_ids.contains(&widget_entry.unique_id)
-    }
-}
+use crate::node::{
+    BackgroundNodeRef, SetPointerLockType, StrongBackgroundNodeEntry, StrongWidgetNodeEntry,
+    WidgetNode, WidgetNodeRef,
+};
+use crate::renderer::{BackgroundLayerRenderer, Renderer, WidgetLayerRenderer};
+use crate::size::PhysicalSize;
+use crate::widget_node_set::WidgetNodeSet;
+use crate::{
+    BackgroundNode, ContainerRegionRef, EventCapturedStatus, Point, RegionInfo, ScaleFactor, Size,
+    WidgetNodeRequests,
+};
 
 pub struct AppWindow<MSG> {
     pub(crate) layers_ordered: Vec<(i32, Vec<StrongLayerEntry<MSG>>)>,
-    pub(crate) layer_renderers_to_clean_up: Vec<LayerRenderer>,
+    pub(crate) widget_layer_renderers_to_clean_up: Vec<WidgetLayerRenderer>,
+    pub(crate) background_layer_renderers_to_clean_up: Vec<BackgroundLayerRenderer>,
 
     next_layer_id: u64,
     next_widget_id: u64,
 
-    layers: FnvHashMap<LayerID, StrongLayerEntry<MSG>>,
-
-    widgets: FnvHashSet<StrongWidgetEntry<MSG>>,
-    widget_with_pointer_lock: Option<(StrongWidgetEntry<MSG>, SetPointerLockType)>,
-    widgets_to_send_input_event: Vec<(StrongWidgetEntry<MSG>, InputEvent)>,
-    widget_with_text_comp_listen: Option<StrongWidgetEntry<MSG>>,
-    widgets_with_keyboard_listen: WidgetSet<MSG>,
-    widgets_scheduled_for_animation: WidgetSet<MSG>,
-    widgets_with_pointer_down_listen: WidgetSet<MSG>,
-    widgets_to_remove_from_animation: Vec<StrongWidgetEntry<MSG>>,
-    widget_requests: Vec<(StrongWidgetEntry<MSG>, WidgetRequests)>,
-    widgets_just_shown: WidgetSet<MSG>,
-    widgets_just_hidden: WidgetSet<MSG>,
+    widget_with_pointer_lock: Option<(StrongWidgetNodeEntry<MSG>, SetPointerLockType)>,
+    widgets_to_send_input_event: Vec<(StrongWidgetNodeEntry<MSG>, InputEvent)>,
+    widget_with_text_comp_listen: Option<StrongWidgetNodeEntry<MSG>>,
+    widgets_with_keyboard_listen: WidgetNodeSet<MSG>,
+    widgets_scheduled_for_animation: WidgetNodeSet<MSG>,
+    widgets_with_pointer_down_listen: WidgetNodeSet<MSG>,
+    widgets_to_remove_from_animation: Vec<StrongWidgetNodeEntry<MSG>>,
+    widget_requests: Vec<(StrongWidgetNodeEntry<MSG>, WidgetNodeRequests)>,
+    widgets_just_shown: WidgetNodeSet<MSG>,
+    widgets_just_hidden: WidgetNodeSet<MSG>,
 
     renderer: Option<Renderer>,
     scale_factor: ScaleFactor,
@@ -241,20 +58,19 @@ impl<MSG> AppWindow<MSG> {
         Self {
             next_layer_id: 0,
             next_widget_id: 0,
-            layers: FnvHashMap::default(),
             layers_ordered: Vec::new(),
-            widgets: FnvHashSet::default(),
             widget_with_pointer_lock: None,
             widgets_to_send_input_event: Vec::new(),
             widget_with_text_comp_listen: None,
-            widgets_with_keyboard_listen: WidgetSet::new(),
-            widgets_scheduled_for_animation: WidgetSet::new(),
-            widgets_with_pointer_down_listen: WidgetSet::new(),
+            widgets_with_keyboard_listen: WidgetNodeSet::new(),
+            widgets_scheduled_for_animation: WidgetNodeSet::new(),
+            widgets_with_pointer_down_listen: WidgetNodeSet::new(),
             widgets_to_remove_from_animation: Vec::new(),
             widget_requests: Vec::new(),
-            widgets_just_shown: WidgetSet::new(),
-            widgets_just_hidden: WidgetSet::new(),
-            layer_renderers_to_clean_up: Vec::new(),
+            widgets_just_shown: WidgetNodeSet::new(),
+            widgets_just_hidden: WidgetNodeSet::new(),
+            widget_layer_renderers_to_clean_up: Vec::new(),
+            background_layer_renderers_to_clean_up: Vec::new(),
             renderer: Some(renderer),
             scale_factor,
             window_visibility: true,
@@ -262,80 +78,91 @@ impl<MSG> AppWindow<MSG> {
         }
     }
 
-    pub fn add_layer(
+    pub fn add_widget_layer(
         &mut self,
         size: Size,
         z_order: i32,
         outer_position: Point,
         inner_position: Point,
         explicit_visibility: bool,
-    ) -> Result<LayerID, FirewheelError> {
-        let id = LayerID {
-            id: self.next_layer_id,
-            z_order,
-        };
-
-        let layer = StrongLayerEntry {
-            shared: Rc::new(RefCell::new(Layer::new(
-                id,
-                size,
-                outer_position,
-                inner_position,
-                explicit_visibility,
-                self.window_visibility,
-                self.scale_factor,
-            )?)),
-        };
-        self.layers.insert(id, layer.clone());
-
+    ) -> WidgetLayerRef<MSG> {
+        let new_id = self.next_layer_id;
         self.next_layer_id += 1;
+
+        let layer_entry = StrongWidgetLayerEntry::new(WidgetLayer::new(
+            new_id,
+            z_order,
+            size,
+            outer_position,
+            inner_position,
+            explicit_visibility,
+            self.window_visibility,
+            self.scale_factor,
+        ));
+
+        let layer_ref = WidgetLayerRef {
+            shared: layer_entry.downgrade(),
+        };
+
+        let layer_entry = StrongLayerEntry::Widget(layer_entry);
 
         let mut existing_z_order_i = None;
         let mut insert_i = 0;
-        for (i, (z_order, _)) in self.layers_ordered.iter().enumerate() {
-            if id.z_order == *z_order {
+        for (i, (z_order_2, _)) in self.layers_ordered.iter().enumerate() {
+            if z_order == *z_order_2 {
                 existing_z_order_i = Some(i);
                 break;
-            } else if id.z_order > *z_order {
+            } else if z_order > *z_order_2 {
                 insert_i = i + 1;
             }
         }
         if let Some(i) = existing_z_order_i {
-            self.layers_ordered[i].1.push(layer);
+            self.layers_ordered[i].1.push(layer_entry);
         } else {
             self.layers_ordered
-                .insert(insert_i, (id.z_order, vec![layer]));
+                .insert(insert_i, (z_order, vec![layer_entry]));
         }
 
         self.do_repack_layers = true;
 
-        Ok(id)
+        layer_ref
     }
 
-    pub fn remove_layer(&mut self, id: LayerID) -> Result<(), FirewheelError> {
-        if let Some(layer) = self.layers.get(&id) {
-            if !layer.borrow().is_empty() {
+    pub fn remove_widget_layer(
+        &mut self,
+        layer: WidgetLayerRef<MSG>,
+    ) -> Result<(), FirewheelError> {
+        let (layer_id, layer_z_order) = if let Some(layer_entry) = layer.shared.upgrade() {
+            let layer = layer_entry.borrow();
+
+            if !layer.is_empty() {
                 return Err(FirewheelError::LayerNotEmpty);
             }
+
+            (layer.id, layer.z_order)
         } else {
-            return Err(FirewheelError::LayerWithIDNotFound(id));
-        }
+            return Err(FirewheelError::LayerRemoved);
+        };
 
         let mut remove_z_order_i = None;
         for (z_order_i, (z_order, layers)) in self.layers_ordered.iter_mut().enumerate() {
-            if id.z_order == *z_order {
+            if layer_z_order == *z_order {
                 let mut remove_i = None;
-                for (i, layer) in layers.iter().enumerate() {
-                    if layer.borrow().id == id {
-                        remove_i = Some(i);
-                        break;
+                for (i, layer_entry) in layers.iter().enumerate() {
+                    if let StrongLayerEntry::Widget(layer_entry) = layer_entry {
+                        if layer_entry.borrow().id == layer_id {
+                            remove_i = Some(i);
+                            break;
+                        }
                     }
                 }
                 if let Some(i) = remove_i {
-                    let mut entry = layers.remove(i);
+                    let mut layer_entry = layers.remove(i);
 
-                    if let Some(renderer) = entry.borrow_mut().renderer.take() {
-                        self.layer_renderers_to_clean_up.push(renderer);
+                    if let StrongLayerEntry::Widget(layer_entry) = &mut layer_entry {
+                        if let Some(renderer) = layer_entry.borrow_mut().renderer.take() {
+                            self.widget_layer_renderers_to_clean_up.push(renderer);
+                        }
                     }
 
                     if layers.is_empty() {
@@ -355,35 +182,36 @@ impl<MSG> AppWindow<MSG> {
         Ok(())
     }
 
-    pub fn set_layer_outer_position(
+    pub fn set_widget_layer_outer_position(
         &mut self,
-        layer: LayerID,
+        layer: &mut WidgetLayerRef<MSG>,
         position: Point,
     ) -> Result<(), FirewheelError> {
-        Ok(self
-            .layers
-            .get_mut(&layer)
-            .ok_or_else(|| FirewheelError::LayerWithIDNotFound(layer))?
-            .borrow_mut()
-            .set_outer_position(position, self.scale_factor))
+        if let Some(mut layer_entry) = layer.shared.upgrade() {
+            layer_entry
+                .borrow_mut()
+                .set_outer_position(position, self.scale_factor);
+        } else {
+            return Err(FirewheelError::LayerRemoved);
+        }
+
+        Ok(())
     }
 
-    pub fn set_layer_inner_position(
+    pub fn set_widget_layer_inner_position(
         &mut self,
-        layer: LayerID,
+        layer: &mut WidgetLayerRef<MSG>,
         position: Point,
         msg_out_queue: &mut Vec<MSG>,
     ) -> Result<(), FirewheelError> {
-        {
-            self.layers
-                .get_mut(&layer)
-                .ok_or_else(|| FirewheelError::LayerWithIDNotFound(layer))?
-                .borrow_mut()
-                .set_inner_position(
-                    position,
-                    &mut self.widgets_just_shown,
-                    &mut self.widgets_just_hidden,
-                );
+        if let Some(mut layer_entry) = layer.shared.upgrade() {
+            layer_entry.borrow_mut().set_inner_position(
+                position,
+                &mut self.widgets_just_shown,
+                &mut self.widgets_just_hidden,
+            );
+        } else {
+            return Err(FirewheelError::LayerRemoved);
         }
 
         self.handle_visibility_changes(msg_out_queue);
@@ -391,47 +219,219 @@ impl<MSG> AppWindow<MSG> {
         Ok(())
     }
 
-    pub fn set_layer_size(
+    pub fn set_widget_layer_size(
         &mut self,
-        layer: LayerID,
+        layer: &mut WidgetLayerRef<MSG>,
         size: Size,
         msg_out_queue: &mut Vec<MSG>,
     ) -> Result<(), FirewheelError> {
-        self.layers
-            .get_mut(&layer)
-            .ok_or_else(|| FirewheelError::LayerWithIDNotFound(layer))?
-            .borrow_mut()
-            .set_size(
+        if let Some(mut layer_entry) = layer.shared.upgrade() {
+            layer_entry.borrow_mut().set_size(
                 size,
                 self.scale_factor,
                 &mut self.widgets_just_shown,
                 &mut self.widgets_just_hidden,
             );
+        } else {
+            return Err(FirewheelError::LayerRemoved);
+        }
 
         self.handle_visibility_changes(msg_out_queue);
 
         Ok(())
     }
 
-    pub fn set_layer_explicit_visibility(
+    pub fn set_widget_layer_explicit_visibility(
         &mut self,
-        layer: LayerID,
+        layer: &mut WidgetLayerRef<MSG>,
         explicit_visibility: bool,
         msg_out_queue: &mut Vec<MSG>,
     ) -> Result<(), FirewheelError> {
-        self.layers
-            .get_mut(&layer)
-            .ok_or_else(|| FirewheelError::LayerWithIDNotFound(layer))?
-            .borrow_mut()
-            .set_explicit_visibility(
+        if let Some(mut layer_entry) = layer.shared.upgrade() {
+            layer_entry.borrow_mut().set_explicit_visibility(
                 explicit_visibility,
                 &mut self.widgets_just_shown,
                 &mut self.widgets_just_hidden,
             );
+        } else {
+            return Err(FirewheelError::LayerRemoved);
+        }
 
         self.handle_visibility_changes(msg_out_queue);
 
         Ok(())
+    }
+
+    pub fn add_background_layer(
+        &mut self,
+        size: Size,
+        z_order: i32,
+        outer_position: Point,
+        explicit_visibility: bool,
+        background_node: Box<dyn BackgroundNode>,
+    ) -> BackgroundNodeRef {
+        let new_id = self.next_layer_id;
+        self.next_layer_id += 1;
+
+        let mut node_entry = StrongBackgroundNodeEntry::new(background_node, new_id);
+
+        let layer = BackgroundLayer::new(
+            new_id,
+            z_order,
+            size,
+            outer_position,
+            explicit_visibility,
+            self.window_visibility,
+            self.scale_factor,
+            node_entry.clone(),
+        );
+
+        let layer_entry = StrongBackgroundLayerEntry::new(layer);
+
+        {
+            node_entry.set_assigned_layer(layer_entry.downgrade());
+        }
+
+        let layer_entry = StrongLayerEntry::Background(layer_entry);
+
+        let mut existing_z_order_i = None;
+        let mut insert_i = 0;
+        for (i, (z_order_2, _)) in self.layers_ordered.iter().enumerate() {
+            if z_order == *z_order_2 {
+                existing_z_order_i = Some(i);
+                break;
+            } else if z_order > *z_order_2 {
+                insert_i = i + 1;
+            }
+        }
+        if let Some(i) = existing_z_order_i {
+            self.layers_ordered[i].1.push(layer_entry);
+        } else {
+            self.layers_ordered
+                .insert(insert_i, (z_order, vec![layer_entry]));
+        }
+
+        self.do_repack_layers = true;
+
+        BackgroundNodeRef { shared: node_entry }
+    }
+
+    pub fn remove_background_layer(&mut self, mut background_node: BackgroundNodeRef) {
+        let layer_entry = background_node
+            .shared
+            .assigned_layer_mut()
+            .upgrade()
+            .unwrap();
+
+        let (layer_id, layer_z_order) = {
+            let layer = layer_entry.borrow();
+            (layer.id, layer.z_order)
+        };
+
+        let mut remove_z_order_i = None;
+        for (z_order_i, (z_order, layers)) in self.layers_ordered.iter_mut().enumerate() {
+            if layer_z_order == *z_order {
+                let mut remove_i = None;
+                for (i, layer_entry) in layers.iter().enumerate() {
+                    if let StrongLayerEntry::Background(layer_entry) = layer_entry {
+                        if layer_entry.borrow().id == layer_id {
+                            remove_i = Some(i);
+                            break;
+                        }
+                    }
+                }
+                if let Some(i) = remove_i {
+                    let mut layer_entry = layers.remove(i);
+
+                    if let StrongLayerEntry::Background(layer_entry) = &mut layer_entry {
+                        if let Some(renderer) = layer_entry.borrow_mut().renderer.take() {
+                            self.background_layer_renderers_to_clean_up.push(renderer);
+                        }
+                    }
+
+                    if layers.is_empty() {
+                        remove_z_order_i = Some(z_order_i);
+                    }
+                }
+
+                break;
+            }
+        }
+        if let Some(i) = remove_z_order_i {
+            self.layers_ordered.remove(i);
+        }
+
+        self.do_repack_layers = true;
+    }
+
+    pub fn set_background_layer_outer_position(
+        &mut self,
+        background_node: &mut BackgroundNodeRef,
+        position: Point,
+    ) {
+        background_node
+            .shared
+            .assigned_layer_mut()
+            .upgrade()
+            .unwrap()
+            .borrow_mut()
+            .set_outer_position(position, self.scale_factor);
+    }
+
+    pub fn set_background_layer_size(
+        &mut self,
+        background_node: &mut BackgroundNodeRef,
+        size: Size,
+    ) {
+        background_node
+            .shared
+            .assigned_layer_mut()
+            .upgrade()
+            .unwrap()
+            .borrow_mut()
+            .set_size(size, self.scale_factor);
+    }
+
+    pub fn set_background_layer_explicit_visibility(
+        &mut self,
+        background_node: &mut BackgroundNodeRef,
+        explicit_visibility: bool,
+    ) {
+        background_node
+            .shared
+            .assigned_layer_mut()
+            .upgrade()
+            .unwrap()
+            .borrow_mut()
+            .set_explicit_visibility(explicit_visibility);
+    }
+
+    pub fn mark_background_layer_dirty(&mut self, background_node: &mut BackgroundNodeRef) {
+        background_node
+            .shared
+            .assigned_layer_mut()
+            .upgrade()
+            .unwrap()
+            .borrow_mut()
+            .mark_dirty();
+    }
+
+    pub fn send_user_event_to_background_layer(
+        &mut self,
+        background_node: &mut BackgroundNodeRef,
+        event: Box<dyn Any>,
+    ) {
+        let mark_dirty = { background_node.shared.borrow_mut().on_user_event(event) };
+
+        if mark_dirty {
+            background_node
+                .shared
+                .assigned_layer_mut()
+                .upgrade()
+                .unwrap()
+                .borrow_mut()
+                .mark_dirty();
+        }
     }
 
     pub fn set_window_visibility(&mut self, visible: bool, msg_out_queue: &mut Vec<MSG>) {
@@ -440,11 +440,18 @@ impl<MSG> AppWindow<MSG> {
 
             for (_z_order, layers) in self.layers_ordered.iter_mut() {
                 for layer_entry in layers.iter_mut() {
-                    layer_entry.borrow_mut().set_window_visibility(
-                        visible,
-                        &mut self.widgets_just_shown,
-                        &mut self.widgets_just_hidden,
-                    );
+                    match layer_entry {
+                        StrongLayerEntry::Widget(layer_entry) => {
+                            layer_entry.borrow_mut().set_window_visibility(
+                                visible,
+                                &mut self.widgets_just_shown,
+                                &mut self.widgets_just_hidden,
+                            );
+                        }
+                        StrongLayerEntry::Background(layer_entry) => {
+                            layer_entry.borrow_mut().set_window_visibility(visible);
+                        }
+                    }
                 }
             }
 
@@ -454,17 +461,19 @@ impl<MSG> AppWindow<MSG> {
 
     pub fn add_container_region(
         &mut self,
-        layer: LayerID,
+        layer: &WidgetLayerRef<MSG>,
         region_info: RegionInfo<MSG>,
         explicit_visibility: bool,
     ) -> Result<ContainerRegionRef<MSG>, FirewheelError> {
-        let layer_entry = self
-            .layers
-            .get_mut(&layer)
-            .ok_or_else(|| FirewheelError::LayerWithIDNotFound(layer))?;
-        let weak_layer_entry = layer_entry.downgrade();
+        if layer.shared.upgrade().is_none() {
+            return Err(FirewheelError::LayerRemoved);
+        }
 
-        layer_entry
+        let weak_layer_entry = layer.shared.clone();
+
+        weak_layer_entry
+            .upgrade()
+            .unwrap()
             .borrow_mut()
             .add_container_region(
                 region_info,
@@ -556,67 +565,71 @@ impl<MSG> AppWindow<MSG> {
             .mark_container_region_dirty(region)
     }
 
-    pub fn add_widget(
+    pub fn add_widget_node(
         &mut self,
-        mut widget: Box<dyn Widget<MSG>>,
-        layer: LayerID,
+        mut widget_node: Box<dyn WidgetNode<MSG>>,
+        layer: &WidgetLayerRef<MSG>,
         region_info: RegionInfo<MSG>,
         explicit_visibility: bool,
         msg_out_queue: &mut Vec<MSG>,
-    ) -> Result<WidgetRef<MSG>, FirewheelError> {
-        let info = widget.on_added(msg_out_queue);
+    ) -> Result<WidgetNodeRef<MSG>, FirewheelError> {
+        if layer.shared.upgrade().is_none() {
+            return Err(FirewheelError::LayerRemoved);
+        }
 
-        let id = self.next_widget_id;
+        let weak_layer_entry = layer.shared.clone();
+
+        let node_type = widget_node.on_added(msg_out_queue);
+
+        let new_id = self.next_widget_id;
         self.next_widget_id += 1;
 
-        let mut layer_entry = if let Some(layer) = self.layers.get(&layer) {
-            layer.clone()
-        } else {
-            return Err(FirewheelError::LayerWithIDNotFound(layer));
-        };
+        let mut widget_entry = StrongWidgetNodeEntry::new(
+            Rc::new(RefCell::new(widget_node)),
+            weak_layer_entry.clone(),
+            WeakRegionTreeEntry::new(),
+            new_id,
+        );
 
-        let mut widget_entry = StrongWidgetEntry {
-            shared: Rc::new(RefCell::new(widget)),
-            assigned_layer: layer_entry.downgrade(),
-            assigned_region: WeakRegionTreeEntry::new(),
-            unique_id: id,
-        };
+        weak_layer_entry
+            .upgrade()
+            .unwrap()
+            .borrow_mut()
+            .add_widget_region(
+                &mut widget_entry,
+                region_info,
+                node_type,
+                explicit_visibility,
+                &mut self.widgets_just_shown,
+                &mut self.widgets_just_hidden,
+            )?;
 
-        layer_entry.borrow_mut().add_widget_region(
-            &mut widget_entry,
-            region_info,
-            info.region_type,
-            explicit_visibility,
-            &mut self.widgets_just_shown,
-            &mut self.widgets_just_hidden,
-        )?;
-
-        self.widgets.insert(widget_entry.clone());
+        //self.widgets.insert(widget_entry.clone());
 
         self.handle_visibility_changes(msg_out_queue);
 
-        Ok(WidgetRef {
+        Ok(WidgetNodeRef {
             shared: widget_entry,
         })
     }
 
     pub fn modify_widget_region(
         &mut self,
-        widget_ref: &mut WidgetRef<MSG>,
+        widget_node_ref: &mut WidgetNodeRef<MSG>,
         new_size: Option<Size>,
         new_internal_anchor: Option<Anchor>,
         new_parent_anchor: Option<Anchor>,
         new_anchor_offset: Option<Point>,
         msg_out_queue: &mut Vec<MSG>,
     ) {
-        widget_ref
+        widget_node_ref
             .shared
-            .assigned_layer
+            .assigned_layer_mut()
             .upgrade()
             .unwrap()
             .borrow_mut()
             .modify_widget_region(
-                &mut widget_ref.shared,
+                &mut widget_node_ref.shared,
                 new_size,
                 new_internal_anchor,
                 new_parent_anchor,
@@ -630,18 +643,18 @@ impl<MSG> AppWindow<MSG> {
 
     pub fn set_widget_explicit_visibility(
         &mut self,
-        widget_ref: &mut WidgetRef<MSG>,
+        widget_node_ref: &mut WidgetNodeRef<MSG>,
         visible: bool,
         msg_out_queue: &mut Vec<MSG>,
     ) {
-        widget_ref
+        widget_node_ref
             .shared
-            .assigned_layer
+            .assigned_layer_mut()
             .upgrade()
             .unwrap()
             .borrow_mut()
             .set_widget_explicit_visibility(
-                &mut widget_ref.shared,
+                &mut widget_node_ref.shared,
                 visible,
                 &mut self.widgets_just_shown,
                 &mut self.widgets_just_hidden,
@@ -650,65 +663,73 @@ impl<MSG> AppWindow<MSG> {
         self.handle_visibility_changes(msg_out_queue);
     }
 
-    pub fn remove_widget(&mut self, mut widget_ref: WidgetRef<MSG>, msg_out_queue: &mut Vec<MSG>) {
+    pub fn remove_widget(
+        &mut self,
+        mut widget_node_ref: WidgetNodeRef<MSG>,
+        msg_out_queue: &mut Vec<MSG>,
+    ) {
         // Remove this widget from its assigned layer.
-        widget_ref
+        widget_node_ref
             .shared
-            .assigned_layer
+            .assigned_layer_mut()
             .upgrade()
             .unwrap()
             .borrow_mut()
             .remove_widget_region(
-                &mut widget_ref.shared,
+                &mut widget_node_ref.shared,
                 &mut self.widgets_just_shown,
                 &mut self.widgets_just_hidden,
             );
 
         // Remove this widget from all active event listeners.
         self.widgets_scheduled_for_animation
-            .remove(&widget_ref.shared);
-        self.widgets_with_keyboard_listen.remove(&widget_ref.shared);
+            .remove(&widget_node_ref.shared);
+        self.widgets_with_keyboard_listen
+            .remove(&widget_node_ref.shared);
         self.widgets_with_pointer_down_listen
-            .remove(&widget_ref.shared);
+            .remove(&widget_node_ref.shared);
         if let Some(w) = self.widget_with_pointer_lock.take() {
-            if w.0.unique_id != widget_ref.unique_id() {
+            if w.0.unique_id() != widget_node_ref.unique_id() {
                 self.widget_with_pointer_lock = Some(w);
             }
         }
         if let Some(w) = self.widget_with_text_comp_listen.take() {
-            if w.unique_id != widget_ref.unique_id() {
+            if w.unique_id() != widget_node_ref.unique_id() {
                 self.widget_with_text_comp_listen = Some(w);
             }
         }
 
-        widget_ref.shared.borrow_mut().on_removed(msg_out_queue);
+        widget_node_ref
+            .shared
+            .borrow_mut()
+            .on_removed(msg_out_queue);
     }
 
     pub fn send_user_event_to_widget(
         &mut self,
-        widget_ref: &mut WidgetRef<MSG>,
+        widget_node_ref: &mut WidgetNodeRef<MSG>,
         event: Box<dyn Any>,
         msg_out_queue: &mut Vec<MSG>,
     ) {
         let res = {
-            widget_ref
+            widget_node_ref
                 .shared
                 .borrow_mut()
                 .on_user_event(event, msg_out_queue)
         };
         if let Some(requests) = res {
-            self.handle_widget_requests(&widget_ref.shared, requests);
+            self.handle_widget_requests(&mut widget_node_ref.shared, requests);
         }
     }
 
-    pub fn mark_widget_dirty(&mut self, widget_ref: &mut WidgetRef<MSG>) {
-        widget_ref
+    pub fn mark_widget_dirty(&mut self, widget_node_ref: &mut WidgetNodeRef<MSG>) {
+        widget_node_ref
             .shared
-            .assigned_layer
+            .assigned_layer_mut()
             .upgrade()
             .unwrap()
             .borrow_mut()
-            .mark_widget_region_dirty(&widget_ref.shared);
+            .mark_widget_region_dirty(&widget_node_ref.shared);
     }
 
     pub fn set_scale_factor(&mut self, scale_factor: ScaleFactor, msg_out_queue: &mut Vec<MSG>) {
@@ -717,14 +738,23 @@ impl<MSG> AppWindow<MSG> {
 
             for (_z_order, layers) in self.layers_ordered.iter_mut() {
                 for layer_entry in layers.iter_mut() {
-                    let mut layer_entry = layer_entry.borrow_mut();
-                    let size = layer_entry.size();
-                    layer_entry.set_size(
-                        size,
-                        scale_factor,
-                        &mut self.widgets_just_shown,
-                        &mut self.widgets_just_hidden,
-                    );
+                    match layer_entry {
+                        StrongLayerEntry::Widget(layer_entry) => {
+                            let mut layer_entry = layer_entry.borrow_mut();
+                            let size = layer_entry.size();
+                            layer_entry.set_size(
+                                size,
+                                scale_factor,
+                                &mut self.widgets_just_shown,
+                                &mut self.widgets_just_hidden,
+                            );
+                        }
+                        StrongLayerEntry::Background(layer_entry) => {
+                            let mut layer_entry = layer_entry.borrow_mut();
+                            let size = layer_entry.size;
+                            layer_entry.set_size(size, scale_factor);
+                        }
+                    }
                 }
             }
 
@@ -739,8 +769,10 @@ impl<MSG> AppWindow<MSG> {
     ) -> InputEventResult {
         match event {
             InputEvent::Animation(_) => {
-                let mut widgets_to_remove_from_animation: Vec<StrongWidgetEntry<MSG>> = Vec::new();
-                let mut widget_requests: Vec<(StrongWidgetEntry<MSG>, WidgetRequests)> = Vec::new();
+                let mut widgets_to_remove_from_animation: Vec<StrongWidgetNodeEntry<MSG>> =
+                    Vec::new();
+                let mut widget_requests: Vec<(StrongWidgetNodeEntry<MSG>, WidgetNodeRequests)> =
+                    Vec::new();
                 std::mem::swap(
                     &mut widgets_to_remove_from_animation,
                     &mut self.widgets_to_remove_from_animation,
@@ -760,8 +792,8 @@ impl<MSG> AppWindow<MSG> {
                     }
                 }
 
-                for (widget_entry, requests) in widget_requests.drain(..) {
-                    self.handle_widget_requests(&widget_entry, requests);
+                for (mut widget_entry, requests) in widget_requests.drain(..) {
+                    self.handle_widget_requests(&mut widget_entry, requests);
                 }
                 for widget_entry in widgets_to_remove_from_animation.drain(..) {
                     self.widgets_scheduled_for_animation.remove(&widget_entry);
@@ -794,13 +826,15 @@ impl<MSG> AppWindow<MSG> {
                             .on_input_event(event, msg_out_queue)
                     };
                     if let EventCapturedStatus::Captured(requests) = res {
-                        self.handle_widget_requests(&widget_entry, requests);
+                        self.handle_widget_requests(&mut widget_entry, requests);
                     }
                 } else {
                     if !self.widgets_with_pointer_down_listen.is_empty() {
                         if e.any_button_just_pressed() {
-                            let mut widget_requests: Vec<(StrongWidgetEntry<MSG>, WidgetRequests)> =
-                                Vec::new();
+                            let mut widget_requests: Vec<(
+                                StrongWidgetNodeEntry<MSG>,
+                                WidgetNodeRequests,
+                            )> = Vec::new();
                             std::mem::swap(&mut widget_requests, &mut self.widget_requests);
 
                             for widget_entry in self.widgets_with_pointer_down_listen.iter_mut() {
@@ -814,8 +848,8 @@ impl<MSG> AppWindow<MSG> {
                                 }
                             }
 
-                            for (widget_entry, requests) in widget_requests.drain(..) {
-                                self.handle_widget_requests(&widget_entry, requests);
+                            for (mut widget_entry, requests) in widget_requests.drain(..) {
+                                self.handle_widget_requests(&mut widget_entry, requests);
                             }
 
                             std::mem::swap(&mut widget_requests, &mut self.widget_requests);
@@ -824,12 +858,15 @@ impl<MSG> AppWindow<MSG> {
 
                     let mut widget_requests = None;
                     for (_z_index, layers) in self.layers_ordered.iter_mut().rev() {
-                        for layer in layers.iter_mut() {
-                            if let Some(captured_res) =
-                                layer.borrow_mut().handle_pointer_event(e, msg_out_queue)
-                            {
-                                widget_requests = Some(captured_res);
-                                break;
+                        for layer_entry in layers.iter_mut() {
+                            if let StrongLayerEntry::Widget(layer_entry) = layer_entry {
+                                if let Some(captured_res) = layer_entry
+                                    .borrow_mut()
+                                    .handle_pointer_event(e, msg_out_queue)
+                                {
+                                    widget_requests = Some(captured_res);
+                                    break;
+                                }
                             }
                         }
                         if widget_requests.is_some() {
@@ -837,8 +874,8 @@ impl<MSG> AppWindow<MSG> {
                         }
                     }
 
-                    if let Some((widget_entry, requests)) = widget_requests {
-                        self.handle_widget_requests(&widget_entry, requests);
+                    if let Some((mut widget_entry, requests)) = widget_requests {
+                        self.handle_widget_requests(&mut widget_entry, requests);
                     }
                 }
             }
@@ -855,12 +892,13 @@ impl<MSG> AppWindow<MSG> {
                     }
                 }
 
-                if let Some((widget_entry, requests)) = requests {
-                    self.handle_widget_requests(&widget_entry, requests);
+                if let Some((mut widget_entry, requests)) = requests {
+                    self.handle_widget_requests(&mut widget_entry, requests);
                 }
             }
             InputEvent::Keyboard(_) => {
-                let mut widget_requests: Vec<(StrongWidgetEntry<MSG>, WidgetRequests)> = Vec::new();
+                let mut widget_requests: Vec<(StrongWidgetNodeEntry<MSG>, WidgetNodeRequests)> =
+                    Vec::new();
                 std::mem::swap(&mut widget_requests, &mut self.widget_requests);
 
                 for widget_entry in self.widgets_with_keyboard_listen.iter_mut() {
@@ -874,8 +912,8 @@ impl<MSG> AppWindow<MSG> {
                     }
                 }
 
-                for (widget_entry, requests) in widget_requests.drain(..) {
-                    self.handle_widget_requests(&widget_entry, requests);
+                for (mut widget_entry, requests) in widget_requests.drain(..) {
+                    self.handle_widget_requests(&mut widget_entry, requests);
                 }
 
                 std::mem::swap(&mut widget_requests, &mut self.widget_requests);
@@ -893,8 +931,8 @@ impl<MSG> AppWindow<MSG> {
                     }
                 }
 
-                if let Some((widget_entry, requests)) = requests {
-                    self.handle_widget_requests(&widget_entry, requests);
+                if let Some((mut widget_entry, requests)) = requests {
+                    self.handle_widget_requests(&mut widget_entry, requests);
                 }
             }
             e => {
@@ -904,7 +942,8 @@ impl<MSG> AppWindow<MSG> {
 
         // Handle any extra events that have occurred as a result of handling
         // widget requests.
-        let mut widgets_to_send_input_event: Vec<(StrongWidgetEntry<MSG>, InputEvent)> = Vec::new();
+        let mut widgets_to_send_input_event: Vec<(StrongWidgetNodeEntry<MSG>, InputEvent)> =
+            Vec::new();
         std::mem::swap(
             &mut widgets_to_send_input_event,
             &mut self.widgets_to_send_input_event,
@@ -916,7 +955,7 @@ impl<MSG> AppWindow<MSG> {
                     .on_input_event(&event, msg_out_queue)
             };
             if let EventCapturedStatus::Captured(requests) = res {
-                self.handle_widget_requests(&widget_entry, requests);
+                self.handle_widget_requests(&mut widget_entry, requests);
             }
         }
         widgets_to_send_input_event.append(&mut self.widgets_to_send_input_event);
@@ -946,14 +985,14 @@ impl<MSG> AppWindow<MSG> {
 
     fn handle_widget_requests(
         &mut self,
-        widget_entry: &StrongWidgetEntry<MSG>,
-        requests: WidgetRequests,
+        widget_entry: &mut StrongWidgetNodeEntry<MSG>,
+        requests: WidgetNodeRequests,
     ) {
         if requests.repaint {
             // Note, the widget won't actually get marked dirty if it is
             // currently hidden.
             widget_entry
-                .assigned_layer
+                .assigned_layer_mut()
                 .upgrade()
                 .unwrap()
                 .borrow_mut()
@@ -963,7 +1002,7 @@ impl<MSG> AppWindow<MSG> {
             if recieve_next_animation_event {
                 let is_visible = {
                     widget_entry
-                        .assigned_region
+                        .assigned_region()
                         .upgrade()
                         .unwrap()
                         .borrow()
@@ -979,7 +1018,7 @@ impl<MSG> AppWindow<MSG> {
         }
         if let Some(listens) = requests.set_pointer_events_listen {
             widget_entry
-                .assigned_layer
+                .assigned_layer_mut()
                 .upgrade()
                 .unwrap()
                 .borrow_mut()
@@ -988,7 +1027,7 @@ impl<MSG> AppWindow<MSG> {
         if let Some(set_keyboard_events_listen) = requests.set_keyboard_events_listen {
             let is_visible = {
                 widget_entry
-                    .assigned_region
+                    .assigned_region()
                     .upgrade()
                     .unwrap()
                     .borrow()
@@ -1051,7 +1090,7 @@ impl<MSG> AppWindow<MSG> {
         if let Some(set_lock_type) = requests.set_pointer_lock {
             let is_visible = {
                 widget_entry
-                    .assigned_region
+                    .assigned_region()
                     .upgrade()
                     .unwrap()
                     .borrow()
@@ -1086,7 +1125,7 @@ impl<MSG> AppWindow<MSG> {
         if let Some(set_pointer_down_listen) = requests.set_pointer_down_listen {
             let is_visible = {
                 widget_entry
-                    .assigned_region
+                    .assigned_region()
                     .upgrade()
                     .unwrap()
                     .borrow()
@@ -1104,7 +1143,7 @@ impl<MSG> AppWindow<MSG> {
 
     fn handle_visibility_changes(&mut self, msg_out_queue: &mut Vec<MSG>) {
         // Handle widgets that have just been shown.
-        let mut widget_requests: Vec<(StrongWidgetEntry<MSG>, WidgetRequests)> = Vec::new();
+        let mut widget_requests: Vec<(StrongWidgetNodeEntry<MSG>, WidgetNodeRequests)> = Vec::new();
         std::mem::swap(&mut widget_requests, &mut self.widget_requests);
         for widget_entry in self.widgets_just_shown.iter_mut() {
             let status = {
@@ -1117,8 +1156,8 @@ impl<MSG> AppWindow<MSG> {
             }
         }
         self.widgets_just_shown.clear();
-        for (widget_entry, requests) in widget_requests.drain(..) {
-            self.handle_widget_requests(&widget_entry, requests);
+        for (mut widget_entry, requests) in widget_requests.drain(..) {
+            self.handle_widget_requests(&mut widget_entry, requests);
         }
         std::mem::swap(&mut widget_requests, &mut self.widget_requests);
 
