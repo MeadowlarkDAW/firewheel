@@ -31,32 +31,27 @@ fn main() {
     let mut window_logical_size = window_size.to_logical(scale_factor);
     let mut msg_out_queue = Vec::new();
 
-    let mut test_background_node = Some(app_window.add_background_node(
+    let mut test_background_node_ref = app_window.add_background_node(
         window_logical_size,
         0,
         Point::new(0.0, 0.0),
         true,
         Box::new(TestBackgroundNode {}),
-    ));
+    );
 
     event_loop.run(move |event, _, control_flow| match event {
         Event::WindowEvent {
             ref event,
             window_id,
         } if window_id == window.id() => match event {
-            WindowEvent::CloseRequested => {
-                *control_flow = ControlFlow::Exit;
-
-                app_window.remove_background_node(test_background_node.take().unwrap());
-            }
+            WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
             WindowEvent::Resized(physical_size) => {
                 window_size = PhysicalSize::new(physical_size.width, physical_size.height);
                 window_logical_size = window_size.to_logical(scale_factor);
 
-                app_window.set_background_node_size(
-                    test_background_node.as_mut().unwrap(),
-                    window_logical_size,
-                );
+                app_window
+                    .set_background_node_size(&mut test_background_node_ref, window_logical_size)
+                    .unwrap();
             }
             WindowEvent::ScaleFactorChanged {
                 scale_factor: window_scale_factor,
@@ -68,10 +63,9 @@ fn main() {
                 window_size = PhysicalSize::new(new_inner_size.width, new_inner_size.height);
                 window_logical_size = window_size.to_logical(scale_factor);
 
-                app_window.set_background_node_size(
-                    test_background_node.as_mut().unwrap(),
-                    window_logical_size,
-                );
+                app_window
+                    .set_background_node_size(&mut test_background_node_ref, window_logical_size)
+                    .unwrap();
             }
             _ => {}
         },

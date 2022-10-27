@@ -9,6 +9,8 @@ pub enum FirewheelError {
     ParentAnchorRegionRemoved,
     ContainerRegionRemoved,
     ContainerRegionNotEmpty,
+    BackgroundNodeRemoved,
+    WidgetNodeRemoved,
 }
 
 impl Error for FirewheelError {}
@@ -39,6 +41,12 @@ impl fmt::Display for FirewheelError {
                     f,
                     "Could not remove container region: container region is not empty"
                 )
+            }
+            Self::BackgroundNodeRemoved => {
+                write!(f, "Background node is invalid because it has been removed")
+            }
+            Self::WidgetNodeRemoved => {
+                write!(f, "Widget node is invalid because it has been removed")
             }
         }
     }

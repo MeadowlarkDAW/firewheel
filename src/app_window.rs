@@ -313,17 +313,20 @@ impl<MSG> AppWindow<MSG> {
         self.do_repack_layers = true;
 
         BackgroundNodeRef {
-            shared: node_entry,
-            correctly_dropped: false,
+            shared: node_entry.downgrade(),
         }
     }
 
-    pub fn remove_background_node(&mut self, mut background_node: BackgroundNodeRef) {
-        let layer_entry = background_node
+    pub fn remove_background_node(
+        &mut self,
+        background_node: &mut BackgroundNodeRef,
+    ) -> Result<(), FirewheelError> {
+        let mut node_entry = background_node
             .shared
-            .assigned_layer_mut()
             .upgrade()
-            .unwrap();
+            .ok_or_else(|| FirewheelError::BackgroundNodeRemoved)?;
+
+        let layer_entry = node_entry.assigned_layer_mut().upgrade().unwrap();
 
         let (layer_id, layer_z_order) = {
             let layer = layer_entry.borrow();
@@ -365,77 +368,102 @@ impl<MSG> AppWindow<MSG> {
 
         self.do_repack_layers = true;
 
-        background_node.correctly_dropped = true;
+        Ok(())
     }
 
     pub fn set_background_node_outer_position(
         &mut self,
         background_node: &mut BackgroundNodeRef,
         position: Point,
-    ) {
+    ) -> Result<(), FirewheelError> {
         background_node
             .shared
+            .upgrade()
+            .ok_or_else(|| FirewheelError::BackgroundNodeRemoved)?
             .assigned_layer_mut()
             .upgrade()
             .unwrap()
             .borrow_mut()
             .set_outer_position(position, self.scale_factor);
+
+        Ok(())
     }
 
     pub fn set_background_node_size(
         &mut self,
         background_node: &mut BackgroundNodeRef,
         size: Size,
-    ) {
+    ) -> Result<(), FirewheelError> {
         background_node
             .shared
+            .upgrade()
+            .ok_or_else(|| FirewheelError::BackgroundNodeRemoved)?
             .assigned_layer_mut()
             .upgrade()
             .unwrap()
             .borrow_mut()
             .set_size(size, self.scale_factor);
+
+        Ok(())
     }
 
     pub fn set_background_node_explicit_visibility(
         &mut self,
         background_node: &mut BackgroundNodeRef,
         explicit_visibility: bool,
-    ) {
+    ) -> Result<(), FirewheelError> {
         background_node
             .shared
+            .upgrade()
+            .ok_or_else(|| FirewheelError::BackgroundNodeRemoved)?
             .assigned_layer_mut()
             .upgrade()
             .unwrap()
             .borrow_mut()
             .set_explicit_visibility(explicit_visibility);
+
+        Ok(())
     }
 
-    pub fn mark_background_node_dirty(&mut self, background_node: &mut BackgroundNodeRef) {
+    pub fn mark_background_node_dirty(
+        &mut self,
+        background_node: &mut BackgroundNodeRef,
+    ) -> Result<(), FirewheelError> {
         background_node
             .shared
+            .upgrade()
+            .ok_or_else(|| FirewheelError::BackgroundNodeRemoved)?
             .assigned_layer_mut()
             .upgrade()
             .unwrap()
             .borrow_mut()
             .mark_dirty();
+
+        Ok(())
     }
 
     pub fn send_user_event_to_background_node(
         &mut self,
         background_node: &mut BackgroundNodeRef,
         event: Box<dyn Any>,
-    ) {
-        let mark_dirty = { background_node.shared.borrow_mut().on_user_event(event) };
+    ) -> Result<(), FirewheelError> {
+        let mut node_entry = background_node
+            .shared
+            .upgrade()
+            .ok_or_else(|| FirewheelError::BackgroundNodeRemoved)?;
+
+        let mark_dirty = { node_entry.borrow_mut().on_user_event(event) };
 
         if mark_dirty {
-            background_node
-                .shared
+            node_entry
                 .assigned_layer_mut()
                 .upgrade()
                 .unwrap()
                 .borrow_mut()
                 .mark_dirty();
         }
+
+        Ok(())
     }
 
     pub fn set_window_visibility(&mut self, visible: bool, msg_out_queue: &mut Vec<MSG>) {
@@ -613,8 +641,7 @@ impl<MSG> AppWindow<MSG> {
         self.handle_visibility_changes(msg_out_queue);
 
         Ok(WidgetNodeRef {
-            shared: widget_entry,
-            correctly_dropped: false,
+            shared: widget_entry.downgrade(),
         })
     }
 
@@ -626,15 +653,19 @@ impl<MSG> AppWindow<MSG> {
         new_parent_anchor: Option<Anchor>,
         new_anchor_offset: Option<Point>,
         msg_out_queue: &mut Vec<MSG>,
-    ) {
-        widget_node_ref
+    ) -> Result<(), FirewheelError> {
+        let mut widget_entry = widget_node_ref
             .shared
+            .upgrade()
+            .ok_or_else(|| FirewheelError::WidgetNodeRemoved)?;
+
+        widget_entry
             .assigned_layer_mut()
             .upgrade()
             .unwrap()
             .borrow_mut()
             .modify_widget_region(
-                &mut widget_node_ref.shared,
+                &mut widget_entry,
                 new_size,
                 new_internal_anchor,
                 new_parent_anchor,
@@ -644,6 +675,8 @@ impl<MSG> AppWindow<MSG> {
             );
 
         self.handle_visibility_changes(msg_out_queue);
+
+        Ok(())
     }
 
     pub fn set_widget_explicit_visibility(
@@ -651,44 +684,54 @@ impl<MSG> AppWindow<MSG> {
         widget_node_ref: &mut WidgetNodeRef<MSG>,
         visible: bool,
         msg_out_queue: &mut Vec<MSG>,
-    ) {
-        widget_node_ref
+    ) -> Result<(), FirewheelError> {
+        let mut widget_entry = widget_node_ref
             .shared
+            .upgrade()
+            .ok_or_else(|| FirewheelError::WidgetNodeRemoved)?;
+
+        widget_entry
             .assigned_layer_mut()
             .upgrade()
             .unwrap()
             .borrow_mut()
             .set_widget_explicit_visibility(
-                &mut widget_node_ref.shared,
+                &mut widget_entry,
                 visible,
                 &mut self.widgets_just_shown,
                 &mut self.widgets_just_hidden,
             );
 
         self.handle_visibility_changes(msg_out_queue);
+
+        Ok(())
     }
 
-    pub fn remove_widget(&mut self, mut widget_node_ref: WidgetNodeRef<MSG>) {
-        // Remove this widget from its assigned layer.
-        widget_node_ref
+    pub fn remove_widget(
+        &mut self,
+        widget_node_ref: &mut WidgetNodeRef<MSG>,
+    ) -> Result<(), FirewheelError> {
+        let mut widget_entry = widget_node_ref
             .shared
+            .upgrade()
+            .ok_or_else(|| FirewheelError::WidgetNodeRemoved)?;
+
+        // Remove this widget from its assigned layer.
+        widget_entry
             .assigned_layer_mut()
             .upgrade()
             .unwrap()
             .borrow_mut()
             .remove_widget_region(
-                &mut widget_node_ref.shared,
+                &mut widget_entry,
                 &mut self.widgets_just_shown,
                 &mut self.widgets_just_hidden,
             );
 
         // Remove this widget from all active event listeners.
-        self.widgets_scheduled_for_animation
-            .remove(&widget_node_ref.shared);
-        self.widgets_with_keyboard_listen
-            .remove(&widget_node_ref.shared);
-        self.widgets_with_pointer_down_listen
-            .remove(&widget_node_ref.shared);
+        self.widgets_scheduled_for_animation.remove(&widget_entry);
+        self.widgets_with_keyboard_listen.remove(&widget_entry);
+        self.widgets_with_pointer_down_listen.remove(&widget_entry);
         if let Some(w) = self.widget_with_pointer_lock.take() {
             if w.0.unique_id() != widget_node_ref.unique_id() {
                 self.widget_with_pointer_lock = Some(w);
@@ -700,7 +743,7 @@ impl<MSG> AppWindow<MSG> {
             }
         }
 
-        widget_node_ref.correctly_dropped = true;
+        Ok(())
     }
 
     pub fn send_user_event_to_widget(
@@ -708,26 +751,41 @@ impl<MSG> AppWindow<MSG> {
         widget_node_ref: &mut WidgetNodeRef<MSG>,
         event: Box<dyn Any>,
         msg_out_queue: &mut Vec<MSG>,
-    ) {
+    ) -> Result<(), FirewheelError> {
+        let mut widget_entry = widget_node_ref
+            .shared
+            .upgrade()
+            .ok_or_else(|| FirewheelError::WidgetNodeRemoved)?;
+
         let res = {
-            widget_node_ref
-                .shared
+            widget_entry
                 .borrow_mut()
                 .on_user_event(event, msg_out_queue)
         };
         if let Some(requests) = res {
-            self.handle_widget_requests(&mut widget_node_ref.shared, requests);
+            self.handle_widget_requests(&mut widget_entry, requests);
         }
+
+        Ok(())
     }
 
-    pub fn mark_widget_dirty(&mut self, widget_node_ref: &mut WidgetNodeRef<MSG>) {
-        widget_node_ref
+    pub fn mark_widget_dirty(
+        &mut self,
+        widget_node_ref: &mut WidgetNodeRef<MSG>,
+    ) -> Result<(), FirewheelError> {
+        let mut widget_entry = widget_node_ref
             .shared
+            .upgrade()
+            .ok_or_else(|| FirewheelError::WidgetNodeRemoved)?;
+
+        widget_entry
             .assigned_layer_mut()
             .upgrade()
             .unwrap()
             .borrow_mut()
-            .mark_widget_region_dirty(&widget_node_ref.shared);
+            .mark_widget_region_dirty(&widget_entry);
+
+        Ok(())
     }
 
     pub fn set_scale_factor(&mut self, scale_factor: ScaleFactor, msg_out_queue: &mut Vec<MSG>) {
