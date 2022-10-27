@@ -70,6 +70,9 @@ impl BackgroundLayer {
             self.size = size;
             self.scale_factor = scale_factor;
 
+            self.physical_size = self.size.to_physical(scale_factor);
+            self.physical_outer_position = self.outer_position.to_physical(scale_factor);
+
             self.is_dirty = self.is_visible();
         }
     }

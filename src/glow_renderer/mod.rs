@@ -15,9 +15,8 @@ pub(crate) use widget_layer_renderer::WidgetLayerRenderer;
 pub struct Renderer {
     vg: femtovg::Canvas<femtovg::renderer::OpenGl>,
     glow_context: glow::Context,
-
-    physical_size: PhysicalSize,
-    scale_factor: ScaleFactor,
+    //physical_size: PhysicalSize,
+    //scale_factor: ScaleFactor,
 }
 
 impl Renderer {
@@ -33,15 +32,14 @@ impl Renderer {
         Self {
             vg,
             glow_context,
-            physical_size: PhysicalSize::default(),
-            scale_factor: ScaleFactor(0.0),
+            //physical_size: PhysicalSize::default(),
+            //scale_factor: ScaleFactor(0.0),
         }
     }
 
     pub fn render<MSG>(
         &mut self,
         app_window: &mut AppWindow<MSG>,
-        physical_size: PhysicalSize,
         scale_factor: ScaleFactor,
         clear_color: [f32; 4],
     ) {
@@ -64,10 +62,12 @@ impl Renderer {
             self.glow_context.clear(glow::COLOR_BUFFER_BIT);
         }
 
+        /*
         if self.physical_size != physical_size || self.scale_factor != scale_factor {
             self.physical_size = physical_size;
             self.scale_factor = scale_factor;
         }
+        */
 
         for (_z_order, layer_entries) in app_window.layers_ordered.iter_mut() {
             for layer_entry in layer_entries.iter_mut() {
@@ -106,8 +106,6 @@ impl Renderer {
             }
         }
 
-        self.vg.restore();
-
         unsafe {
             self.glow_context.bind_framebuffer(glow::FRAMEBUFFER, None);
             self.glow_context
@@ -115,8 +113,6 @@ impl Renderer {
             self.glow_context
                 .bind_framebuffer(glow::DRAW_FRAMEBUFFER, None);
         }
-
-        self.vg.flush();
     }
 
     pub fn free<MSG>(&mut self, app_window: &mut AppWindow<MSG>) {
@@ -175,6 +171,8 @@ impl TextureState {
         vg: &mut femtovg::Canvas<femtovg::renderer::OpenGl>,
         glow_context: &mut glow::Context,
     ) {
+        self.physical_size = physical_size;
+
         // Free the old texture
         vg.delete_image(self.texture_id);
         unsafe {

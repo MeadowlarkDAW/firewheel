@@ -3,6 +3,12 @@ use std::ops::{Add, AddAssign, Sub, SubAssign};
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ScaleFactor(pub f64);
 
+impl ScaleFactor {
+    pub fn as_f32(&self) -> f32 {
+        self.0 as f32
+    }
+}
+
 impl From<f64> for ScaleFactor {
     fn from(s: f64) -> Self {
         Self(s)

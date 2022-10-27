@@ -177,7 +177,7 @@ impl BackgroundNodeRef {
 impl Drop for BackgroundNodeRef {
     fn drop(&mut self) {
         if !self.correctly_dropped {
-            log::error!("Background node with ID {:?} was not dropped correctly. Please drop using `AppWindow::remove_background_layer()`", self.unique_id());
+            log::error!("Background node with ID {:?} was not dropped correctly. Please drop using `AppWindow::remove_background_node()`", self.unique_id());
         }
     }
 }

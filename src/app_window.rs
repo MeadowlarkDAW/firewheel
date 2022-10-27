@@ -15,7 +15,6 @@ use crate::node::{
     WidgetNode, WidgetNodeRef,
 };
 use crate::renderer::{BackgroundLayerRenderer, Renderer, WidgetLayerRenderer};
-use crate::size::PhysicalSize;
 use crate::widget_node_set::WidgetNodeSet;
 use crate::{
     BackgroundNode, ContainerRegionRef, EventCapturedStatus, Point, RegionInfo, ScaleFactor, Size,
@@ -262,7 +261,7 @@ impl<MSG> AppWindow<MSG> {
         Ok(())
     }
 
-    pub fn add_background_layer(
+    pub fn add_background_node(
         &mut self,
         size: Size,
         z_order: i32,
@@ -319,7 +318,7 @@ impl<MSG> AppWindow<MSG> {
         }
     }
 
-    pub fn remove_background_layer(&mut self, mut background_node: BackgroundNodeRef) {
+    pub fn remove_background_node(&mut self, mut background_node: BackgroundNodeRef) {
         let layer_entry = background_node
             .shared
             .assigned_layer_mut()
@@ -369,7 +368,7 @@ impl<MSG> AppWindow<MSG> {
         background_node.correctly_dropped = true;
     }
 
-    pub fn set_background_layer_outer_position(
+    pub fn set_background_node_outer_position(
         &mut self,
         background_node: &mut BackgroundNodeRef,
         position: Point,
@@ -383,7 +382,7 @@ impl<MSG> AppWindow<MSG> {
             .set_outer_position(position, self.scale_factor);
     }
 
-    pub fn set_background_layer_size(
+    pub fn set_background_node_size(
         &mut self,
         background_node: &mut BackgroundNodeRef,
         size: Size,
@@ -397,7 +396,7 @@ impl<MSG> AppWindow<MSG> {
             .set_size(size, self.scale_factor);
     }
 
-    pub fn set_background_layer_explicit_visibility(
+    pub fn set_background_node_explicit_visibility(
         &mut self,
         background_node: &mut BackgroundNodeRef,
         explicit_visibility: bool,
@@ -411,7 +410,7 @@ impl<MSG> AppWindow<MSG> {
             .set_explicit_visibility(explicit_visibility);
     }
 
-    pub fn mark_background_layer_dirty(&mut self, background_node: &mut BackgroundNodeRef) {
+    pub fn mark_background_node_dirty(&mut self, background_node: &mut BackgroundNodeRef) {
         background_node
             .shared
             .assigned_layer_mut()
@@ -421,7 +420,7 @@ impl<MSG> AppWindow<MSG> {
             .mark_dirty();
     }
 
-    pub fn send_user_event_to_background_layer(
+    pub fn send_user_event_to_background_node(
         &mut self,
         background_node: &mut BackgroundNodeRef,
         event: Box<dyn Any>,
@@ -974,10 +973,10 @@ impl<MSG> AppWindow<MSG> {
         }
     }
 
-    pub fn render(&mut self, window_size: PhysicalSize, clear_color: [f32; 4]) {
+    pub fn render(&mut self, clear_color: [f32; 4]) {
         let mut renderer = self.renderer.take().unwrap();
 
-        renderer.render(self, window_size, self.scale_factor, clear_color);
+        renderer.render(self, self.scale_factor, clear_color);
 
         self.renderer = Some(renderer);
     }
