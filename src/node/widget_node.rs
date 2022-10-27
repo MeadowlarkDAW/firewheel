@@ -2,7 +2,7 @@ use std::any::Any;
 
 use crate::{
     event::{InputEvent, KeyboardEventsListen},
-    VG,
+    Rect, VG,
 };
 
 use super::PaintRegionInfo;
@@ -21,6 +21,9 @@ pub trait WidgetNode<MSG> {
 
     #[allow(unused)]
     fn on_visibility_hidden(&mut self, msg_out_queue: &mut Vec<MSG>) {}
+
+    #[allow(unused)]
+    fn on_region_changed(&mut self, assigned_rect: Rect) {}
 
     #[allow(unused)]
     fn on_user_event(

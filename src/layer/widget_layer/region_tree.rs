@@ -961,7 +961,7 @@ impl<MSG> RegionTreeEntry<MSG> {
             self.region.is_within_layer_rect = layer_rect.overlaps_with_rect(self.region.rect);
             let visibility_changed_to = self.region.sync_visibility();
 
-            if let Some(assigned_widget_info) = &self.assigned_widget {
+            if let Some(assigned_widget_info) = &mut self.assigned_widget {
                 if let Some(new_visibility) = visibility_changed_to {
                     if new_visibility {
                         widgets_just_shown.insert(&assigned_widget_info.widget);
@@ -993,6 +993,11 @@ impl<MSG> RegionTreeEntry<MSG> {
                         }
                     }
                 }
+
+                assigned_widget_info
+                    .widget
+                    .borrow_mut()
+                    .on_region_changed(self.region.rect);
             } else if let Some(children) = &mut self.children {
                 for child_entry in children.iter_mut() {
                     child_entry.borrow_mut().parent_changed(
@@ -1026,7 +1031,7 @@ impl<MSG> RegionTreeEntry<MSG> {
         self.region.is_within_layer_rect = layer_rect.overlaps_with_rect(self.region.rect);
         let visibility_changed_to = self.region.sync_visibility();
 
-        if let Some(assigned_widget_info) = &self.assigned_widget {
+        if let Some(assigned_widget_info) = &mut self.assigned_widget {
             if let Some(new_visibility) = visibility_changed_to {
                 if new_visibility {
                     widgets_just_shown.insert(&assigned_widget_info.widget);
@@ -1059,6 +1064,11 @@ impl<MSG> RegionTreeEntry<MSG> {
                     }
                 }
             }
+
+            assigned_widget_info
+                .widget
+                .borrow_mut()
+                .on_region_changed(self.region.rect);
         } else if let Some(children) = &mut self.children {
             for child in children.iter_mut() {
                 child.borrow_mut().parent_changed(
