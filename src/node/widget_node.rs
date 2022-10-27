@@ -20,9 +20,6 @@ pub trait WidgetNode<MSG> {
     fn on_added(&mut self, msg_out_queue: &mut Vec<MSG>) -> WidgetNodeType;
 
     #[allow(unused)]
-    fn on_removed(&mut self, msg_out_queue: &mut Vec<MSG>) {}
-
-    #[allow(unused)]
     fn on_visibility_hidden(&mut self, msg_out_queue: &mut Vec<MSG>) {}
 
     #[allow(unused)]

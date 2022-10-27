@@ -1,10 +1,12 @@
 mod anchor;
 mod app_window;
+mod glow_renderer;
 mod layer;
 mod node;
-mod renderer;
 
 pub(crate) mod widget_node_set;
+
+pub(crate) use glow_renderer as renderer;
 
 pub mod error;
 pub mod event;

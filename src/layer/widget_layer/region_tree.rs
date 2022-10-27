@@ -1213,11 +1213,6 @@ mod tests {
             WidgetNodeType::Painted
         }
 
-        #[allow(unused)]
-        fn on_removed(&mut self, _msg_out_queue: &mut Vec<()>) {
-            println!("empty painted test widget {} remove", self.id);
-        }
-
         fn on_input_event(
             &mut self,
             event: &InputEvent,
@@ -1239,11 +1234,6 @@ mod tests {
         fn on_added(&mut self, _msg_out_queue: &mut Vec<()>) -> WidgetNodeType {
             println!("empty pointer only test widget {} added", self.id);
             WidgetNodeType::PointerOnly
-        }
-
-        #[allow(unused)]
-        fn on_removed(&mut self, _msg_out_queue: &mut Vec<()>) {
-            println!("empty pointer only test widget {} remove", self.id);
         }
 
         fn on_input_event(

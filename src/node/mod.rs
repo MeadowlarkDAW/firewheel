@@ -104,17 +104,6 @@ impl<MSG> Hash for StrongWidgetNodeEntry<MSG> {
     }
 }
 
-#[derive(PartialEq, Eq, Hash)]
-pub struct WidgetNodeRef<MSG> {
-    pub(crate) shared: StrongWidgetNodeEntry<MSG>,
-}
-
-impl<MSG> WidgetNodeRef<MSG> {
-    pub fn unique_id(&self) -> u64 {
-        self.shared.unique_id
-    }
-}
-
 pub(crate) struct StrongBackgroundNodeEntry {
     shared: Rc<RefCell<Box<dyn BackgroundNode>>>,
     assigned_layer: WeakBackgroundLayerEntry,
@@ -155,27 +144,40 @@ impl Clone for StrongBackgroundNodeEntry {
     }
 }
 
-impl PartialEq for StrongBackgroundNodeEntry {
-    fn eq(&self, other: &Self) -> bool {
-        self.unique_id.eq(&other.unique_id)
+pub struct WidgetNodeRef<MSG> {
+    pub(crate) shared: StrongWidgetNodeEntry<MSG>,
+    pub(crate) correctly_dropped: bool,
+}
+
+impl<MSG> WidgetNodeRef<MSG> {
+    pub fn unique_id(&self) -> u64 {
+        self.shared.unique_id
     }
 }
 
-impl Eq for StrongBackgroundNodeEntry {}
-
-impl Hash for StrongBackgroundNodeEntry {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.unique_id.hash(state)
+impl<MSG> Drop for WidgetNodeRef<MSG> {
+    fn drop(&mut self) {
+        if !self.correctly_dropped {
+            log::error!("Widget with ID {:?} was not dropped correctly. Please drop using `AppWindow::remove_widget()`", self.unique_id());
+        }
     }
 }
 
-#[derive(PartialEq, Eq, Hash)]
 pub struct BackgroundNodeRef {
     pub(crate) shared: StrongBackgroundNodeEntry,
+    pub(crate) correctly_dropped: bool,
 }
 
 impl BackgroundNodeRef {
     pub fn unique_id(&self) -> u64 {
         self.shared.unique_id
+    }
+}
+
+impl Drop for BackgroundNodeRef {
+    fn drop(&mut self) {
+        if !self.correctly_dropped {
+            log::error!("Background node with ID {:?} was not dropped correctly. Please drop using `AppWindow::remove_background_layer()`", self.unique_id());
+        }
     }
 }

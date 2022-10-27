@@ -313,7 +313,10 @@ impl<MSG> AppWindow<MSG> {
 
         self.do_repack_layers = true;
 
-        BackgroundNodeRef { shared: node_entry }
+        BackgroundNodeRef {
+            shared: node_entry,
+            correctly_dropped: false,
+        }
     }
 
     pub fn remove_background_layer(&mut self, mut background_node: BackgroundNodeRef) {
@@ -362,6 +365,8 @@ impl<MSG> AppWindow<MSG> {
         }
 
         self.do_repack_layers = true;
+
+        background_node.correctly_dropped = true;
     }
 
     pub fn set_background_layer_outer_position(
@@ -610,6 +615,7 @@ impl<MSG> AppWindow<MSG> {
 
         Ok(WidgetNodeRef {
             shared: widget_entry,
+            correctly_dropped: false,
         })
     }
 
@@ -663,11 +669,7 @@ impl<MSG> AppWindow<MSG> {
         self.handle_visibility_changes(msg_out_queue);
     }
 
-    pub fn remove_widget(
-        &mut self,
-        mut widget_node_ref: WidgetNodeRef<MSG>,
-        msg_out_queue: &mut Vec<MSG>,
-    ) {
+    pub fn remove_widget(&mut self, mut widget_node_ref: WidgetNodeRef<MSG>) {
         // Remove this widget from its assigned layer.
         widget_node_ref
             .shared
@@ -699,10 +701,7 @@ impl<MSG> AppWindow<MSG> {
             }
         }
 
-        widget_node_ref
-            .shared
-            .borrow_mut()
-            .on_removed(msg_out_queue);
+        widget_node_ref.correctly_dropped = true;
     }
 
     pub fn send_user_event_to_widget(
@@ -1187,6 +1186,31 @@ impl<MSG> AppWindow<MSG> {
             }
         }
         self.widgets_just_hidden.clear();
+    }
+}
+
+impl<MSG> Drop for AppWindow<MSG> {
+    fn drop(&mut self) {
+        for (_z_order, layers) in self.layers_ordered.iter_mut() {
+            for layer_entry in layers.iter_mut() {
+                match layer_entry {
+                    StrongLayerEntry::Widget(layer_entry) => {
+                        if let Some(renderer) = layer_entry.borrow_mut().renderer.take() {
+                            self.widget_layer_renderers_to_clean_up.push(renderer);
+                        }
+                    }
+                    StrongLayerEntry::Background(layer_entry) => {
+                        if let Some(renderer) = layer_entry.borrow_mut().renderer.take() {
+                            self.background_layer_renderers_to_clean_up.push(renderer);
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut renderer = self.renderer.take().unwrap();
+
+        renderer.free(self);
     }
 }
 

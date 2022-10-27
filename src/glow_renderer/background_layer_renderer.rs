@@ -1,4 +1,5 @@
-use femtovg::{Color, Paint, Path, RenderTarget};
+use femtovg::{Color, RenderTarget};
+use glow::HasContext;
 
 use crate::{
     layer::BackgroundLayer,
@@ -23,6 +24,7 @@ impl BackgroundLayerRenderer {
         &mut self,
         layer: &mut BackgroundLayer,
         vg: &mut femtovg::Canvas<femtovg::renderer::OpenGl>,
+        glow_context: &mut glow::Context,
         scale_factor: ScaleFactor,
     ) {
         if layer.physical_size.width == 0 || layer.physical_size.height == 0 {
@@ -30,12 +32,12 @@ impl BackgroundLayerRenderer {
         }
 
         if self.texture_state.is_none() {
-            self.texture_state = Some(TextureState::new(layer.physical_size, vg));
+            self.texture_state = Some(TextureState::new(layer.physical_size, vg, glow_context));
         }
         let texture_state = self.texture_state.as_mut().unwrap();
 
         if texture_state.physical_size != layer.physical_size {
-            texture_state.resize(layer.physical_size, vg);
+            texture_state.resize(layer.physical_size, vg, glow_context);
         }
 
         if layer.is_dirty {
@@ -74,11 +76,33 @@ impl BackgroundLayerRenderer {
 
             vg.restore();
 
-            vg.set_render_target(RenderTarget::Screen);
+            vg.flush();
         }
 
         // -- Blit the layer to the screen ---------------------------------------------------------
 
+        unsafe {
+            glow_context.bind_framebuffer(
+                glow::READ_FRAMEBUFFER,
+                Some(texture_state.native_framebuffer),
+            );
+            glow_context.bind_framebuffer(glow::DRAW_FRAMEBUFFER, None);
+
+            glow_context.blit_framebuffer(
+                0,
+                0,
+                layer.physical_size.width as i32,
+                layer.physical_size.height as i32,
+                layer.physical_outer_position.x,
+                layer.physical_outer_position.y,
+                layer.physical_outer_position.x + layer.physical_size.width as i32,
+                layer.physical_outer_position.y + layer.physical_size.height as i32,
+                glow::COLOR_BUFFER_BIT,
+                glow::NEAREST,
+            );
+        }
+
+        /*
         let mut path = Path::new();
         path.rect(
             layer.physical_outer_position.x as f32,
@@ -98,11 +122,16 @@ impl BackgroundLayerRenderer {
         );
 
         vg.fill_path(&mut path, &paint);
+        */
     }
 
-    pub fn clean_up(&mut self, vg: &mut femtovg::Canvas<femtovg::renderer::OpenGl>) {
-        if let Some(texture_state) = self.texture_state.take() {
-            vg.delete_image(texture_state.texture_id);
+    pub fn clean_up(
+        &mut self,
+        vg: &mut femtovg::Canvas<femtovg::renderer::OpenGl>,
+        glow_context: &mut glow::Context,
+    ) {
+        if let Some(mut texture_state) = self.texture_state.take() {
+            texture_state.free(vg, glow_context);
         }
     }
 }
