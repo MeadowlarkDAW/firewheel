@@ -50,7 +50,7 @@ pub struct WidgetNodeRequests {
     pub set_pointer_events_listen: Option<bool>,
     pub set_keyboard_events_listen: Option<KeyboardEventsListen>,
     pub set_pointer_lock: Option<SetPointerLockType>,
-    pub set_pointer_down_listen: Option<bool>,
+    pub set_pointer_leave_listen: Option<bool>,
 }
 
 impl Default for WidgetNodeRequests {
@@ -61,7 +61,7 @@ impl Default for WidgetNodeRequests {
             set_pointer_events_listen: None,
             set_keyboard_events_listen: None,
             set_pointer_lock: None,
-            set_pointer_down_listen: None,
+            set_pointer_leave_listen: None,
         }
     }
 }

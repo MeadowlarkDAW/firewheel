@@ -1,5 +1,4 @@
 use femtovg::{Color, RenderTarget};
-use glow::HasContext;
 
 use crate::{
     layer::BackgroundLayer,
@@ -24,7 +23,7 @@ impl BackgroundLayerRenderer {
         &mut self,
         layer: &mut BackgroundLayer,
         vg: &mut femtovg::Canvas<femtovg::renderer::OpenGl>,
-        glow_context: &mut glow::Context,
+        //glow_context: &mut glow::Context,
         scale_factor: ScaleFactor,
     ) {
         if layer.physical_size.width == 0 || layer.physical_size.height == 0 {
@@ -32,12 +31,12 @@ impl BackgroundLayerRenderer {
         }
 
         if self.texture_state.is_none() {
-            self.texture_state = Some(TextureState::new(layer.physical_size, vg, glow_context));
+            self.texture_state = Some(TextureState::new(layer.physical_size, vg));
         }
         let texture_state = self.texture_state.as_mut().unwrap();
 
         if texture_state.physical_size != layer.physical_size {
-            texture_state.resize(layer.physical_size, vg, glow_context);
+            texture_state.resize(layer.physical_size, vg);
         }
 
         if layer.is_dirty {
@@ -50,7 +49,7 @@ impl BackgroundLayerRenderer {
                 0,
                 layer.physical_size.width,
                 layer.physical_size.height,
-                Color::rgba(0, 0, 0, 0),
+                Color::rgbaf(0.0, 0.0, 0.0, 0.0),
             );
 
             let assigned_region_info = PaintRegionInfo {
@@ -75,12 +74,20 @@ impl BackgroundLayerRenderer {
                 .paint(vg, &assigned_region_info);
 
             vg.restore();
-
-            vg.flush();
         }
 
         // -- Blit the layer to the screen ---------------------------------------------------------
 
+        /*
+        unsafe {
+            glow_context.enable(glow::BLEND);
+            glow_context.blend_func(glow::SRC_ALPHA, glow::ONE_MINUS_SRC_ALPHA);
+
+            glow_context.bind_texture(glow::TEXTURE_2D, texture)
+        }
+        */
+
+        /*
         unsafe {
             glow_context.bind_framebuffer(
                 glow::READ_FRAMEBUFFER,
@@ -101,9 +108,10 @@ impl BackgroundLayerRenderer {
                 glow::NEAREST,
             );
         }
+        */
 
-        /*
-        let mut path = Path::new();
+        vg.set_render_target(femtovg::RenderTarget::Screen);
+        let mut path = femtovg::Path::new();
         path.rect(
             layer.physical_outer_position.x as f32,
             layer.physical_outer_position.y as f32,
@@ -111,7 +119,7 @@ impl BackgroundLayerRenderer {
             layer.physical_size.height as f32,
         );
 
-        let paint = Paint::image(
+        let paint = femtovg::Paint::image(
             texture_state.texture_id,
             0.0,
             0.0,
@@ -122,16 +130,15 @@ impl BackgroundLayerRenderer {
         );
 
         vg.fill_path(&mut path, &paint);
-        */
     }
 
     pub fn clean_up(
         &mut self,
         vg: &mut femtovg::Canvas<femtovg::renderer::OpenGl>,
-        glow_context: &mut glow::Context,
+        //glow_context: &mut glow::Context,
     ) {
         if let Some(mut texture_state) = self.texture_state.take() {
-            texture_state.free(vg, glow_context);
+            texture_state.free(vg);
         }
     }
 }

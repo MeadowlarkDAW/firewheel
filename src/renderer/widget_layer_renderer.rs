@@ -1,5 +1,4 @@
 use femtovg::{Color, RenderTarget};
-use glow::HasContext;
 
 use crate::{
     layer::WidgetLayer,
@@ -27,7 +26,7 @@ impl WidgetLayerRenderer {
         &mut self,
         layer: &mut WidgetLayer<MSG>,
         vg: &mut femtovg::Canvas<femtovg::renderer::OpenGl>,
-        glow_context: &mut glow::Context,
+        //glow_context: &mut glow::Context,
         scale_factor: ScaleFactor,
     ) {
         let physical_size = layer.region_tree.layer_physical_size();
@@ -37,12 +36,12 @@ impl WidgetLayerRenderer {
         }
 
         if self.texture_state.is_none() {
-            self.texture_state = Some(TextureState::new(physical_size, vg, glow_context));
+            self.texture_state = Some(TextureState::new(physical_size, vg));
         }
         let texture_state = self.texture_state.as_mut().unwrap();
 
         if texture_state.physical_size != physical_size {
-            texture_state.resize(physical_size, vg, glow_context);
+            texture_state.resize(physical_size, vg);
         }
 
         if layer.is_dirty() {
@@ -124,12 +123,11 @@ impl WidgetLayerRenderer {
                 vg.restore();
             }
             layer.region_tree.dirty_widgets.clear();
-
-            vg.flush();
         }
 
         // -- Blit the layer to the screen ---------------------------------------------------------
 
+        /*
         unsafe {
             glow_context.bind_framebuffer(
                 glow::READ_FRAMEBUFFER,
@@ -150,9 +148,9 @@ impl WidgetLayerRenderer {
                 glow::NEAREST,
             );
         }
+        */
 
-        /*
-        let mut path = Path::new();
+        let mut path = femtovg::Path::new();
         path.rect(
             layer.physical_outer_position.x as f32,
             layer.physical_outer_position.y as f32,
@@ -160,7 +158,7 @@ impl WidgetLayerRenderer {
             physical_size.height as f32,
         );
 
-        let paint = Paint::image(
+        let paint = femtovg::Paint::image(
             texture_state.texture_id,
             0.0,
             0.0,
@@ -171,16 +169,15 @@ impl WidgetLayerRenderer {
         );
 
         vg.fill_path(&mut path, &paint);
-        */
     }
 
     pub fn clean_up(
         &mut self,
         vg: &mut femtovg::Canvas<femtovg::renderer::OpenGl>,
-        glow_context: &mut glow::Context,
+        //glow_context: &mut glow::Context,
     ) {
         if let Some(mut texture_state) = self.texture_state.take() {
-            texture_state.free(vg, glow_context)
+            texture_state.free(vg)
         }
     }
 }

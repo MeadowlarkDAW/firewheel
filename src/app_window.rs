@@ -3,6 +3,8 @@ use std::cell::RefCell;
 use std::ffi::c_void;
 use std::rc::Rc;
 
+use femtovg::Color;
+
 use crate::anchor::Anchor;
 use crate::error::FirewheelError;
 use crate::event::{InputEvent, KeyboardEventsListen};
@@ -17,8 +19,8 @@ use crate::node::{
 use crate::renderer::{BackgroundLayerRenderer, Renderer, WidgetLayerRenderer};
 use crate::widget_node_set::WidgetNodeSet;
 use crate::{
-    BackgroundNode, ContainerRegionRef, EventCapturedStatus, Point, RegionInfo, ScaleFactor, Size,
-    WidgetNodeRequests,
+    BackgroundNode, ContainerRegionRef, EventCapturedStatus, PhysicalSize, Point, RegionInfo,
+    ScaleFactor, Size, WidgetNodeRequests,
 };
 
 pub struct AppWindow<MSG> {
@@ -34,7 +36,7 @@ pub struct AppWindow<MSG> {
     widget_with_text_comp_listen: Option<StrongWidgetNodeEntry<MSG>>,
     widgets_with_keyboard_listen: WidgetNodeSet<MSG>,
     widgets_scheduled_for_animation: WidgetNodeSet<MSG>,
-    widgets_with_pointer_down_listen: WidgetNodeSet<MSG>,
+    widgets_with_pointer_leave_listen: WidgetNodeSet<MSG>,
     widgets_to_remove_from_animation: Vec<StrongWidgetNodeEntry<MSG>>,
     widget_requests: Vec<(StrongWidgetNodeEntry<MSG>, WidgetNodeRequests)>,
     widgets_just_shown: WidgetNodeSet<MSG>,
@@ -48,12 +50,7 @@ pub struct AppWindow<MSG> {
 }
 
 impl<MSG> AppWindow<MSG> {
-    pub unsafe fn new_from_function<F>(scale_factor: ScaleFactor, load_fn: F) -> Self
-    where
-        F: FnMut(&str) -> *const c_void,
-    {
-        let renderer = Renderer::new_from_function(load_fn);
-
+    fn new(scale_factor: ScaleFactor, renderer: Renderer) -> Self {
         Self {
             next_layer_id: 0,
             next_widget_id: 0,
@@ -63,7 +60,7 @@ impl<MSG> AppWindow<MSG> {
             widget_with_text_comp_listen: None,
             widgets_with_keyboard_listen: WidgetNodeSet::new(),
             widgets_scheduled_for_animation: WidgetNodeSet::new(),
-            widgets_with_pointer_down_listen: WidgetNodeSet::new(),
+            widgets_with_pointer_leave_listen: WidgetNodeSet::new(),
             widgets_to_remove_from_animation: Vec::new(),
             widget_requests: Vec::new(),
             widgets_just_shown: WidgetNodeSet::new(),
@@ -75,6 +72,22 @@ impl<MSG> AppWindow<MSG> {
             window_visibility: true,
             do_repack_layers: true,
         }
+    }
+
+    #[cfg(all(feature = "glutin", not(target_arch = "wasm32")))]
+    pub fn new_from_glutin_display(
+        scale_factor: ScaleFactor,
+        display: &glutin::display::Display,
+    ) -> Self {
+        Self::new(scale_factor, Renderer::new_from_glutin_display(display))
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub unsafe fn new_from_function<F>(scale_factor: ScaleFactor, load_fn: F) -> Self
+    where
+        F: FnMut(&str) -> *const c_void,
+    {
+        Self::new(scale_factor, Renderer::new_from_function(load_fn))
     }
 
     pub fn add_widget_layer(
@@ -731,7 +744,7 @@ impl<MSG> AppWindow<MSG> {
         // Remove this widget from all active event listeners.
         self.widgets_scheduled_for_animation.remove(&widget_entry);
         self.widgets_with_keyboard_listen.remove(&widget_entry);
-        self.widgets_with_pointer_down_listen.remove(&widget_entry);
+        self.widgets_with_pointer_leave_listen.remove(&widget_entry);
         if let Some(w) = self.widget_with_pointer_lock.take() {
             if w.0.unique_id() != widget_node_ref.unique_id() {
                 self.widget_with_pointer_lock = Some(w);
@@ -885,31 +898,29 @@ impl<MSG> AppWindow<MSG> {
                         self.handle_widget_requests(&mut widget_entry, requests);
                     }
                 } else {
-                    if !self.widgets_with_pointer_down_listen.is_empty() {
-                        if e.any_button_just_pressed() {
-                            let mut widget_requests: Vec<(
-                                StrongWidgetNodeEntry<MSG>,
-                                WidgetNodeRequests,
-                            )> = Vec::new();
-                            std::mem::swap(&mut widget_requests, &mut self.widget_requests);
+                    if !self.widgets_with_pointer_leave_listen.is_empty() {
+                        let mut widget_requests: Vec<(
+                            StrongWidgetNodeEntry<MSG>,
+                            WidgetNodeRequests,
+                        )> = Vec::new();
+                        std::mem::swap(&mut widget_requests, &mut self.widget_requests);
 
-                            for widget_entry in self.widgets_with_pointer_down_listen.iter_mut() {
-                                let res = {
-                                    widget_entry
-                                        .borrow_mut()
-                                        .on_input_event(event, msg_out_queue)
-                                };
-                                if let EventCapturedStatus::Captured(requests) = res {
-                                    widget_requests.push((widget_entry.clone(), requests));
-                                }
+                        for widget_entry in self.widgets_with_pointer_leave_listen.iter_mut() {
+                            let res = {
+                                widget_entry
+                                    .borrow_mut()
+                                    .on_input_event(event, msg_out_queue)
+                            };
+                            if let EventCapturedStatus::Captured(requests) = res {
+                                widget_requests.push((widget_entry.clone(), requests));
                             }
-
-                            for (mut widget_entry, requests) in widget_requests.drain(..) {
-                                self.handle_widget_requests(&mut widget_entry, requests);
-                            }
-
-                            std::mem::swap(&mut widget_requests, &mut self.widget_requests);
                         }
+
+                        for (mut widget_entry, requests) in widget_requests.drain(..) {
+                            self.handle_widget_requests(&mut widget_entry, requests);
+                        }
+
+                        std::mem::swap(&mut widget_requests, &mut self.widget_requests);
                     }
 
                     let mut widget_requests = None;
@@ -1031,10 +1042,10 @@ impl<MSG> AppWindow<MSG> {
         }
     }
 
-    pub fn render(&mut self, clear_color: [f32; 4]) {
+    pub fn render(&mut self, window_size: PhysicalSize, clear_color: Color) {
         let mut renderer = self.renderer.take().unwrap();
 
-        renderer.render(self, self.scale_factor, clear_color);
+        renderer.render(self, window_size, self.scale_factor, clear_color);
 
         self.renderer = Some(renderer);
     }
@@ -1178,7 +1189,7 @@ impl<MSG> AppWindow<MSG> {
                 }
             }
         }
-        if let Some(set_pointer_down_listen) = requests.set_pointer_down_listen {
+        if let Some(set_pointer_leave_listen) = requests.set_pointer_leave_listen {
             let is_visible = {
                 widget_entry
                     .assigned_region()
@@ -1189,10 +1200,10 @@ impl<MSG> AppWindow<MSG> {
                     .is_visible()
             };
 
-            if set_pointer_down_listen && is_visible {
-                self.widgets_with_pointer_down_listen.insert(&widget_entry);
+            if set_pointer_leave_listen && is_visible {
+                self.widgets_with_pointer_leave_listen.insert(&widget_entry);
             } else {
-                self.widgets_with_pointer_down_listen.remove(&widget_entry);
+                self.widgets_with_pointer_leave_listen.remove(&widget_entry);
             }
         }
     }
@@ -1230,7 +1241,7 @@ impl<MSG> AppWindow<MSG> {
             // input events from hidden widgets).
             self.widgets_scheduled_for_animation.remove(widget_entry);
             self.widgets_with_keyboard_listen.remove(widget_entry);
-            self.widgets_with_pointer_down_listen.remove(widget_entry);
+            self.widgets_with_pointer_leave_listen.remove(widget_entry);
             if let Some((last_widget, lock_type)) = self.widget_with_pointer_lock.take() {
                 if last_widget.unique_id() != widget_entry.unique_id() {
                     self.widget_with_pointer_lock = Some((last_widget, lock_type));

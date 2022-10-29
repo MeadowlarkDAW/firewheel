@@ -45,7 +45,7 @@ If you are just looking for a easy-to-use/feature rich GUI toolkit in Rust, plea
     * Pointer input starts at the layer with the highest z-order value, and then it works its way down the layer list until a layer captures the event.
     * Pointer input is optimized by only invoking the layers and parent regions that contain the position of the pointer, and then walking down the region tree until a widget captures the event. Once an event is captured, walking the tree is stopped.
     * Widgets can request to "lock"/"unlock" the pointer. A widget that has locked the pointer will receive pointer input events even if the pointer is outside the bounds of the widget's assigned region, which can be used to create drag gestures. Only one widget can lock the pointer at a time.
-    * Widgets can request to receive/stop receiving mouse-press events regardless of position, allowing for behavior such as closing a pop-up by clicking outside of it.
+    * Widgets can request to receive/stop receiving pointer events regardless of position, allowing for behavior such as unhighlighting a button on pointer-leave or closing a pop-up by clicking outside of it.
     * A widget can flag itself as being input-only, meaning it only listens to pointer input events and doesn't paint anything to the screen. This can be used to create drag handles or drag-and-drop targets.
     * Keyboard modifiers are sent along with each pointer input event.
 * Keyboard input logic
