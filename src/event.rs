@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use crate::Point;
+use crate::{Point, ScaleFactor};
 
 pub use keyboard_types::{
     Code, CompositionEvent, CompositionState, Key, KeyState, KeyboardEvent, Location, Modifiers,

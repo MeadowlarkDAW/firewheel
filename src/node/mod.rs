@@ -8,6 +8,7 @@ use crate::size::{PhysicalRect, Rect, ScaleFactor};
 mod background_node;
 mod widget_node;
 pub use background_node::BackgroundNode;
+use femtovg::Path;
 pub use widget_node::{
     EventCapturedStatus, SetPointerLockType, WidgetNode, WidgetNodeRequests, WidgetNodeType,
 };
@@ -30,6 +31,74 @@ pub struct PaintRegionInfo {
 
     /// The dpi scaling factor.
     pub scale_factor: ScaleFactor,
+}
+
+impl PaintRegionInfo {
+    pub fn spanning_rect_path(
+        &self,
+        margin_lr_pts: u16,
+        margin_tb_pts: u16,
+        border_width_pts: f32,
+    ) -> Path {
+        let margin_lr_px = (f32::from(margin_lr_pts) * self.scale_factor.0).round();
+        let margin_tb_px = (f32::from(margin_tb_pts) * self.scale_factor.0).round();
+
+        let border_width_px = border_width_pts * self.scale_factor.0;
+        let border_offset_px = border_width_px / 2.0;
+
+        let width_px =
+            (self.physical_rect.size.width as f32 - margin_lr_px - (border_offset_px * 2.0))
+                .max(0.0);
+        let height_px =
+            (self.physical_rect.size.height as f32 - margin_tb_px - (border_offset_px * 2.0))
+                .max(0.0);
+
+        let mut path = Path::new();
+        path.rect(
+            self.physical_rect.pos.x as f32 + margin_lr_px + border_offset_px,
+            self.physical_rect.pos.y as f32 + margin_tb_px + border_offset_px,
+            width_px,
+            height_px,
+        );
+
+        path
+    }
+
+    pub fn spanning_rounded_rect_path(
+        &self,
+        margin_lr_pts: u16,
+        margin_tb_pts: u16,
+        border_width_pts: f32,
+        border_radius_pts: f32,
+    ) -> Path {
+        if border_radius_pts == 0.0 {
+            return self.spanning_rect_path(margin_lr_pts, margin_tb_pts, border_width_pts);
+        }
+
+        let margin_lr_px = (f32::from(margin_lr_pts) * self.scale_factor.0).round();
+        let margin_tb_px = (f32::from(margin_tb_pts) * self.scale_factor.0).round();
+
+        let border_width_px = border_width_pts * self.scale_factor.0;
+        let border_offset_px = border_width_px / 2.0;
+
+        let width_px =
+            (self.physical_rect.size.width as f32 - margin_lr_px - (border_offset_px * 2.0))
+                .max(0.0);
+        let height_px =
+            (self.physical_rect.size.height as f32 - margin_tb_px - (border_offset_px * 2.0))
+                .max(0.0);
+
+        let mut path = Path::new();
+        path.rounded_rect(
+            self.physical_rect.pos.x as f32 + margin_lr_px + border_offset_px,
+            self.physical_rect.pos.y as f32 + margin_tb_px + border_offset_px,
+            width_px,
+            height_px,
+            border_radius_pts * self.scale_factor.0,
+        );
+
+        path
+    }
 }
 
 pub(crate) struct StrongWidgetNodeEntry<MSG> {

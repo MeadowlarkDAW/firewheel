@@ -2,7 +2,7 @@ use std::any::Any;
 
 use crate::{
     event::{InputEvent, KeyboardEventsListen},
-    Rect, VG,
+    Rect, ScaleFactor, VG,
 };
 
 use super::PaintRegionInfo;

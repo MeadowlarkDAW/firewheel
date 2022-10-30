@@ -12,8 +12,8 @@ pub(crate) use widget_layer_renderer::WidgetLayerRenderer;
 // TODO: Pack multiple layers into a single texture instead of having one
 // texture per layer.
 
-pub struct Renderer {
-    vg: femtovg::Canvas<femtovg::renderer::OpenGl>,
+pub(crate) struct Renderer {
+    pub vg: femtovg::Canvas<femtovg::renderer::OpenGl>,
     //glow_context: glow::Context,
     window_size: PhysicalSize,
     scale_factor: ScaleFactor,

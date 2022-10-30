@@ -90,6 +90,7 @@ impl WidgetLayerRenderer {
                 },
                 scale_factor,
             };
+
             for widget_entry in layer.region_tree.dirty_widgets.iter_mut() {
                 vg.save();
 
@@ -123,6 +124,8 @@ impl WidgetLayerRenderer {
                 vg.restore();
             }
             layer.region_tree.dirty_widgets.clear();
+
+            vg.set_render_target(RenderTarget::Screen);
         }
 
         // -- Blit the layer to the screen ---------------------------------------------------------
@@ -161,9 +164,9 @@ impl WidgetLayerRenderer {
         let paint = femtovg::Paint::image(
             texture_state.texture_id,
             0.0,
-            0.0,
-            physical_size.width as f32,
             physical_size.height as f32,
+            physical_size.width as f32,
+            -(physical_size.height as f32),
             0.0,
             1.0,
         );

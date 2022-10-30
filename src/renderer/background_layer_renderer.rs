@@ -74,6 +74,8 @@ impl BackgroundLayerRenderer {
                 .paint(vg, &assigned_region_info);
 
             vg.restore();
+
+            vg.set_render_target(femtovg::RenderTarget::Screen);
         }
 
         // -- Blit the layer to the screen ---------------------------------------------------------
@@ -110,7 +112,6 @@ impl BackgroundLayerRenderer {
         }
         */
 
-        vg.set_render_target(femtovg::RenderTarget::Screen);
         let mut path = femtovg::Path::new();
         path.rect(
             layer.physical_outer_position.x as f32,
@@ -122,9 +123,9 @@ impl BackgroundLayerRenderer {
         let paint = femtovg::Paint::image(
             texture_state.texture_id,
             0.0,
-            0.0,
-            layer.physical_size.width as f32,
             layer.physical_size.height as f32,
+            layer.physical_size.width as f32,
+            -(layer.physical_size.height as f32),
             0.0,
             1.0,
         );

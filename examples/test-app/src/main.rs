@@ -1,8 +1,9 @@
 use firewheel::event::InputEvent;
-use firewheel::vg::Color;
+use firewheel::vg::{Color, FontId, Paint, Path};
 use firewheel::{
-    AppWindow, BackgroundNode, EventCapturedStatus, PaintRegionInfo, PhysicalSize, Point, Rect,
-    Size, WidgetNode, WidgetNodeRequests, WidgetNodeType, VG,
+    Anchor, AppWindow, BackgroundNode, EventCapturedStatus, PaintRegionInfo, ParentAnchorType,
+    PhysicalSize, Point, Rect, RegionInfo, ScaleFactor, Size, WidgetNode, WidgetNodeRequests,
+    WidgetNodeType, VG,
 };
 use glutin::config::{Api, ConfigSurfaceTypes, ConfigTemplateBuilder, GlConfig};
 use glutin::context::{
@@ -116,12 +117,55 @@ fn main() {
     let mut window_logical_size = window_size.to_logical(scale_factor);
     let mut msg_out_queue = Vec::new();
 
+    let main_font_id = app_window
+        .vg()
+        .add_font("examples/assets/Roboto-Regular.ttf")
+        .unwrap();
+
     let mut test_background_node_ref = app_window.add_background_node(
         window_logical_size,
         0,
         Point::new(0.0, 0.0),
         true,
         Box::new(TestBackgroundNode {}),
+    );
+
+    let mut widget_layer_ref = app_window.add_widget_layer(
+        window_logical_size,
+        1,
+        Point::new(0.0, 0.0),
+        Point::new(0.0, 0.0),
+        true,
+    );
+
+    let test_button = TestLabelButton::new(
+        main_font_id,
+        18.0,
+        Color::rgb(235, 235, 235),
+        "Hello World!".into(),
+        8,
+        8,
+        0,
+        0,
+        1.0,
+        5.0,
+        scale_factor,
+        app_window.vg(),
+    );
+    //let test_button_size = test_button.compute_size(scale_factor, app_window.vg());
+    let test_button_size = test_button.estimated_size();
+    let mut test_button_ref = app_window.add_widget_node(
+        Box::new(test_button),
+        &widget_layer_ref,
+        RegionInfo {
+            size: test_button_size,
+            internal_anchor: Anchor::center(),
+            parent_anchor: Anchor::center(),
+            parent_anchor_type: ParentAnchorType::Layer,
+            anchor_offset: Point::new(0.0, 0.0),
+        },
+        true,
+        &mut msg_out_queue,
     );
 
     // --- Run event loop --------------------------------------------------------------
@@ -147,6 +191,13 @@ fn main() {
                         .set_background_node_size(
                             &mut test_background_node_ref,
                             window_logical_size,
+                        )
+                        .unwrap();
+                    app_window
+                        .set_widget_layer_size(
+                            &mut widget_layer_ref,
+                            window_logical_size,
+                            &mut msg_out_queue,
                         )
                         .unwrap();
 
@@ -176,6 +227,13 @@ fn main() {
                             window_logical_size,
                         )
                         .unwrap();
+                    app_window
+                        .set_widget_layer_size(
+                            &mut widget_layer_ref,
+                            window_logical_size,
+                            &mut msg_out_queue,
+                        )
+                        .unwrap();
                 }
 
                 window.request_redraw();
@@ -203,8 +261,6 @@ impl BackgroundNode for TestBackgroundNode {
     }
 
     fn paint(&mut self, vg: &mut VG, region: &PaintRegionInfo) {
-        use firewheel::vg::{Color, Paint, Path};
-
         const MARGIN: f32 = 4.0;
 
         let mut path = Path::new();
@@ -220,9 +276,9 @@ impl BackgroundNode for TestBackgroundNode {
 
         let gradient_paint = Paint::linear_gradient(
             region.physical_rect.pos.x as f32,
-            region.physical_rect.y2() as f32,
+            region.physical_rect.pos.y as f32,
             region.physical_rect.pos.x as f32,
-            region.physical_rect.y2() as f32 - (19.0 * region.scale_factor.as_f32()),
+            region.physical_rect.pos.y as f32 + (19.0 * region.scale_factor.as_f32()),
             Color::rgb(64, 64, 64),
             Color::rgb(50, 50, 50),
         );
@@ -235,7 +291,6 @@ impl BackgroundNode for TestBackgroundNode {
     }
 }
 
-/*
 enum ButtonState {
     Idle,
     Hovered,
@@ -243,43 +298,85 @@ enum ButtonState {
 }
 
 struct TestLabelButton {
-    font_size_pts: f32,
     label: String,
-    padding_lr: f32,
-    padding_tb: f32,
-    size: Size,
+    padding_lr_pts: u16,
+    padding_tb_pts: u16,
+    margin_lr_pts: u16,
+    margin_tb_pts: u16,
+
+    font_id: FontId,
+    font_size_pts: f32,
+    font_color: Color,
+
+    border_width_pts: f32,
+    border_radius_pts: f32,
+    font_rect_size_pts: Size,
+    estimated_size_pts: Size,
 
     state: ButtonState,
 }
 
 impl TestLabelButton {
     pub fn new(
+        font_id: FontId,
         font_size_pts: f32,
+        font_color: Color,
         label: String,
-        padding_lr: f32,
-        padding_tb: f32,
+        padding_lr_pts: u16,
+        padding_tb_pts: u16,
+        margin_lr_pts: u16,
+        margin_tb_pts: u16,
+        border_width_pts: f32,
+        border_radius_pts: f32,
+        scale_factor: ScaleFactor,
         vg: &VG,
     ) -> Self {
-        Self {
-            font_size_pts,
+        let mut new_self = Self {
             label,
-            padding_lr,
-            padding_tb,
+            padding_lr_pts,
+            padding_tb_pts,
+            margin_lr_pts,
+            margin_tb_pts,
+            font_id,
+            font_size_pts,
+            font_color,
+            border_width_pts,
+            border_radius_pts,
+            font_rect_size_pts: Size::default(),
+            estimated_size_pts: Size::default(),
             state: ButtonState::Idle,
-        }
+        };
+
+        new_self.compute_size(scale_factor, vg);
+
+        new_self
     }
 
-    pub fn size(&self) -> Size {
-        self.size
+    pub fn estimated_size(&self) -> Size {
+        self.estimated_size_pts
     }
 
-    fn compute_size(
-        font_size_pts: f32,
-        label: &str,
-        padding_lr: f32,
-        padding_tb: f32,
-        vg: &VG,
-    ) -> Size {
+    fn compute_size(&mut self, scale_factor: ScaleFactor, vg: &VG) {
+        let mut font_paint = Paint::color(Color::black());
+        font_paint.set_font(&[self.font_id]);
+        font_paint.set_font_size(self.font_size_pts * scale_factor.0);
+        font_paint.set_text_baseline(firewheel::vg::Baseline::Middle);
+
+        let font_metrics = vg.measure_text(0.0, 0.0, &self.label, &font_paint).unwrap();
+
+        self.font_rect_size_pts = Size::new(
+            font_metrics.width() / scale_factor.0,
+            font_metrics.height() / scale_factor.0,
+        );
+
+        let full_width_pts = (self.font_rect_size_pts.width()
+            + (f32::from(self.padding_lr_pts + self.margin_lr_pts) * 2.0))
+            .ceil();
+        let full_height_pts = (self.font_rect_size_pts.height()
+            + (f32::from(self.padding_tb_pts + self.margin_tb_pts) * 2.0))
+            .ceil();
+
+        self.estimated_size_pts = Size::new(full_width_pts, full_height_pts);
     }
 }
 
@@ -293,7 +390,7 @@ impl<MyMsg> WidgetNode<MyMsg> for TestLabelButton {
     }
 
     fn on_region_changed(&mut self, _assigned_rect: Rect) {
-        println!("region changed");
+        //println!("region changed");
     }
 
     fn on_user_event(
@@ -313,6 +410,62 @@ impl<MyMsg> WidgetNode<MyMsg> for TestLabelButton {
     }
 
     #[allow(unused)]
-    fn paint(&mut self, vg: &mut VG, region: &PaintRegionInfo) {}
+    fn paint(&mut self, vg: &mut VG, region: &PaintRegionInfo) {
+        let mut bg_path = region.spanning_rounded_rect_path(
+            self.margin_lr_pts,
+            self.margin_tb_pts,
+            self.border_width_pts,
+            self.border_radius_pts,
+        );
+
+        let mut bg_paint = Paint::color(Color::rgb(44, 44, 44));
+        let mut bg_stroke_paint = Paint::color(Color::rgb(22, 22, 22));
+        bg_stroke_paint
+            .set_line_width((self.border_width_pts as f32 * region.scale_factor.0).round());
+
+        vg.fill_path(&mut bg_path, &bg_paint);
+        vg.stroke_path(&mut bg_path, &bg_stroke_paint);
+
+        let label_rect_width_px = region.physical_rect.size.width as f32
+            - (f32::from(self.margin_lr_pts + self.padding_lr_pts) * region.scale_factor.0 * 2.0)
+                .round()
+                .max(0.0);
+        let label_rect_height_px = region.physical_rect.size.height as f32
+            - (f32::from(self.margin_tb_pts + self.padding_tb_pts) * region.scale_factor.0 * 2.0)
+                .round()
+                .max(0.0);
+
+        if label_rect_width_px != 0.0 && label_rect_height_px != 0.0 {
+            let label_rect_x_px = region.physical_rect.pos.x as f32
+                + (f32::from(self.margin_lr_pts + self.padding_lr_pts) * region.scale_factor.0);
+            let label_rect_y_px = region.physical_rect.pos.y as f32
+                + (f32::from(self.margin_tb_pts + self.padding_tb_pts) * region.scale_factor.0);
+            let label_rect_y_center_px = (region.physical_rect.pos.y as f32
+                + (f32::from(self.margin_tb_pts + self.padding_tb_pts) * region.scale_factor.0)
+                + (self.font_rect_size_pts.height() * region.scale_factor.0 / 2.0))
+                .round()
+                - 0.5;
+
+            vg.scissor(
+                label_rect_x_px,
+                label_rect_y_px,
+                label_rect_width_px,
+                label_rect_height_px,
+            );
+
+            let mut font_paint = Paint::color(self.font_color);
+            font_paint.set_font(&[self.font_id]);
+            font_paint.set_font_size(self.font_size_pts * region.scale_factor.0);
+            font_paint.set_text_baseline(firewheel::vg::Baseline::Middle);
+
+            vg.fill_text(
+                label_rect_x_px,
+                label_rect_y_center_px,
+                &self.label,
+                &font_paint,
+            );
+
+            vg.reset_scissor();
+        }
+    }
 }
-*/

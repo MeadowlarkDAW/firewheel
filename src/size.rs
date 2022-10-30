@@ -1,25 +1,35 @@
 use std::ops::{Add, AddAssign, Sub, SubAssign};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct ScaleFactor(pub f64);
+pub struct ScaleFactor(pub f32);
 
-impl ScaleFactor {
-    pub fn as_f32(&self) -> f32 {
-        self.0 as f32
+impl From<f32> for ScaleFactor {
+    fn from(s: f32) -> Self {
+        Self(s)
     }
 }
 
 impl From<f64> for ScaleFactor {
     fn from(s: f64) -> Self {
-        Self(s)
+        Self(s as f32)
+    }
+}
+
+impl ScaleFactor {
+    pub fn as_f32(&self) -> f32 {
+        self.0
+    }
+
+    pub fn as_f64(&self) -> f64 {
+        f64::from(self.0)
     }
 }
 
 /// A size in logical coordinates (points)
 #[derive(Default, Debug, Clone, Copy, PartialEq)]
 pub struct Size {
-    width: f64,
-    height: f64,
+    width: f32,
+    height: f32,
 }
 
 impl Size {
@@ -28,7 +38,7 @@ impl Size {
     /// If any of the given values are less than zero, then they will
     /// be set to zero.
     #[inline]
-    pub fn new(width: f64, height: f64) -> Self {
+    pub fn new(width: f32, height: f32) -> Self {
         Self {
             width: width.max(0.0),
             height: height.max(0.0),
@@ -39,16 +49,16 @@ impl Size {
     #[inline]
     pub fn to_physical(&self, scale_factor: ScaleFactor) -> PhysicalSize {
         PhysicalSize {
-            width: (self.width * scale_factor.0).round() as u32,
-            height: (self.height * scale_factor.0).round() as u32,
+            width: (self.width * scale_factor.as_f32()).round() as u32,
+            height: (self.height * scale_factor.as_f32()).round() as u32,
         }
     }
 
-    pub fn width(&self) -> f64 {
+    pub fn width(&self) -> f32 {
         self.width
     }
 
-    pub fn height(&self) -> f64 {
+    pub fn height(&self) -> f32 {
         self.height
     }
 
@@ -57,7 +67,7 @@ impl Size {
     /// If the given value is less than zero, then the width will
     /// be set to zero.
     #[inline]
-    pub fn set_width(&mut self, width: f64) {
+    pub fn set_width(&mut self, width: f32) {
         self.width = width.max(0.0);
     }
 
@@ -66,7 +76,7 @@ impl Size {
     /// If the given value is less than zero, then the height will
     /// be set to zero.
     #[inline]
-    pub fn set_height(&mut self, height: f64) {
+    pub fn set_height(&mut self, height: f32) {
         self.height = height.max(0.0);
     }
 
@@ -88,8 +98,8 @@ impl Size {
 
     #[inline]
     pub fn partial_eq_with_epsilon(&self, other: Size) -> bool {
-        ((self.width - other.width).abs() <= f64::EPSILON)
-            && ((self.height - other.height).abs() <= f64::EPSILON)
+        ((self.width - other.width).abs() <= f32::EPSILON)
+            && ((self.height - other.height).abs() <= f32::EPSILON)
     }
 }
 
@@ -110,17 +120,17 @@ impl PhysicalSize {
     #[inline]
     pub fn to_logical(&self, scale_factor: ScaleFactor) -> Size {
         Size {
-            width: f64::from(self.width) / scale_factor.0,
-            height: f64::from(self.height) / scale_factor.0,
+            width: self.width as f32 / scale_factor.as_f32(),
+            height: self.height as f32 / scale_factor.as_f32(),
         }
     }
 
     /// Convert to logical size (points) using the reciprocal of the scale factor
     #[inline]
-    pub fn to_logical_from_scale_recip(&self, scale_recip: f64) -> Size {
+    pub fn to_logical_from_scale_recip(&self, scale_recip: f32) -> Size {
         Size {
-            width: f64::from(self.width) * scale_recip,
-            height: f64::from(self.height) * scale_recip,
+            width: self.width as f32 * scale_recip,
+            height: self.height as f32 * scale_recip,
         }
     }
 }
@@ -142,8 +152,8 @@ impl Point {
     #[inline]
     pub fn to_physical(&self, scale_factor: ScaleFactor) -> PhysicalPoint {
         PhysicalPoint {
-            x: (self.x * scale_factor.0).round() as i32,
-            y: (self.y * scale_factor.0).round() as i32,
+            x: (self.x * scale_factor.as_f64()).round() as i32,
+            y: (self.y * scale_factor.as_f64()).round() as i32,
         }
     }
 
@@ -202,8 +212,8 @@ impl PhysicalPoint {
     #[inline]
     pub fn to_logical(&self, scale_factor: ScaleFactor) -> Point {
         Point {
-            x: f64::from(self.x) / scale_factor.0,
-            y: f64::from(self.y) / scale_factor.0,
+            x: f64::from(self.x) / scale_factor.as_f64(),
+            y: f64::from(self.y) / scale_factor.as_f64(),
         }
     }
 
@@ -231,8 +241,8 @@ impl Rect {
         Self {
             pos_tl: pos,
             pos_br: Point {
-                x: pos.x + size.width,
-                y: pos.y + size.height,
+                x: pos.x + f64::from(size.width),
+                y: pos.y + f64::from(size.height),
             },
             size,
         }
@@ -246,11 +256,11 @@ impl Rect {
         self.pos_tl.y
     }
 
-    pub fn width(&self) -> f64 {
+    pub fn width(&self) -> f32 {
         self.size.width
     }
 
-    pub fn height(&self) -> f64 {
+    pub fn height(&self) -> f32 {
         self.size.height
     }
 
@@ -276,12 +286,12 @@ impl Rect {
 
     #[inline]
     pub fn center_x(&self) -> f64 {
-        self.pos_tl.x + (self.size.width / 2.0)
+        self.pos_tl.x + (f64::from(self.size.width) / 2.0)
     }
 
     #[inline]
     pub fn center_y(&self) -> f64 {
-        self.pos_tl.y + (self.size.height / 2.0)
+        self.pos_tl.y + (f64::from(self.size.height) / 2.0)
     }
 
     #[inline]
@@ -295,15 +305,15 @@ impl Rect {
     #[inline]
     pub fn set_pos(&mut self, pos: Point) {
         self.pos_tl = pos;
-        self.pos_br.x = pos.x + self.size.width;
-        self.pos_br.y = pos.y + self.size.height;
+        self.pos_br.x = pos.x + f64::from(self.size.width);
+        self.pos_br.y = pos.y + f64::from(self.size.height);
     }
 
     #[inline]
     pub fn set_size(&mut self, size: Size) {
         self.size = size;
-        self.pos_br.x = self.pos_tl.x + size.width;
-        self.pos_br.y = self.pos_tl.y + size.height;
+        self.pos_br.x = self.pos_tl.x + f64::from(size.width);
+        self.pos_br.y = self.pos_tl.y + f64::from(size.height);
     }
 
     #[inline]
@@ -382,7 +392,7 @@ impl PhysicalRect {
     pub fn to_logical_from_scale_recip(&self, scale_recip: f64) -> Rect {
         Rect::new(
             self.pos.to_logical_from_scale_recip(scale_recip),
-            self.size.to_logical_from_scale_recip(scale_recip),
+            self.size.to_logical_from_scale_recip(scale_recip as f32),
         )
     }
 }

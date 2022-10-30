@@ -50,6 +50,10 @@ impl<MSG> WidgetNodeSet<MSG> {
         self.entries.clear();
     }
 
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
     /// Used for testing purposes
     #[allow(unused)]
     pub fn contains(&self, widget_entry: &StrongWidgetNodeEntry<MSG>) -> bool {

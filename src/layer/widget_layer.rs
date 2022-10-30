@@ -261,8 +261,10 @@ impl<MSG> WidgetLayer<MSG> {
 
         if event.position.x < self.outer_position.x
             || event.position.y < self.outer_position.y
-            || event.position.x > self.outer_position.x + self.region_tree.layer_size().width()
-            || event.position.y > self.outer_position.y + self.region_tree.layer_size().height()
+            || event.position.x
+                > self.outer_position.x + f64::from(self.region_tree.layer_size().width())
+            || event.position.y
+                > self.outer_position.y + f64::from(self.region_tree.layer_size().height())
         {
             return None;
         }

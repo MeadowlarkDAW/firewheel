@@ -1134,13 +1134,13 @@ impl Region {
 
         let new_x = match self.internal_anchor.h_align {
             HAlign::Left => internal_anchor_pos_x,
-            HAlign::Center => internal_anchor_pos_x - (self.rect.width() / 2.0),
-            HAlign::Right => internal_anchor_pos_x - self.rect.width(),
+            HAlign::Center => internal_anchor_pos_x - (f64::from(self.rect.width()) / 2.0),
+            HAlign::Right => internal_anchor_pos_x - f64::from(self.rect.width()),
         };
         let new_y = match self.internal_anchor.v_align {
             VAlign::Top => internal_anchor_pos_y,
-            VAlign::Center => internal_anchor_pos_y - (self.rect.height() / 2.0),
-            VAlign::Bottom => internal_anchor_pos_y - self.rect.height(),
+            VAlign::Center => internal_anchor_pos_y - (f64::from(self.rect.height()) / 2.0),
+            VAlign::Bottom => internal_anchor_pos_y - f64::from(self.rect.height()),
         };
 
         self.rect.set_pos(Point::new(new_x, new_y));
@@ -1350,9 +1350,9 @@ mod tests {
         let container_root1_expected_rect = Rect::new(
             Point {
                 x: layer_rect.x2() + container_root1_region_info.anchor_offset.x
-                    - container_root1_region_info.size.width(),
+                    - f64::from(container_root1_region_info.size.width()),
                 y: layer_rect.y2() + container_root1_region_info.anchor_offset.y
-                    - container_root1_region_info.size.height(),
+                    - f64::from(container_root1_region_info.size.height()),
             },
             container_root1_region_info.size,
         );
@@ -1490,10 +1490,10 @@ mod tests {
         let container_root0_0_expected_rect = Rect::new(
             Point {
                 x: container_root0_expected_rect.center_x()
-                    - (container_root0_0_region_info.size.width() / 2.0)
+                    - (f64::from(container_root0_0_region_info.size.width()) / 2.0)
                     + container_root0_0_region_info.anchor_offset.x,
                 y: container_root0_expected_rect.center_y()
-                    - (container_root0_0_region_info.size.height() / 2.0)
+                    - (f64::from(container_root0_0_region_info.size.height()) / 2.0)
                     + container_root0_0_region_info.anchor_offset.y,
             },
             container_root0_0_region_info.size,

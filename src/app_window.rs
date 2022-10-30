@@ -20,7 +20,7 @@ use crate::renderer::{BackgroundLayerRenderer, Renderer, WidgetLayerRenderer};
 use crate::widget_node_set::WidgetNodeSet;
 use crate::{
     BackgroundNode, ContainerRegionRef, EventCapturedStatus, PhysicalSize, Point, RegionInfo,
-    ScaleFactor, Size, WidgetNodeRequests,
+    ScaleFactor, Size, WidgetNodeRequests, VG,
 };
 
 pub struct AppWindow<MSG> {
@@ -88,6 +88,14 @@ impl<MSG> AppWindow<MSG> {
         F: FnMut(&str) -> *const c_void,
     {
         Self::new(scale_factor, Renderer::new_from_function(load_fn))
+    }
+
+    pub fn vg(&mut self) -> &mut VG {
+        &mut self.renderer.as_mut().unwrap().vg
+    }
+
+    pub fn scale_factor(&self) -> ScaleFactor {
+        self.scale_factor
     }
 
     pub fn add_widget_layer(
