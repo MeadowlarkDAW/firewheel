@@ -1050,6 +1050,27 @@ impl<MSG> AppWindow<MSG> {
         }
     }
 
+    pub fn is_dirty(&self) -> bool {
+        for (_z_order, layers) in self.layers_ordered.iter() {
+            for layer_entry in layers.iter() {
+                match layer_entry {
+                    StrongLayerEntry::Widget(layer_entry) => {
+                        if layer_entry.borrow().is_dirty() {
+                            return true;
+                        }
+                    }
+                    StrongLayerEntry::Background(layer_entry) => {
+                        if layer_entry.borrow().is_dirty {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+
+        false
+    }
+
     pub fn render(&mut self, window_size: PhysicalSize, clear_color: Color) {
         let mut renderer = self.renderer.take().unwrap();
 

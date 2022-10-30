@@ -200,8 +200,6 @@ fn main() {
                             &mut msg_out_queue,
                         )
                         .unwrap();
-
-                    window.request_redraw();
                 }
             }
             WindowEvent::ScaleFactorChanged {
@@ -235,8 +233,6 @@ fn main() {
                         )
                         .unwrap();
                 }
-
-                window.request_redraw();
             }
             _ => {}
         },
@@ -244,9 +240,12 @@ fn main() {
             app_window.render(window_size, Color::rgb(30, 30, 30));
 
             gl_surface.swap_buffers(&current_gl_context).unwrap();
-            window.request_redraw();
         }
-        Event::MainEventsCleared => {}
+        Event::MainEventsCleared => {
+            if app_window.is_dirty() {
+                window.request_redraw();
+            }
+        }
         _ => {}
     });
 }
@@ -418,7 +417,7 @@ impl<MyMsg> WidgetNode<MyMsg> for TestLabelButton {
             self.border_radius_pts,
         );
 
-        let mut bg_paint = Paint::color(Color::rgb(44, 44, 44));
+        let mut bg_paint = Paint::color(Color::rgb(41, 41, 41));
         let mut bg_stroke_paint = Paint::color(Color::rgb(22, 22, 22));
         bg_stroke_paint
             .set_line_width((self.border_width_pts as f32 * region.scale_factor.0).round());
