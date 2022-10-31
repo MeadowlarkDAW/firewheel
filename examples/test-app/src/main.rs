@@ -17,12 +17,16 @@ use raw_window_handle::{
 };
 use std::any::Any;
 use std::num::NonZeroU32;
+use std::rc::Rc;
 use std::time::Instant;
 use winit::{
     event::{Event, StartCause, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     window::{Window, WindowBuilder},
 };
+
+mod label_button;
+use label_button::{LabelButton, LabelButtonStyle};
 
 fn main() {
     env_logger::builder()
@@ -138,22 +142,19 @@ fn main() {
         true,
     );
 
-    let test_button = TestLabelButton::new(
-        main_font_id,
-        18.0,
-        Color::rgb(235, 235, 235),
+    let label_button_style = Rc::new(LabelButtonStyle::default());
+    let test_button = LabelButton::new(
         "Hello World!".into(),
-        8,
-        8,
-        0,
-        0,
-        1.0,
-        5.0,
+        main_font_id,
+        label_button_style.clone(),
+    );
+    //let test_button_size = test_button.compute_size(scale_factor, app_window.vg());
+    let test_button_size = label_button_style.compute_size(
+        "Hello World!",
+        main_font_id,
         scale_factor,
         app_window.vg(),
     );
-    //let test_button_size = test_button.compute_size(scale_factor, app_window.vg());
-    let test_button_size = test_button.estimated_size();
     let mut test_button_ref = app_window.add_widget_node(
         Box::new(test_button),
         &widget_layer_ref,
@@ -255,7 +256,7 @@ enum MyMsg {}
 struct TestBackgroundNode {}
 
 impl BackgroundNode for TestBackgroundNode {
-    fn on_user_event(&mut self, event: Box<dyn Any>) -> bool {
+    fn on_user_event(&mut self, _event: Box<dyn Any>) -> bool {
         false
     }
 
@@ -287,184 +288,5 @@ impl BackgroundNode for TestBackgroundNode {
 
         vg.fill_path(&mut path, &gradient_paint);
         vg.stroke_path(&mut path, &border_paint);
-    }
-}
-
-enum ButtonState {
-    Idle,
-    Hovered,
-    Active,
-}
-
-struct TestLabelButton {
-    label: String,
-    padding_lr_pts: u16,
-    padding_tb_pts: u16,
-    margin_lr_pts: u16,
-    margin_tb_pts: u16,
-
-    font_id: FontId,
-    font_size_pts: f32,
-    font_color: Color,
-
-    border_width_pts: f32,
-    border_radius_pts: f32,
-    font_rect_size_pts: Size,
-    estimated_size_pts: Size,
-
-    state: ButtonState,
-}
-
-impl TestLabelButton {
-    pub fn new(
-        font_id: FontId,
-        font_size_pts: f32,
-        font_color: Color,
-        label: String,
-        padding_lr_pts: u16,
-        padding_tb_pts: u16,
-        margin_lr_pts: u16,
-        margin_tb_pts: u16,
-        border_width_pts: f32,
-        border_radius_pts: f32,
-        scale_factor: ScaleFactor,
-        vg: &VG,
-    ) -> Self {
-        let mut new_self = Self {
-            label,
-            padding_lr_pts,
-            padding_tb_pts,
-            margin_lr_pts,
-            margin_tb_pts,
-            font_id,
-            font_size_pts,
-            font_color,
-            border_width_pts,
-            border_radius_pts,
-            font_rect_size_pts: Size::default(),
-            estimated_size_pts: Size::default(),
-            state: ButtonState::Idle,
-        };
-
-        new_self.compute_size(scale_factor, vg);
-
-        new_self
-    }
-
-    pub fn estimated_size(&self) -> Size {
-        self.estimated_size_pts
-    }
-
-    fn compute_size(&mut self, scale_factor: ScaleFactor, vg: &VG) {
-        let mut font_paint = Paint::color(Color::black());
-        font_paint.set_font(&[self.font_id]);
-        font_paint.set_font_size(self.font_size_pts * scale_factor.0);
-        font_paint.set_text_baseline(firewheel::vg::Baseline::Middle);
-
-        let font_metrics = vg.measure_text(0.0, 0.0, &self.label, &font_paint).unwrap();
-
-        self.font_rect_size_pts = Size::new(
-            font_metrics.width() / scale_factor.0,
-            font_metrics.height() / scale_factor.0,
-        );
-
-        let full_width_pts = (self.font_rect_size_pts.width()
-            + (f32::from(self.padding_lr_pts + self.margin_lr_pts) * 2.0))
-            .ceil();
-        let full_height_pts = (self.font_rect_size_pts.height()
-            + (f32::from(self.padding_tb_pts + self.margin_tb_pts) * 2.0))
-            .ceil();
-
-        self.estimated_size_pts = Size::new(full_width_pts, full_height_pts);
-    }
-}
-
-impl<MyMsg> WidgetNode<MyMsg> for TestLabelButton {
-    fn on_added(&mut self, _msg_out_queue: &mut Vec<MyMsg>) -> WidgetNodeType {
-        WidgetNodeType::Painted
-    }
-
-    fn on_visibility_hidden(&mut self, _msg_out_queue: &mut Vec<MyMsg>) {
-        println!("button hidden");
-    }
-
-    fn on_region_changed(&mut self, _assigned_rect: Rect) {
-        //println!("region changed");
-    }
-
-    fn on_user_event(
-        &mut self,
-        event: Box<dyn Any>,
-        _msg_out_queue: &mut Vec<MyMsg>,
-    ) -> Option<WidgetNodeRequests> {
-        None
-    }
-
-    fn on_input_event(
-        &mut self,
-        event: &InputEvent,
-        msg_out_queue: &mut Vec<MyMsg>,
-    ) -> EventCapturedStatus {
-        EventCapturedStatus::NotCaptured
-    }
-
-    #[allow(unused)]
-    fn paint(&mut self, vg: &mut VG, region: &PaintRegionInfo) {
-        let mut bg_path = region.spanning_rounded_rect_path(
-            self.margin_lr_pts,
-            self.margin_tb_pts,
-            self.border_width_pts,
-            self.border_radius_pts,
-        );
-
-        let mut bg_paint = Paint::color(Color::rgb(41, 41, 41));
-        let mut bg_stroke_paint = Paint::color(Color::rgb(22, 22, 22));
-        bg_stroke_paint
-            .set_line_width((self.border_width_pts as f32 * region.scale_factor.0).round());
-
-        vg.fill_path(&mut bg_path, &bg_paint);
-        vg.stroke_path(&mut bg_path, &bg_stroke_paint);
-
-        let label_rect_width_px = region.physical_rect.size.width as f32
-            - (f32::from(self.margin_lr_pts + self.padding_lr_pts) * region.scale_factor.0 * 2.0)
-                .round()
-                .max(0.0);
-        let label_rect_height_px = region.physical_rect.size.height as f32
-            - (f32::from(self.margin_tb_pts + self.padding_tb_pts) * region.scale_factor.0 * 2.0)
-                .round()
-                .max(0.0);
-
-        if label_rect_width_px != 0.0 && label_rect_height_px != 0.0 {
-            let label_rect_x_px = region.physical_rect.pos.x as f32
-                + (f32::from(self.margin_lr_pts + self.padding_lr_pts) * region.scale_factor.0);
-            let label_rect_y_px = region.physical_rect.pos.y as f32
-                + (f32::from(self.margin_tb_pts + self.padding_tb_pts) * region.scale_factor.0);
-            let label_rect_y_center_px = (region.physical_rect.pos.y as f32
-                + (f32::from(self.margin_tb_pts + self.padding_tb_pts) * region.scale_factor.0)
-                + (self.font_rect_size_pts.height() * region.scale_factor.0 / 2.0))
-                .round()
-                - 0.5;
-
-            vg.scissor(
-                label_rect_x_px,
-                label_rect_y_px,
-                label_rect_width_px,
-                label_rect_height_px,
-            );
-
-            let mut font_paint = Paint::color(self.font_color);
-            font_paint.set_font(&[self.font_id]);
-            font_paint.set_font_size(self.font_size_pts * region.scale_factor.0);
-            font_paint.set_text_baseline(firewheel::vg::Baseline::Middle);
-
-            vg.fill_text(
-                label_rect_x_px,
-                label_rect_y_center_px,
-                &self.label,
-                &font_paint,
-            );
-
-            vg.reset_scissor();
-        }
     }
 }
