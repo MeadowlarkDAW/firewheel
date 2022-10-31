@@ -1,20 +1,24 @@
 use firewheel::vg::{Color, FontId, Paint};
 use firewheel::{
-    event::InputEvent, BgColor, EventCapturedStatus, PaintRegionInfo, Rect, ScaleFactor, Size,
-    WidgetNode, WidgetNodeRequests, WidgetNodeType, VG,
+    event::InputEvent, BgColor, EventCapturedStatus, PaintRegionInfo, Point, Rect, ScaleFactor,
+    Size, WidgetNode, WidgetNodeRequests, WidgetNodeType, VG,
 };
 use std::any::Any;
 use std::rc::Rc;
 
 enum ButtonState {
     Idle,
+    KeyboardFocus,
     Hovered,
     Down,
-    KeyboardFocus,
 }
 
-pub enum LabelButtonEvent {
+pub enum LabelButtonEvent<A: Clone + 'static> {
     SetLabel(String),
+    SetAction {
+        action: Option<A>,
+        emit_on_release: bool,
+    },
     SetStyle(Rc<LabelButtonStyle>),
     SetFontID(FontId),
 }
@@ -108,54 +112,77 @@ impl Default for LabelButtonStyle {
     }
 }
 
-pub struct LabelButton {
+pub struct LabelButton<A> {
     label: String,
     font_id: FontId,
 
     style: Rc<LabelButtonStyle>,
 
+    pointer_bounds: Rect,
+
     font_bounds_pts: Size,
     do_recompute_font_bounds: bool,
+    keyboard_focused: bool,
+
+    action: Option<A>,
+    emit_on_release: bool,
 
     state: ButtonState,
 }
 
-impl LabelButton {
-    pub fn new(label: String, font_id: FontId, style: Rc<LabelButtonStyle>) -> Self {
+impl<A: Clone + 'static> LabelButton<A> {
+    pub fn new(
+        label: String,
+        font_id: FontId,
+        style: Rc<LabelButtonStyle>,
+        action: Option<A>,
+        emit_on_release: bool,
+    ) -> Self {
         Self {
             label,
             font_id,
             style,
+            pointer_bounds: Rect::default(),
             font_bounds_pts: Size::default(),
             do_recompute_font_bounds: true,
+            keyboard_focused: false,
+            action,
+            emit_on_release,
             state: ButtonState::Idle,
         }
     }
 }
 
-impl<MSG> WidgetNode<MSG> for LabelButton {
-    fn on_added(&mut self, _msg_out_queue: &mut Vec<MSG>) -> WidgetNodeType {
+impl<A: Clone + 'static> WidgetNode<A> for LabelButton<A> {
+    fn on_added(&mut self, _action_queue: &mut Vec<A>) -> WidgetNodeType {
         WidgetNodeType::Painted
     }
 
-    fn on_visibility_hidden(&mut self, _msg_out_queue: &mut Vec<MSG>) {
-        //println!("button hidden");
+    fn on_visibility_hidden(&mut self, _action_queue: &mut Vec<A>) {
+        self.state = ButtonState::Idle;
     }
 
-    fn on_region_changed(&mut self, _assigned_rect: Rect) {
-        //println!("region changed");
+    fn on_region_changed(&mut self, assigned_rect: Rect) {
+        self.pointer_bounds.set_pos(Point::new(
+            assigned_rect.x() + f64::from(self.style.margin_lr_pts),
+            assigned_rect.y() + f64::from(self.style.margin_tb_pts),
+        ));
+        self.pointer_bounds.set_size(Size::new(
+            (assigned_rect.size().width() - (f32::from(self.style.margin_lr_pts) * 2.0)).max(0.0),
+            (assigned_rect.size().height() - (f32::from(self.style.margin_tb_pts) * 2.0)).max(0.0),
+        ));
     }
 
     fn on_user_event(
         &mut self,
         event: Box<dyn Any>,
-        _msg_out_queue: &mut Vec<MSG>,
+        _action_queue: &mut Vec<A>,
     ) -> Option<WidgetNodeRequests> {
-        if let Some(event) = event.downcast_ref::<LabelButtonEvent>() {
-            match event {
+        if let Ok(event) = event.downcast::<LabelButtonEvent<A>>() {
+            match *event {
                 LabelButtonEvent::SetLabel(label) => {
-                    if &self.label != label {
-                        self.label = label.clone();
+                    if self.label != label {
+                        self.label = label;
                         self.do_recompute_font_bounds = true;
 
                         return Some(WidgetNodeRequests {
@@ -164,11 +191,18 @@ impl<MSG> WidgetNode<MSG> for LabelButton {
                         });
                     }
                 }
+                LabelButtonEvent::SetAction {
+                    action,
+                    emit_on_release,
+                } => {
+                    self.action = action;
+                    self.emit_on_release = emit_on_release;
+                }
                 LabelButtonEvent::SetStyle(style) => {
                     if style.font_size_pts != self.style.font_size_pts {
                         self.do_recompute_font_bounds = true;
                     }
-                    self.style = style.clone();
+                    self.style = style;
 
                     return Some(WidgetNodeRequests {
                         repaint: true,
@@ -176,8 +210,8 @@ impl<MSG> WidgetNode<MSG> for LabelButton {
                     });
                 }
                 LabelButtonEvent::SetFontID(font_id) => {
-                    if self.font_id != *font_id {
-                        self.font_id = *font_id;
+                    if self.font_id != font_id {
+                        self.font_id = font_id;
                         self.do_recompute_font_bounds = true;
 
                         return Some(WidgetNodeRequests {
@@ -195,8 +229,115 @@ impl<MSG> WidgetNode<MSG> for LabelButton {
     fn on_input_event(
         &mut self,
         event: &InputEvent,
-        msg_out_queue: &mut Vec<MSG>,
+        action_queue: &mut Vec<A>,
     ) -> EventCapturedStatus {
+        match event {
+            InputEvent::Pointer(event) => {
+                let mouse_is_over = self.pointer_bounds.contains_point(event.position);
+
+                match self.state {
+                    ButtonState::Idle | ButtonState::KeyboardFocus => {
+                        if mouse_is_over {
+                            self.state = ButtonState::Hovered;
+
+                            if event.left_button.just_pressed() {
+                                self.state = ButtonState::Down;
+
+                                if !self.emit_on_release {
+                                    if let Some(action) = &self.action {
+                                        action_queue.push(action.clone());
+                                    }
+                                }
+                            }
+
+                            return EventCapturedStatus::Captured(WidgetNodeRequests {
+                                repaint: true,
+                                // Listen to when the pointer leaves so we can reset
+                                // the state when it does.
+                                set_pointer_leave_listen: Some(true),
+                                ..Default::default()
+                            });
+                        }
+                    }
+                    ButtonState::Hovered => {
+                        if mouse_is_over {
+                            if event.left_button.just_pressed() {
+                                self.state = ButtonState::Down;
+
+                                if !self.emit_on_release {
+                                    if let Some(action) = &self.action {
+                                        action_queue.push(action.clone());
+                                    }
+                                }
+
+                                return EventCapturedStatus::Captured(WidgetNodeRequests {
+                                    repaint: true,
+                                    ..Default::default()
+                                });
+                            } else {
+                                return EventCapturedStatus::Captured(WidgetNodeRequests {
+                                    repaint: false,
+                                    ..Default::default()
+                                });
+                            }
+                        } else {
+                            self.state = if self.keyboard_focused {
+                                ButtonState::KeyboardFocus
+                            } else {
+                                ButtonState::Idle
+                            };
+
+                            return EventCapturedStatus::Captured(WidgetNodeRequests {
+                                repaint: true,
+                                // Stop listening to pointer leave events to free up
+                                // resources.
+                                set_pointer_leave_listen: Some(false),
+                                ..Default::default()
+                            });
+                        };
+                    }
+                    ButtonState::Down => {
+                        if mouse_is_over {
+                            if event.left_button.just_unpressed() {
+                                self.state = ButtonState::Hovered;
+
+                                if self.emit_on_release {
+                                    if let Some(action) = &self.action {
+                                        action_queue.push(action.clone());
+                                    }
+                                }
+
+                                return EventCapturedStatus::Captured(WidgetNodeRequests {
+                                    repaint: true,
+                                    ..Default::default()
+                                });
+                            } else {
+                                return EventCapturedStatus::Captured(WidgetNodeRequests {
+                                    repaint: false,
+                                    ..Default::default()
+                                });
+                            }
+                        } else {
+                            self.state = if self.keyboard_focused {
+                                ButtonState::KeyboardFocus
+                            } else {
+                                ButtonState::Idle
+                            };
+
+                            return EventCapturedStatus::Captured(WidgetNodeRequests {
+                                repaint: true,
+                                // Stop listening to pointer leave events to free up
+                                // resources.
+                                set_pointer_leave_listen: Some(false),
+                                ..Default::default()
+                            });
+                        };
+                    }
+                }
+            }
+            _ => {}
+        }
+
         EventCapturedStatus::NotCaptured
     }
 

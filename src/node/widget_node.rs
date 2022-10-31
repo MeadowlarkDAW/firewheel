@@ -2,7 +2,7 @@ use std::any::Any;
 
 use crate::{
     event::{InputEvent, KeyboardEventsListen},
-    Rect, ScaleFactor, VG,
+    Rect, VG,
 };
 
 use super::PaintRegionInfo;
@@ -16,11 +16,11 @@ pub enum WidgetNodeType {
     PointerOnly,
 }
 
-pub trait WidgetNode<MSG> {
-    fn on_added(&mut self, msg_out_queue: &mut Vec<MSG>) -> WidgetNodeType;
+pub trait WidgetNode<A: Clone + 'static> {
+    fn on_added(&mut self, action_queue: &mut Vec<A>) -> WidgetNodeType;
 
     #[allow(unused)]
-    fn on_visibility_hidden(&mut self, msg_out_queue: &mut Vec<MSG>) {}
+    fn on_visibility_hidden(&mut self, action_queue: &mut Vec<A>) {}
 
     #[allow(unused)]
     fn on_region_changed(&mut self, assigned_rect: Rect) {}
@@ -29,7 +29,7 @@ pub trait WidgetNode<MSG> {
     fn on_user_event(
         &mut self,
         event: Box<dyn Any>,
-        msg_out_queue: &mut Vec<MSG>,
+        action_queue: &mut Vec<A>,
     ) -> Option<WidgetNodeRequests> {
         None
     }
@@ -37,7 +37,7 @@ pub trait WidgetNode<MSG> {
     fn on_input_event(
         &mut self,
         event: &InputEvent,
-        msg_out_queue: &mut Vec<MSG>,
+        action_queue: &mut Vec<A>,
     ) -> EventCapturedStatus;
 
     #[allow(unused)]

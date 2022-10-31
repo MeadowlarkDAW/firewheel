@@ -1,4 +1,4 @@
-use firewheel::event::InputEvent;
+use firewheel::event::{InputEvent, Modifiers};
 use firewheel::vg::{Color, FontId, Paint, Path};
 use firewheel::{
     Anchor, AppWindow, BackgroundNode, EventCapturedStatus, PaintRegionInfo, ParentAnchorType,
@@ -119,7 +119,8 @@ fn main() {
     let mut window_size = PhysicalSize::new(window.inner_size().width, window.inner_size().height);
     let mut scale_factor = window.scale_factor().into();
     let mut window_logical_size = window_size.to_logical(scale_factor);
-    let mut msg_out_queue = Vec::new();
+    let mut modifiers = Modifiers::default();
+    let mut action_queue = Vec::new();
 
     let main_font_id = app_window
         .vg()
@@ -147,6 +148,8 @@ fn main() {
         "Hello World!".into(),
         main_font_id,
         label_button_style.clone(),
+        None,
+        true,
     );
     //let test_button_size = test_button.compute_size(scale_factor, app_window.vg());
     let test_button_size = label_button_style.compute_size(
@@ -166,7 +169,7 @@ fn main() {
             anchor_offset: Point::new(0.0, 0.0),
         },
         true,
-        &mut msg_out_queue,
+        &mut action_queue,
     );
 
     // --- Run event loop --------------------------------------------------------------
@@ -198,7 +201,7 @@ fn main() {
                         .set_widget_layer_size(
                             &mut widget_layer_ref,
                             window_logical_size,
-                            &mut msg_out_queue,
+                            &mut action_queue,
                         )
                         .unwrap();
                 }
@@ -215,7 +218,7 @@ fn main() {
                     );
 
                     scale_factor = (*window_scale_factor).into();
-                    app_window.set_scale_factor(scale_factor, &mut msg_out_queue);
+                    app_window.set_scale_factor(scale_factor, &mut action_queue);
 
                     window_size = PhysicalSize::new(new_inner_size.width, new_inner_size.height);
                     window_logical_size = window_size.to_logical(scale_factor);
@@ -230,10 +233,13 @@ fn main() {
                         .set_widget_layer_size(
                             &mut widget_layer_ref,
                             window_logical_size,
-                            &mut msg_out_queue,
+                            &mut action_queue,
                         )
                         .unwrap();
                 }
+            }
+            WindowEvent::ModifiersChanged(m) => {
+                modifiers = firewheel::event::from_winit_modifiers(m);
             }
             _ => {}
         },
@@ -251,6 +257,7 @@ fn main() {
     });
 }
 
+#[derive(Clone)]
 enum MyMsg {}
 
 struct TestBackgroundNode {}

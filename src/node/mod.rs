@@ -101,18 +101,18 @@ impl PaintRegionInfo {
     }
 }
 
-pub(crate) struct StrongWidgetNodeEntry<MSG> {
-    shared: Rc<RefCell<Box<dyn WidgetNode<MSG>>>>,
-    assigned_layer: WeakWidgetLayerEntry<MSG>,
-    assigned_region: WeakRegionTreeEntry<MSG>,
+pub(crate) struct StrongWidgetNodeEntry<A: Clone + 'static> {
+    shared: Rc<RefCell<Box<dyn WidgetNode<A>>>>,
+    assigned_layer: WeakWidgetLayerEntry<A>,
+    assigned_region: WeakRegionTreeEntry<A>,
     unique_id: u64,
 }
 
-impl<MSG> StrongWidgetNodeEntry<MSG> {
+impl<A: Clone + 'static> StrongWidgetNodeEntry<A> {
     pub fn new(
-        shared: Rc<RefCell<Box<dyn WidgetNode<MSG>>>>,
-        assigned_layer: WeakWidgetLayerEntry<MSG>,
-        assigned_region: WeakRegionTreeEntry<MSG>,
+        shared: Rc<RefCell<Box<dyn WidgetNode<A>>>>,
+        assigned_layer: WeakWidgetLayerEntry<A>,
+        assigned_region: WeakRegionTreeEntry<A>,
         unique_id: u64,
     ) -> Self {
         Self {
@@ -123,7 +123,7 @@ impl<MSG> StrongWidgetNodeEntry<MSG> {
         }
     }
 
-    pub fn borrow_mut(&mut self) -> RefMut<'_, Box<dyn WidgetNode<MSG>>> {
+    pub fn borrow_mut(&mut self) -> RefMut<'_, Box<dyn WidgetNode<A>>> {
         RefCell::borrow_mut(&self.shared)
     }
 
@@ -131,23 +131,23 @@ impl<MSG> StrongWidgetNodeEntry<MSG> {
         self.unique_id
     }
 
-    pub fn set_assigned_region(&mut self, region: WeakRegionTreeEntry<MSG>) {
+    pub fn set_assigned_region(&mut self, region: WeakRegionTreeEntry<A>) {
         self.assigned_region = region;
     }
 
-    pub fn assigned_layer_mut(&mut self) -> &mut WeakWidgetLayerEntry<MSG> {
+    pub fn assigned_layer_mut(&mut self) -> &mut WeakWidgetLayerEntry<A> {
         &mut self.assigned_layer
     }
 
-    pub fn assigned_region(&self) -> &WeakRegionTreeEntry<MSG> {
+    pub fn assigned_region(&self) -> &WeakRegionTreeEntry<A> {
         &self.assigned_region
     }
 
-    pub fn assigned_region_mut(&mut self) -> &mut WeakRegionTreeEntry<MSG> {
+    pub fn assigned_region_mut(&mut self) -> &mut WeakRegionTreeEntry<A> {
         &mut self.assigned_region
     }
 
-    pub fn downgrade(&self) -> WeakWidgetNodeEntry<MSG> {
+    pub fn downgrade(&self) -> WeakWidgetNodeEntry<A> {
         WeakWidgetNodeEntry {
             shared: Rc::downgrade(&self.shared),
             assigned_layer: self.assigned_layer.clone(),
@@ -157,7 +157,7 @@ impl<MSG> StrongWidgetNodeEntry<MSG> {
     }
 }
 
-impl<MSG> Clone for StrongWidgetNodeEntry<MSG> {
+impl<A: Clone + 'static> Clone for StrongWidgetNodeEntry<A> {
     fn clone(&self) -> Self {
         Self {
             shared: Rc::clone(&self.shared),
@@ -168,29 +168,29 @@ impl<MSG> Clone for StrongWidgetNodeEntry<MSG> {
     }
 }
 
-impl<MSG> PartialEq for StrongWidgetNodeEntry<MSG> {
+impl<A: Clone + 'static> PartialEq for StrongWidgetNodeEntry<A> {
     fn eq(&self, other: &Self) -> bool {
         self.unique_id.eq(&other.unique_id)
     }
 }
 
-impl<MSG> Eq for StrongWidgetNodeEntry<MSG> {}
+impl<A: Clone + 'static> Eq for StrongWidgetNodeEntry<A> {}
 
-impl<MSG> Hash for StrongWidgetNodeEntry<MSG> {
+impl<A: Clone + 'static> Hash for StrongWidgetNodeEntry<A> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.unique_id.hash(state)
     }
 }
 
-pub(crate) struct WeakWidgetNodeEntry<MSG> {
-    shared: Weak<RefCell<Box<dyn WidgetNode<MSG>>>>,
-    assigned_layer: WeakWidgetLayerEntry<MSG>,
-    assigned_region: WeakRegionTreeEntry<MSG>,
+pub(crate) struct WeakWidgetNodeEntry<A: Clone + 'static> {
+    shared: Weak<RefCell<Box<dyn WidgetNode<A>>>>,
+    assigned_layer: WeakWidgetLayerEntry<A>,
+    assigned_region: WeakRegionTreeEntry<A>,
     unique_id: u64,
 }
 
-impl<MSG> WeakWidgetNodeEntry<MSG> {
-    pub fn upgrade(&self) -> Option<StrongWidgetNodeEntry<MSG>> {
+impl<A: Clone + 'static> WeakWidgetNodeEntry<A> {
+    pub fn upgrade(&self) -> Option<StrongWidgetNodeEntry<A>> {
         self.shared.upgrade().map(|shared| StrongWidgetNodeEntry {
             shared,
             assigned_layer: self.assigned_layer.clone(),
@@ -266,11 +266,11 @@ impl WeakBackgroundNodeEntry {
     }
 }
 
-pub struct WidgetNodeRef<MSG> {
-    pub(crate) shared: WeakWidgetNodeEntry<MSG>,
+pub struct WidgetNodeRef<A: Clone + 'static> {
+    pub(crate) shared: WeakWidgetNodeEntry<A>,
 }
 
-impl<MSG> WidgetNodeRef<MSG> {
+impl<A: Clone + 'static> WidgetNodeRef<A> {
     pub fn unique_id(&self) -> u64 {
         self.shared.unique_id
     }

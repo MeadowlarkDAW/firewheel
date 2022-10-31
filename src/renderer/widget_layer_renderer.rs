@@ -22,9 +22,9 @@ impl WidgetLayerRenderer {
         }
     }
 
-    pub fn render<MSG>(
+    pub fn render<A: Clone + 'static>(
         &mut self,
-        layer: &mut WidgetLayer<MSG>,
+        layer: &mut WidgetLayer<A>,
         vg: &mut femtovg::Canvas<femtovg::renderer::OpenGl>,
         //glow_context: &mut glow::Context,
         scale_factor: ScaleFactor,

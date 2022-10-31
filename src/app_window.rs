@@ -23,24 +23,24 @@ use crate::{
     ScaleFactor, Size, WidgetNodeRequests, VG,
 };
 
-pub struct AppWindow<MSG> {
-    pub(crate) layers_ordered: Vec<(i32, Vec<StrongLayerEntry<MSG>>)>,
+pub struct AppWindow<A: Clone + 'static> {
+    pub(crate) layers_ordered: Vec<(i32, Vec<StrongLayerEntry<A>>)>,
     pub(crate) widget_layer_renderers_to_clean_up: Vec<WidgetLayerRenderer>,
     pub(crate) background_layer_renderers_to_clean_up: Vec<BackgroundLayerRenderer>,
 
     next_layer_id: u64,
     next_widget_id: u64,
 
-    widget_with_pointer_lock: Option<(StrongWidgetNodeEntry<MSG>, SetPointerLockType)>,
-    widgets_to_send_input_event: Vec<(StrongWidgetNodeEntry<MSG>, InputEvent)>,
-    widget_with_text_comp_listen: Option<StrongWidgetNodeEntry<MSG>>,
-    widgets_with_keyboard_listen: WidgetNodeSet<MSG>,
-    widgets_scheduled_for_animation: WidgetNodeSet<MSG>,
-    widgets_with_pointer_leave_listen: WidgetNodeSet<MSG>,
-    widgets_to_remove_from_animation: Vec<StrongWidgetNodeEntry<MSG>>,
-    widget_requests: Vec<(StrongWidgetNodeEntry<MSG>, WidgetNodeRequests)>,
-    widgets_just_shown: WidgetNodeSet<MSG>,
-    widgets_just_hidden: WidgetNodeSet<MSG>,
+    widget_with_pointer_lock: Option<(StrongWidgetNodeEntry<A>, SetPointerLockType)>,
+    widgets_to_send_input_event: Vec<(StrongWidgetNodeEntry<A>, InputEvent)>,
+    widget_with_text_comp_listen: Option<StrongWidgetNodeEntry<A>>,
+    widgets_with_keyboard_listen: WidgetNodeSet<A>,
+    widgets_scheduled_for_animation: WidgetNodeSet<A>,
+    widgets_with_pointer_leave_listen: WidgetNodeSet<A>,
+    widgets_to_remove_from_animation: Vec<StrongWidgetNodeEntry<A>>,
+    widget_requests: Vec<(StrongWidgetNodeEntry<A>, WidgetNodeRequests)>,
+    widgets_just_shown: WidgetNodeSet<A>,
+    widgets_just_hidden: WidgetNodeSet<A>,
 
     renderer: Option<Renderer>,
     scale_factor: ScaleFactor,
@@ -49,7 +49,7 @@ pub struct AppWindow<MSG> {
     do_repack_layers: bool,
 }
 
-impl<MSG> AppWindow<MSG> {
+impl<A: Clone + 'static> AppWindow<A> {
     fn new(scale_factor: ScaleFactor, renderer: Renderer) -> Self {
         Self {
             next_layer_id: 0,
@@ -105,7 +105,7 @@ impl<MSG> AppWindow<MSG> {
         outer_position: Point,
         inner_position: Point,
         explicit_visibility: bool,
-    ) -> WidgetLayerRef<MSG> {
+    ) -> WidgetLayerRef<A> {
         let new_id = self.next_layer_id;
         self.next_layer_id += 1;
 
@@ -148,10 +148,7 @@ impl<MSG> AppWindow<MSG> {
         layer_ref
     }
 
-    pub fn remove_widget_layer(
-        &mut self,
-        layer: WidgetLayerRef<MSG>,
-    ) -> Result<(), FirewheelError> {
+    pub fn remove_widget_layer(&mut self, layer: WidgetLayerRef<A>) -> Result<(), FirewheelError> {
         let (layer_id, layer_z_order) = if let Some(layer_entry) = layer.shared.upgrade() {
             let layer = layer_entry.borrow();
 
@@ -204,7 +201,7 @@ impl<MSG> AppWindow<MSG> {
 
     pub fn set_widget_layer_outer_position(
         &mut self,
-        layer: &mut WidgetLayerRef<MSG>,
+        layer: &mut WidgetLayerRef<A>,
         position: Point,
     ) -> Result<(), FirewheelError> {
         if let Some(mut layer_entry) = layer.shared.upgrade() {
@@ -220,9 +217,9 @@ impl<MSG> AppWindow<MSG> {
 
     pub fn set_widget_layer_inner_position(
         &mut self,
-        layer: &mut WidgetLayerRef<MSG>,
+        layer: &mut WidgetLayerRef<A>,
         position: Point,
-        msg_out_queue: &mut Vec<MSG>,
+        action_queue: &mut Vec<A>,
     ) -> Result<(), FirewheelError> {
         if let Some(mut layer_entry) = layer.shared.upgrade() {
             layer_entry.borrow_mut().set_inner_position(
@@ -234,16 +231,16 @@ impl<MSG> AppWindow<MSG> {
             return Err(FirewheelError::LayerRemoved);
         }
 
-        self.handle_visibility_changes(msg_out_queue);
+        self.handle_visibility_changes(action_queue);
 
         Ok(())
     }
 
     pub fn set_widget_layer_size(
         &mut self,
-        layer: &mut WidgetLayerRef<MSG>,
+        layer: &mut WidgetLayerRef<A>,
         size: Size,
-        msg_out_queue: &mut Vec<MSG>,
+        action_queue: &mut Vec<A>,
     ) -> Result<(), FirewheelError> {
         if let Some(mut layer_entry) = layer.shared.upgrade() {
             layer_entry.borrow_mut().set_size(
@@ -256,16 +253,16 @@ impl<MSG> AppWindow<MSG> {
             return Err(FirewheelError::LayerRemoved);
         }
 
-        self.handle_visibility_changes(msg_out_queue);
+        self.handle_visibility_changes(action_queue);
 
         Ok(())
     }
 
     pub fn set_widget_layer_explicit_visibility(
         &mut self,
-        layer: &mut WidgetLayerRef<MSG>,
+        layer: &mut WidgetLayerRef<A>,
         explicit_visibility: bool,
-        msg_out_queue: &mut Vec<MSG>,
+        action_queue: &mut Vec<A>,
     ) -> Result<(), FirewheelError> {
         if let Some(mut layer_entry) = layer.shared.upgrade() {
             layer_entry.borrow_mut().set_explicit_visibility(
@@ -277,7 +274,7 @@ impl<MSG> AppWindow<MSG> {
             return Err(FirewheelError::LayerRemoved);
         }
 
-        self.handle_visibility_changes(msg_out_queue);
+        self.handle_visibility_changes(action_queue);
 
         Ok(())
     }
@@ -487,7 +484,7 @@ impl<MSG> AppWindow<MSG> {
         Ok(())
     }
 
-    pub fn set_window_visibility(&mut self, visible: bool, msg_out_queue: &mut Vec<MSG>) {
+    pub fn set_window_visibility(&mut self, visible: bool, action_queue: &mut Vec<A>) {
         if self.window_visibility != visible {
             self.window_visibility = visible;
 
@@ -508,16 +505,16 @@ impl<MSG> AppWindow<MSG> {
                 }
             }
 
-            self.handle_visibility_changes(msg_out_queue);
+            self.handle_visibility_changes(action_queue);
         }
     }
 
     pub fn add_container_region(
         &mut self,
-        layer: &WidgetLayerRef<MSG>,
-        region_info: RegionInfo<MSG>,
+        layer: &WidgetLayerRef<A>,
+        region_info: RegionInfo<A>,
         explicit_visibility: bool,
-    ) -> Result<ContainerRegionRef<MSG>, FirewheelError> {
+    ) -> Result<ContainerRegionRef<A>, FirewheelError> {
         if layer.shared.upgrade().is_none() {
             return Err(FirewheelError::LayerRemoved);
         }
@@ -544,7 +541,7 @@ impl<MSG> AppWindow<MSG> {
 
     pub fn remove_container_region(
         &mut self,
-        region: ContainerRegionRef<MSG>,
+        region: ContainerRegionRef<A>,
     ) -> Result<(), FirewheelError> {
         region
             .assigned_layer
@@ -556,12 +553,12 @@ impl<MSG> AppWindow<MSG> {
 
     pub fn modify_container_region(
         &mut self,
-        region: &mut ContainerRegionRef<MSG>,
+        region: &mut ContainerRegionRef<A>,
         new_size: Option<Size>,
         new_internal_anchor: Option<Anchor>,
         new_parent_anchor: Option<Anchor>,
         new_anchor_offset: Option<Point>,
-        msg_out_queue: &mut Vec<MSG>,
+        action_queue: &mut Vec<A>,
     ) -> Result<(), FirewheelError> {
         region
             .assigned_layer
@@ -578,16 +575,16 @@ impl<MSG> AppWindow<MSG> {
                 &mut self.widgets_just_hidden,
             )?;
 
-        self.handle_visibility_changes(msg_out_queue);
+        self.handle_visibility_changes(action_queue);
 
         Ok(())
     }
 
     pub fn set_container_region_explicit_visibility(
         &mut self,
-        region: &mut ContainerRegionRef<MSG>,
+        region: &mut ContainerRegionRef<A>,
         visible: bool,
-        msg_out_queue: &mut Vec<MSG>,
+        action_queue: &mut Vec<A>,
     ) -> Result<(), FirewheelError> {
         region
             .assigned_layer
@@ -601,14 +598,14 @@ impl<MSG> AppWindow<MSG> {
                 &mut self.widgets_just_hidden,
             )?;
 
-        self.handle_visibility_changes(msg_out_queue);
+        self.handle_visibility_changes(action_queue);
 
         Ok(())
     }
 
     pub fn mark_container_region_dirty(
         &mut self,
-        region: &mut ContainerRegionRef<MSG>,
+        region: &mut ContainerRegionRef<A>,
     ) -> Result<(), FirewheelError> {
         region
             .assigned_layer
@@ -620,19 +617,19 @@ impl<MSG> AppWindow<MSG> {
 
     pub fn add_widget_node(
         &mut self,
-        mut widget_node: Box<dyn WidgetNode<MSG>>,
-        layer: &WidgetLayerRef<MSG>,
-        region_info: RegionInfo<MSG>,
+        mut widget_node: Box<dyn WidgetNode<A>>,
+        layer: &WidgetLayerRef<A>,
+        region_info: RegionInfo<A>,
         explicit_visibility: bool,
-        msg_out_queue: &mut Vec<MSG>,
-    ) -> Result<WidgetNodeRef<MSG>, FirewheelError> {
+        action_queue: &mut Vec<A>,
+    ) -> Result<WidgetNodeRef<A>, FirewheelError> {
         if layer.shared.upgrade().is_none() {
             return Err(FirewheelError::LayerRemoved);
         }
 
         let weak_layer_entry = layer.shared.clone();
 
-        let node_type = widget_node.on_added(msg_out_queue);
+        let node_type = widget_node.on_added(action_queue);
 
         let new_id = self.next_widget_id;
         self.next_widget_id += 1;
@@ -659,7 +656,7 @@ impl<MSG> AppWindow<MSG> {
 
         //self.widgets.insert(widget_entry.clone());
 
-        self.handle_visibility_changes(msg_out_queue);
+        self.handle_visibility_changes(action_queue);
 
         Ok(WidgetNodeRef {
             shared: widget_entry.downgrade(),
@@ -668,12 +665,12 @@ impl<MSG> AppWindow<MSG> {
 
     pub fn modify_widget_region(
         &mut self,
-        widget_node_ref: &mut WidgetNodeRef<MSG>,
+        widget_node_ref: &mut WidgetNodeRef<A>,
         new_size: Option<Size>,
         new_internal_anchor: Option<Anchor>,
         new_parent_anchor: Option<Anchor>,
         new_anchor_offset: Option<Point>,
-        msg_out_queue: &mut Vec<MSG>,
+        action_queue: &mut Vec<A>,
     ) -> Result<(), FirewheelError> {
         let mut widget_entry = widget_node_ref
             .shared
@@ -695,16 +692,16 @@ impl<MSG> AppWindow<MSG> {
                 &mut self.widgets_just_hidden,
             );
 
-        self.handle_visibility_changes(msg_out_queue);
+        self.handle_visibility_changes(action_queue);
 
         Ok(())
     }
 
     pub fn set_widget_explicit_visibility(
         &mut self,
-        widget_node_ref: &mut WidgetNodeRef<MSG>,
+        widget_node_ref: &mut WidgetNodeRef<A>,
         visible: bool,
-        msg_out_queue: &mut Vec<MSG>,
+        action_queue: &mut Vec<A>,
     ) -> Result<(), FirewheelError> {
         let mut widget_entry = widget_node_ref
             .shared
@@ -723,14 +720,14 @@ impl<MSG> AppWindow<MSG> {
                 &mut self.widgets_just_hidden,
             );
 
-        self.handle_visibility_changes(msg_out_queue);
+        self.handle_visibility_changes(action_queue);
 
         Ok(())
     }
 
     pub fn remove_widget(
         &mut self,
-        widget_node_ref: &mut WidgetNodeRef<MSG>,
+        widget_node_ref: &mut WidgetNodeRef<A>,
     ) -> Result<(), FirewheelError> {
         let mut widget_entry = widget_node_ref
             .shared
@@ -769,20 +766,16 @@ impl<MSG> AppWindow<MSG> {
 
     pub fn send_user_event_to_widget(
         &mut self,
-        widget_node_ref: &mut WidgetNodeRef<MSG>,
+        widget_node_ref: &mut WidgetNodeRef<A>,
         event: Box<dyn Any>,
-        msg_out_queue: &mut Vec<MSG>,
+        action_queue: &mut Vec<A>,
     ) -> Result<(), FirewheelError> {
         let mut widget_entry = widget_node_ref
             .shared
             .upgrade()
             .ok_or_else(|| FirewheelError::WidgetNodeRemoved)?;
 
-        let res = {
-            widget_entry
-                .borrow_mut()
-                .on_user_event(event, msg_out_queue)
-        };
+        let res = { widget_entry.borrow_mut().on_user_event(event, action_queue) };
         if let Some(requests) = res {
             self.handle_widget_requests(&mut widget_entry, requests);
         }
@@ -792,7 +785,7 @@ impl<MSG> AppWindow<MSG> {
 
     pub fn mark_widget_dirty(
         &mut self,
-        widget_node_ref: &mut WidgetNodeRef<MSG>,
+        widget_node_ref: &mut WidgetNodeRef<A>,
     ) -> Result<(), FirewheelError> {
         let mut widget_entry = widget_node_ref
             .shared
@@ -809,7 +802,7 @@ impl<MSG> AppWindow<MSG> {
         Ok(())
     }
 
-    pub fn set_scale_factor(&mut self, scale_factor: ScaleFactor, msg_out_queue: &mut Vec<MSG>) {
+    pub fn set_scale_factor(&mut self, scale_factor: ScaleFactor, action_queue: &mut Vec<A>) {
         if self.scale_factor != scale_factor {
             self.scale_factor = scale_factor;
 
@@ -835,20 +828,20 @@ impl<MSG> AppWindow<MSG> {
                 }
             }
 
-            self.handle_visibility_changes(msg_out_queue);
+            self.handle_visibility_changes(action_queue);
         }
     }
 
     pub fn handle_input_event(
         &mut self,
         event: &InputEvent,
-        msg_out_queue: &mut Vec<MSG>,
+        action_queue: &mut Vec<A>,
     ) -> InputEventResult {
         match event {
             InputEvent::Animation(_) => {
-                let mut widgets_to_remove_from_animation: Vec<StrongWidgetNodeEntry<MSG>> =
+                let mut widgets_to_remove_from_animation: Vec<StrongWidgetNodeEntry<A>> =
                     Vec::new();
-                let mut widget_requests: Vec<(StrongWidgetNodeEntry<MSG>, WidgetNodeRequests)> =
+                let mut widget_requests: Vec<(StrongWidgetNodeEntry<A>, WidgetNodeRequests)> =
                     Vec::new();
                 std::mem::swap(
                     &mut widgets_to_remove_from_animation,
@@ -860,7 +853,7 @@ impl<MSG> AppWindow<MSG> {
                     let res = {
                         widget_entry
                             .borrow_mut()
-                            .on_input_event(event, msg_out_queue)
+                            .on_input_event(event, action_queue)
                     };
                     if let EventCapturedStatus::Captured(requests) = res {
                         widget_requests.push((widget_entry.clone(), requests));
@@ -900,7 +893,7 @@ impl<MSG> AppWindow<MSG> {
                     let res = {
                         widget_entry
                             .borrow_mut()
-                            .on_input_event(event, msg_out_queue)
+                            .on_input_event(event, action_queue)
                     };
                     if let EventCapturedStatus::Captured(requests) = res {
                         self.handle_widget_requests(&mut widget_entry, requests);
@@ -908,7 +901,7 @@ impl<MSG> AppWindow<MSG> {
                 } else {
                     if !self.widgets_with_pointer_leave_listen.is_empty() {
                         let mut widget_requests: Vec<(
-                            StrongWidgetNodeEntry<MSG>,
+                            StrongWidgetNodeEntry<A>,
                             WidgetNodeRequests,
                         )> = Vec::new();
                         std::mem::swap(&mut widget_requests, &mut self.widget_requests);
@@ -917,7 +910,7 @@ impl<MSG> AppWindow<MSG> {
                             let res = {
                                 widget_entry
                                     .borrow_mut()
-                                    .on_input_event(event, msg_out_queue)
+                                    .on_input_event(event, action_queue)
                             };
                             if let EventCapturedStatus::Captured(requests) = res {
                                 widget_requests.push((widget_entry.clone(), requests));
@@ -937,7 +930,7 @@ impl<MSG> AppWindow<MSG> {
                             if let StrongLayerEntry::Widget(layer_entry) = layer_entry {
                                 if let Some(captured_res) = layer_entry
                                     .borrow_mut()
-                                    .handle_pointer_event(e, msg_out_queue)
+                                    .handle_pointer_event(e, action_queue)
                                 {
                                     widget_requests = Some(captured_res);
                                     break;
@@ -957,11 +950,7 @@ impl<MSG> AppWindow<MSG> {
             InputEvent::PointerUnlocked => {
                 let mut requests = None;
                 if let Some((mut last_widget, _lock_type)) = self.widget_with_pointer_lock.take() {
-                    let res = {
-                        last_widget
-                            .borrow_mut()
-                            .on_input_event(event, msg_out_queue)
-                    };
+                    let res = { last_widget.borrow_mut().on_input_event(event, action_queue) };
                     if let EventCapturedStatus::Captured(r) = res {
                         requests = Some((last_widget.clone(), r));
                     }
@@ -972,7 +961,7 @@ impl<MSG> AppWindow<MSG> {
                 }
             }
             InputEvent::Keyboard(_) => {
-                let mut widget_requests: Vec<(StrongWidgetNodeEntry<MSG>, WidgetNodeRequests)> =
+                let mut widget_requests: Vec<(StrongWidgetNodeEntry<A>, WidgetNodeRequests)> =
                     Vec::new();
                 std::mem::swap(&mut widget_requests, &mut self.widget_requests);
 
@@ -980,7 +969,7 @@ impl<MSG> AppWindow<MSG> {
                     let res = {
                         widget_entry
                             .borrow_mut()
-                            .on_input_event(event, msg_out_queue)
+                            .on_input_event(event, action_queue)
                     };
                     if let EventCapturedStatus::Captured(requests) = res {
                         widget_requests.push((widget_entry.clone(), requests));
@@ -999,7 +988,7 @@ impl<MSG> AppWindow<MSG> {
                     let res = {
                         widget_entry
                             .borrow_mut()
-                            .on_input_event(event, msg_out_queue)
+                            .on_input_event(event, action_queue)
                     };
                     if let EventCapturedStatus::Captured(r) = res {
                         requests = Some((widget_entry.clone(), r));
@@ -1017,7 +1006,7 @@ impl<MSG> AppWindow<MSG> {
 
         // Handle any extra events that have occurred as a result of handling
         // widget requests.
-        let mut widgets_to_send_input_event: Vec<(StrongWidgetNodeEntry<MSG>, InputEvent)> =
+        let mut widgets_to_send_input_event: Vec<(StrongWidgetNodeEntry<A>, InputEvent)> =
             Vec::new();
         std::mem::swap(
             &mut widgets_to_send_input_event,
@@ -1027,7 +1016,7 @@ impl<MSG> AppWindow<MSG> {
             let res = {
                 widget_entry
                     .borrow_mut()
-                    .on_input_event(&event, msg_out_queue)
+                    .on_input_event(&event, action_queue)
             };
             if let EventCapturedStatus::Captured(requests) = res {
                 self.handle_widget_requests(&mut widget_entry, requests);
@@ -1081,7 +1070,7 @@ impl<MSG> AppWindow<MSG> {
 
     fn handle_widget_requests(
         &mut self,
-        widget_entry: &mut StrongWidgetNodeEntry<MSG>,
+        widget_entry: &mut StrongWidgetNodeEntry<A>,
         requests: WidgetNodeRequests,
     ) {
         if requests.repaint {
@@ -1237,15 +1226,15 @@ impl<MSG> AppWindow<MSG> {
         }
     }
 
-    fn handle_visibility_changes(&mut self, msg_out_queue: &mut Vec<MSG>) {
+    fn handle_visibility_changes(&mut self, action_queue: &mut Vec<A>) {
         // Handle widgets that have just been shown.
-        let mut widget_requests: Vec<(StrongWidgetNodeEntry<MSG>, WidgetNodeRequests)> = Vec::new();
+        let mut widget_requests: Vec<(StrongWidgetNodeEntry<A>, WidgetNodeRequests)> = Vec::new();
         std::mem::swap(&mut widget_requests, &mut self.widget_requests);
         for widget_entry in self.widgets_just_shown.iter_mut() {
             let status = {
                 widget_entry
                     .borrow_mut()
-                    .on_input_event(&InputEvent::VisibilityShown, msg_out_queue)
+                    .on_input_event(&InputEvent::VisibilityShown, action_queue)
             };
             if let EventCapturedStatus::Captured(requests) = status {
                 widget_requests.push((widget_entry.clone(), requests));
@@ -1260,9 +1249,7 @@ impl<MSG> AppWindow<MSG> {
         // Handle widgets that have just been hidden.
         for widget_entry in self.widgets_just_hidden.iter_mut() {
             {
-                widget_entry
-                    .borrow_mut()
-                    .on_visibility_hidden(msg_out_queue);
+                widget_entry.borrow_mut().on_visibility_hidden(action_queue);
             }
 
             // Remove all event listeners for this widget (except for pointer
@@ -1286,7 +1273,7 @@ impl<MSG> AppWindow<MSG> {
     }
 }
 
-impl<MSG> Drop for AppWindow<MSG> {
+impl<A: Clone + 'static> Drop for AppWindow<A> {
     fn drop(&mut self) {
         for (_z_order, layers) in self.layers_ordered.iter_mut() {
             for layer_entry in layers.iter_mut() {

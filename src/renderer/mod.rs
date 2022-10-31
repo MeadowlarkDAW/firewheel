@@ -56,9 +56,9 @@ impl Renderer {
         }
     }
 
-    pub fn render<MSG>(
+    pub fn render<A: Clone + 'static>(
         &mut self,
-        app_window: &mut AppWindow<MSG>,
+        app_window: &mut AppWindow<A>,
         window_size: PhysicalSize,
         scale_factor: ScaleFactor,
         clear_color: Color,
@@ -135,7 +135,7 @@ impl Renderer {
         */
     }
 
-    pub fn free<MSG>(&mut self, app_window: &mut AppWindow<MSG>) {
+    pub fn free<A: Clone + 'static>(&mut self, app_window: &mut AppWindow<A>) {
         for mut layer_renderer in app_window.widget_layer_renderers_to_clean_up.drain(..) {
             layer_renderer.clean_up(&mut self.vg);
         }

@@ -13,17 +13,17 @@ use region_tree::RegionTree;
 pub(crate) use region_tree::WeakRegionTreeEntry;
 pub use region_tree::{ContainerRegionRef, ParentAnchorType, RegionInfo};
 
-pub(crate) struct WidgetLayer<MSG> {
+pub(crate) struct WidgetLayer<A: Clone + 'static> {
     pub id: u64,
     pub z_order: i32,
     pub renderer: Option<WidgetLayerRenderer>,
 
-    pub region_tree: RegionTree<MSG>,
+    pub region_tree: RegionTree<A>,
     pub outer_position: Point,
     pub physical_outer_position: PhysicalPoint,
 }
 
-impl<MSG> WidgetLayer<MSG> {
+impl<A: Clone + 'static> WidgetLayer<A> {
     pub fn new(
         id: u64,
         z_order: i32,
@@ -59,8 +59,8 @@ impl<MSG> WidgetLayer<MSG> {
     pub fn set_inner_position(
         &mut self,
         position: Point,
-        widgets_just_shown: &mut WidgetNodeSet<MSG>,
-        widgets_just_hidden: &mut WidgetNodeSet<MSG>,
+        widgets_just_shown: &mut WidgetNodeSet<A>,
+        widgets_just_hidden: &mut WidgetNodeSet<A>,
     ) {
         self.region_tree.set_layer_inner_position(
             position,
@@ -72,8 +72,8 @@ impl<MSG> WidgetLayer<MSG> {
     pub fn set_explicit_visibility(
         &mut self,
         explicit_visibility: bool,
-        widgets_just_shown: &mut WidgetNodeSet<MSG>,
-        widgets_just_hidden: &mut WidgetNodeSet<MSG>,
+        widgets_just_shown: &mut WidgetNodeSet<A>,
+        widgets_just_hidden: &mut WidgetNodeSet<A>,
     ) {
         self.region_tree.set_layer_explicit_visibility(
             explicit_visibility,
@@ -85,8 +85,8 @@ impl<MSG> WidgetLayer<MSG> {
     pub fn set_window_visibility(
         &mut self,
         visible: bool,
-        widgets_just_shown: &mut WidgetNodeSet<MSG>,
-        widgets_just_hidden: &mut WidgetNodeSet<MSG>,
+        widgets_just_shown: &mut WidgetNodeSet<A>,
+        widgets_just_hidden: &mut WidgetNodeSet<A>,
     ) {
         self.region_tree
             .set_window_visibility(visible, widgets_just_shown, widgets_just_hidden);
@@ -96,8 +96,8 @@ impl<MSG> WidgetLayer<MSG> {
         &mut self,
         size: Size,
         scale_factor: ScaleFactor,
-        widgets_just_shown: &mut WidgetNodeSet<MSG>,
-        widgets_just_hidden: &mut WidgetNodeSet<MSG>,
+        widgets_just_shown: &mut WidgetNodeSet<A>,
+        widgets_just_hidden: &mut WidgetNodeSet<A>,
     ) {
         self.region_tree.set_layer_size(
             size,
@@ -109,11 +109,11 @@ impl<MSG> WidgetLayer<MSG> {
 
     pub fn add_container_region(
         &mut self,
-        region_info: RegionInfo<MSG>,
+        region_info: RegionInfo<A>,
         explicit_visibility: bool,
-        widgets_just_shown: &mut WidgetNodeSet<MSG>,
-        widgets_just_hidden: &mut WidgetNodeSet<MSG>,
-    ) -> Result<ContainerRegionRef<MSG>, FirewheelError> {
+        widgets_just_shown: &mut WidgetNodeSet<A>,
+        widgets_just_hidden: &mut WidgetNodeSet<A>,
+    ) -> Result<ContainerRegionRef<A>, FirewheelError> {
         self.region_tree.add_container_region(
             region_info,
             explicit_visibility,
@@ -124,20 +124,20 @@ impl<MSG> WidgetLayer<MSG> {
 
     pub fn remove_container_region(
         &mut self,
-        container_ref: ContainerRegionRef<MSG>,
+        container_ref: ContainerRegionRef<A>,
     ) -> Result<(), FirewheelError> {
         self.region_tree.remove_container_region(container_ref)
     }
 
     pub fn modify_container_region(
         &mut self,
-        container_ref: &mut ContainerRegionRef<MSG>,
+        container_ref: &mut ContainerRegionRef<A>,
         new_size: Option<Size>,
         new_internal_anchor: Option<Anchor>,
         new_parent_anchor: Option<Anchor>,
         new_anchor_offset: Option<Point>,
-        widgets_just_shown: &mut WidgetNodeSet<MSG>,
-        widgets_just_hidden: &mut WidgetNodeSet<MSG>,
+        widgets_just_shown: &mut WidgetNodeSet<A>,
+        widgets_just_hidden: &mut WidgetNodeSet<A>,
     ) -> Result<(), FirewheelError> {
         self.region_tree.modify_container_region(
             container_ref,
@@ -152,10 +152,10 @@ impl<MSG> WidgetLayer<MSG> {
 
     pub fn set_container_region_explicit_visibility(
         &mut self,
-        container_ref: &mut ContainerRegionRef<MSG>,
+        container_ref: &mut ContainerRegionRef<A>,
         visible: bool,
-        widgets_just_shown: &mut WidgetNodeSet<MSG>,
-        widgets_just_hidden: &mut WidgetNodeSet<MSG>,
+        widgets_just_shown: &mut WidgetNodeSet<A>,
+        widgets_just_hidden: &mut WidgetNodeSet<A>,
     ) -> Result<(), FirewheelError> {
         self.region_tree.set_container_region_explicit_visibility(
             container_ref,
@@ -167,19 +167,19 @@ impl<MSG> WidgetLayer<MSG> {
 
     pub fn mark_container_region_dirty(
         &mut self,
-        container_ref: &mut ContainerRegionRef<MSG>,
+        container_ref: &mut ContainerRegionRef<A>,
     ) -> Result<(), FirewheelError> {
         self.region_tree.mark_container_region_dirty(container_ref)
     }
 
     pub fn add_widget_region(
         &mut self,
-        assigned_widget: &mut StrongWidgetNodeEntry<MSG>,
-        region_info: RegionInfo<MSG>,
+        assigned_widget: &mut StrongWidgetNodeEntry<A>,
+        region_info: RegionInfo<A>,
         node_type: WidgetNodeType,
         explicit_visibility: bool,
-        widgets_just_shown: &mut WidgetNodeSet<MSG>,
-        widgets_just_hidden: &mut WidgetNodeSet<MSG>,
+        widgets_just_shown: &mut WidgetNodeSet<A>,
+        widgets_just_hidden: &mut WidgetNodeSet<A>,
     ) -> Result<(), FirewheelError> {
         self.region_tree.add_widget_region(
             assigned_widget,
@@ -193,9 +193,9 @@ impl<MSG> WidgetLayer<MSG> {
 
     pub fn remove_widget_region(
         &mut self,
-        widget: &mut StrongWidgetNodeEntry<MSG>,
-        widgets_just_shown: &mut WidgetNodeSet<MSG>,
-        widgets_just_hidden: &mut WidgetNodeSet<MSG>,
+        widget: &mut StrongWidgetNodeEntry<A>,
+        widgets_just_shown: &mut WidgetNodeSet<A>,
+        widgets_just_hidden: &mut WidgetNodeSet<A>,
     ) {
         self.region_tree
             .remove_widget_region(widget, widgets_just_shown, widgets_just_hidden);
@@ -203,13 +203,13 @@ impl<MSG> WidgetLayer<MSG> {
 
     pub fn modify_widget_region(
         &mut self,
-        widget: &mut StrongWidgetNodeEntry<MSG>,
+        widget: &mut StrongWidgetNodeEntry<A>,
         new_size: Option<Size>,
         new_internal_anchor: Option<Anchor>,
         new_parent_anchor: Option<Anchor>,
         new_anchor_offset: Option<Point>,
-        widgets_just_shown: &mut WidgetNodeSet<MSG>,
-        widgets_just_hidden: &mut WidgetNodeSet<MSG>,
+        widgets_just_shown: &mut WidgetNodeSet<A>,
+        widgets_just_hidden: &mut WidgetNodeSet<A>,
     ) {
         self.region_tree.modify_widget_region(
             widget,
@@ -224,10 +224,10 @@ impl<MSG> WidgetLayer<MSG> {
 
     pub fn set_widget_explicit_visibility(
         &mut self,
-        widget: &mut StrongWidgetNodeEntry<MSG>,
+        widget: &mut StrongWidgetNodeEntry<A>,
         visible: bool,
-        widgets_just_shown: &mut WidgetNodeSet<MSG>,
-        widgets_just_hidden: &mut WidgetNodeSet<MSG>,
+        widgets_just_shown: &mut WidgetNodeSet<A>,
+        widgets_just_hidden: &mut WidgetNodeSet<A>,
     ) {
         self.region_tree.set_widget_explicit_visibility(
             widget,
@@ -237,13 +237,13 @@ impl<MSG> WidgetLayer<MSG> {
         );
     }
 
-    pub fn mark_widget_region_dirty(&mut self, widget: &StrongWidgetNodeEntry<MSG>) {
+    pub fn mark_widget_region_dirty(&mut self, widget: &StrongWidgetNodeEntry<A>) {
         self.region_tree.mark_widget_dirty(widget);
     }
 
     pub fn set_widget_region_listens_to_pointer_events(
         &mut self,
-        widget: &StrongWidgetNodeEntry<MSG>,
+        widget: &StrongWidgetNodeEntry<A>,
         listens: bool,
     ) {
         self.region_tree
@@ -253,8 +253,8 @@ impl<MSG> WidgetLayer<MSG> {
     pub fn handle_pointer_event(
         &mut self,
         mut event: PointerEvent,
-        msg_out_queue: &mut Vec<MSG>,
-    ) -> Option<(StrongWidgetNodeEntry<MSG>, WidgetNodeRequests)> {
+        action_queue: &mut Vec<A>,
+    ) -> Option<(StrongWidgetNodeEntry<A>, WidgetNodeRequests)> {
         if !self.region_tree.layer_explicit_visibility() {
             return None;
         }
@@ -272,7 +272,7 @@ impl<MSG> WidgetLayer<MSG> {
         // Remove this layer's offset from the position of the mouse event.
         event.position -= self.outer_position;
 
-        self.region_tree.handle_pointer_event(event, msg_out_queue)
+        self.region_tree.handle_pointer_event(event, action_queue)
     }
 
     pub fn is_empty(&self) -> bool {

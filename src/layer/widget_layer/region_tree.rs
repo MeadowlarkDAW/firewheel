@@ -18,21 +18,21 @@ use crate::{
 // items.
 
 #[derive(Clone)]
-pub struct RegionInfo<MSG> {
+pub struct RegionInfo<A: Clone + 'static> {
     pub size: Size,
     pub internal_anchor: Anchor,
     pub parent_anchor: Anchor,
-    pub parent_anchor_type: ParentAnchorType<MSG>,
+    pub parent_anchor_type: ParentAnchorType<A>,
     pub anchor_offset: Point,
 }
 
-pub(crate) struct RegionTree<MSG> {
-    pub dirty_widgets: WidgetNodeSet<MSG>,
+pub(crate) struct RegionTree<A: Clone + 'static> {
+    pub dirty_widgets: WidgetNodeSet<A>,
     pub texture_rects_to_clear: Vec<TextureRect>,
     pub clear_whole_layer: bool,
 
     next_region_id: u64,
-    roots: Vec<StrongRegionTreeEntry<MSG>>,
+    roots: Vec<StrongRegionTreeEntry<A>>,
     layer_rect: Rect,
     layer_physical_rect: PhysicalRect,
     layer_explicit_visibility: bool,
@@ -41,7 +41,7 @@ pub(crate) struct RegionTree<MSG> {
     layer_id: u64,
 }
 
-impl<MSG> RegionTree<MSG> {
+impl<A: Clone + 'static> RegionTree<A> {
     pub fn new(
         layer_size: Size,
         inner_position: Point,
@@ -70,11 +70,11 @@ impl<MSG> RegionTree<MSG> {
 
     pub fn add_container_region(
         &mut self,
-        region_info: RegionInfo<MSG>,
+        region_info: RegionInfo<A>,
         explicit_visibility: bool,
-        widgets_just_shown: &mut WidgetNodeSet<MSG>,
-        widgets_just_hidden: &mut WidgetNodeSet<MSG>,
-    ) -> Result<ContainerRegionRef<MSG>, FirewheelError> {
+        widgets_just_shown: &mut WidgetNodeSet<A>,
+        widgets_just_hidden: &mut WidgetNodeSet<A>,
+    ) -> Result<ContainerRegionRef<A>, FirewheelError> {
         let new_id = self.next_region_id;
         self.next_region_id += 1;
 
@@ -171,7 +171,7 @@ impl<MSG> RegionTree<MSG> {
 
     pub fn remove_container_region(
         &mut self,
-        container_ref: ContainerRegionRef<MSG>,
+        container_ref: ContainerRegionRef<A>,
     ) -> Result<(), FirewheelError> {
         if container_ref.assigned_layer_id != self.layer_id {
             panic!("container region was not assigned to this layer");
@@ -234,13 +234,13 @@ impl<MSG> RegionTree<MSG> {
 
     pub fn modify_container_region(
         &mut self,
-        container_ref: &mut ContainerRegionRef<MSG>,
+        container_ref: &mut ContainerRegionRef<A>,
         new_size: Option<Size>,
         new_internal_anchor: Option<Anchor>,
         new_parent_anchor: Option<Anchor>,
         new_anchor_offset: Option<Point>,
-        widgets_just_shown: &mut WidgetNodeSet<MSG>,
-        widgets_just_hidden: &mut WidgetNodeSet<MSG>,
+        widgets_just_shown: &mut WidgetNodeSet<A>,
+        widgets_just_hidden: &mut WidgetNodeSet<A>,
     ) -> Result<(), FirewheelError> {
         let entry = container_ref
             .shared
@@ -266,7 +266,7 @@ impl<MSG> RegionTree<MSG> {
 
     pub fn mark_container_region_dirty(
         &mut self,
-        container_ref: &mut ContainerRegionRef<MSG>,
+        container_ref: &mut ContainerRegionRef<A>,
     ) -> Result<(), FirewheelError> {
         let entry = container_ref
             .shared
@@ -282,10 +282,10 @@ impl<MSG> RegionTree<MSG> {
 
     pub fn set_container_region_explicit_visibility(
         &mut self,
-        container_ref: &mut ContainerRegionRef<MSG>,
+        container_ref: &mut ContainerRegionRef<A>,
         explicit_visibility: bool,
-        widgets_just_shown: &mut WidgetNodeSet<MSG>,
-        widgets_just_hidden: &mut WidgetNodeSet<MSG>,
+        widgets_just_shown: &mut WidgetNodeSet<A>,
+        widgets_just_hidden: &mut WidgetNodeSet<A>,
     ) -> Result<(), FirewheelError> {
         let entry = container_ref
             .shared
@@ -311,12 +311,12 @@ impl<MSG> RegionTree<MSG> {
 
     pub fn add_widget_region(
         &mut self,
-        assigned_widget: &mut StrongWidgetNodeEntry<MSG>,
-        region_info: RegionInfo<MSG>,
+        assigned_widget: &mut StrongWidgetNodeEntry<A>,
+        region_info: RegionInfo<A>,
         node_type: WidgetNodeType,
         explicit_visibility: bool,
-        widgets_just_shown: &mut WidgetNodeSet<MSG>,
-        widgets_just_hidden: &mut WidgetNodeSet<MSG>,
+        widgets_just_shown: &mut WidgetNodeSet<A>,
+        widgets_just_hidden: &mut WidgetNodeSet<A>,
     ) -> Result<(), FirewheelError> {
         if assigned_widget.assigned_region().upgrade().is_some() {
             panic!("widget was already assigned a region");
@@ -428,9 +428,9 @@ impl<MSG> RegionTree<MSG> {
 
     pub fn remove_widget_region(
         &mut self,
-        widget: &mut StrongWidgetNodeEntry<MSG>,
-        widgets_just_shown: &mut WidgetNodeSet<MSG>,
-        widgets_just_hidden: &mut WidgetNodeSet<MSG>,
+        widget: &mut StrongWidgetNodeEntry<A>,
+        widgets_just_shown: &mut WidgetNodeSet<A>,
+        widgets_just_hidden: &mut WidgetNodeSet<A>,
     ) {
         let entry = {
             if let Some(entry) = widget.assigned_region().upgrade() {
@@ -497,13 +497,13 @@ impl<MSG> RegionTree<MSG> {
 
     pub fn modify_widget_region(
         &mut self,
-        widget: &StrongWidgetNodeEntry<MSG>,
+        widget: &StrongWidgetNodeEntry<A>,
         new_size: Option<Size>,
         new_internal_anchor: Option<Anchor>,
         new_parent_anchor: Option<Anchor>,
         new_anchor_offset: Option<Point>,
-        widgets_just_shown: &mut WidgetNodeSet<MSG>,
-        widgets_just_hidden: &mut WidgetNodeSet<MSG>,
+        widgets_just_shown: &mut WidgetNodeSet<A>,
+        widgets_just_hidden: &mut WidgetNodeSet<A>,
     ) {
         widget
             .assigned_region()
@@ -525,7 +525,7 @@ impl<MSG> RegionTree<MSG> {
             );
     }
 
-    pub fn mark_widget_dirty(&mut self, widget: &StrongWidgetNodeEntry<MSG>) {
+    pub fn mark_widget_dirty(&mut self, widget: &StrongWidgetNodeEntry<A>) {
         widget
             .assigned_region()
             .upgrade()
@@ -536,10 +536,10 @@ impl<MSG> RegionTree<MSG> {
 
     pub fn set_widget_explicit_visibility(
         &mut self,
-        widget: &StrongWidgetNodeEntry<MSG>,
+        widget: &StrongWidgetNodeEntry<A>,
         explicit_visibility: bool,
-        widgets_just_shown: &mut WidgetNodeSet<MSG>,
-        widgets_just_hidden: &mut WidgetNodeSet<MSG>,
+        widgets_just_shown: &mut WidgetNodeSet<A>,
+        widgets_just_hidden: &mut WidgetNodeSet<A>,
     ) {
         widget
             .assigned_region()
@@ -563,7 +563,7 @@ impl<MSG> RegionTree<MSG> {
 
     pub fn set_widget_listens_to_pointer_events(
         &mut self,
-        widget: &StrongWidgetNodeEntry<MSG>,
+        widget: &StrongWidgetNodeEntry<A>,
         listens: bool,
     ) {
         widget
@@ -580,8 +580,8 @@ impl<MSG> RegionTree<MSG> {
     pub fn set_layer_inner_position(
         &mut self,
         position: Point,
-        widgets_just_shown: &mut WidgetNodeSet<MSG>,
-        widgets_just_hidden: &mut WidgetNodeSet<MSG>,
+        widgets_just_shown: &mut WidgetNodeSet<A>,
+        widgets_just_hidden: &mut WidgetNodeSet<A>,
     ) {
         if self.layer_rect.pos() != position {
             self.layer_rect.set_pos(position);
@@ -607,8 +607,8 @@ impl<MSG> RegionTree<MSG> {
         &mut self,
         size: Size,
         scale_factor: ScaleFactor,
-        widgets_just_shown: &mut WidgetNodeSet<MSG>,
-        widgets_just_hidden: &mut WidgetNodeSet<MSG>,
+        widgets_just_shown: &mut WidgetNodeSet<A>,
+        widgets_just_hidden: &mut WidgetNodeSet<A>,
     ) {
         if self.layer_rect.size() != size || self.scale_factor != scale_factor {
             self.layer_rect.set_size(size);
@@ -634,8 +634,8 @@ impl<MSG> RegionTree<MSG> {
     pub fn set_layer_explicit_visibility(
         &mut self,
         explicit_visibility: bool,
-        widgets_just_shown: &mut WidgetNodeSet<MSG>,
-        widgets_just_hidden: &mut WidgetNodeSet<MSG>,
+        widgets_just_shown: &mut WidgetNodeSet<A>,
+        widgets_just_hidden: &mut WidgetNodeSet<A>,
     ) {
         if self.layer_explicit_visibility != explicit_visibility {
             self.layer_explicit_visibility = explicit_visibility;
@@ -659,8 +659,8 @@ impl<MSG> RegionTree<MSG> {
     pub fn set_window_visibility(
         &mut self,
         visible: bool,
-        widgets_just_shown: &mut WidgetNodeSet<MSG>,
-        widgets_just_hidden: &mut WidgetNodeSet<MSG>,
+        widgets_just_shown: &mut WidgetNodeSet<A>,
+        widgets_just_hidden: &mut WidgetNodeSet<A>,
     ) {
         self.window_visibility = visible;
 
@@ -720,8 +720,8 @@ impl<MSG> RegionTree<MSG> {
     pub fn handle_pointer_event(
         &mut self,
         mut event: PointerEvent,
-        msg_out_queue: &mut Vec<MSG>,
-    ) -> Option<(StrongWidgetNodeEntry<MSG>, WidgetNodeRequests)> {
+        action_queue: &mut Vec<A>,
+    ) -> Option<(StrongWidgetNodeEntry<A>, WidgetNodeRequests)> {
         if !self.layer_explicit_visibility {
             return None;
         }
@@ -732,7 +732,7 @@ impl<MSG> RegionTree<MSG> {
         for region in self.roots.iter_mut() {
             match region
                 .borrow_mut()
-                .handle_pointer_event(event, msg_out_queue)
+                .handle_pointer_event(event, action_queue)
             {
                 PointerCapturedStatus::Captured { widget, requests } => {
                     return Some((widget, requests));
@@ -748,17 +748,17 @@ impl<MSG> RegionTree<MSG> {
     }
 }
 
-struct StrongRegionTreeEntry<MSG> {
-    shared: Rc<RefCell<RegionTreeEntry<MSG>>>,
+struct StrongRegionTreeEntry<A: Clone + 'static> {
+    shared: Rc<RefCell<RegionTreeEntry<A>>>,
     region_id: u64,
 }
 
-impl<MSG> StrongRegionTreeEntry<MSG> {
-    fn borrow_mut(&mut self) -> RefMut<'_, RegionTreeEntry<MSG>> {
+impl<A: Clone + 'static> StrongRegionTreeEntry<A> {
+    fn borrow_mut(&mut self) -> RefMut<'_, RegionTreeEntry<A>> {
         RefCell::borrow_mut(&self.shared)
     }
 
-    fn downgrade(&self) -> WeakRegionTreeEntry<MSG> {
+    fn downgrade(&self) -> WeakRegionTreeEntry<A> {
         WeakRegionTreeEntry {
             shared: Rc::downgrade(&self.shared),
             region_id: self.region_id,
@@ -766,7 +766,7 @@ impl<MSG> StrongRegionTreeEntry<MSG> {
     }
 }
 
-impl<MSG> Clone for StrongRegionTreeEntry<MSG> {
+impl<A: Clone + 'static> Clone for StrongRegionTreeEntry<A> {
     fn clone(&self) -> Self {
         Self {
             shared: Rc::clone(&self.shared),
@@ -775,12 +775,12 @@ impl<MSG> Clone for StrongRegionTreeEntry<MSG> {
     }
 }
 
-pub(crate) struct WeakRegionTreeEntry<MSG> {
-    shared: Weak<RefCell<RegionTreeEntry<MSG>>>,
+pub(crate) struct WeakRegionTreeEntry<A: Clone + 'static> {
+    shared: Weak<RefCell<RegionTreeEntry<A>>>,
     region_id: u64,
 }
 
-impl<MSG> WeakRegionTreeEntry<MSG> {
+impl<A: Clone + 'static> WeakRegionTreeEntry<A> {
     pub fn new() -> Self {
         Self {
             shared: Weak::new(),
@@ -788,7 +788,7 @@ impl<MSG> WeakRegionTreeEntry<MSG> {
         }
     }
 
-    pub fn upgrade(&self) -> Option<Rc<RefCell<RegionTreeEntry<MSG>>>> {
+    pub fn upgrade(&self) -> Option<Rc<RefCell<RegionTreeEntry<A>>>> {
         self.shared.upgrade()
     }
 
@@ -797,7 +797,7 @@ impl<MSG> WeakRegionTreeEntry<MSG> {
     }
 }
 
-impl<MSG> Clone for WeakRegionTreeEntry<MSG> {
+impl<A: Clone + 'static> Clone for WeakRegionTreeEntry<A> {
     fn clone(&self) -> Self {
         Self {
             shared: Weak::clone(&self.shared),
@@ -806,34 +806,34 @@ impl<MSG> Clone for WeakRegionTreeEntry<MSG> {
     }
 }
 
-enum PointerCapturedStatus<MSG> {
+enum PointerCapturedStatus<A: Clone + 'static> {
     Captured {
-        widget: StrongWidgetNodeEntry<MSG>,
+        widget: StrongWidgetNodeEntry<A>,
         requests: WidgetNodeRequests,
     },
     InRegionButNotCaptured,
     NotInRegion,
 }
 
-struct RegionAssignedWidget<MSG> {
-    widget: StrongWidgetNodeEntry<MSG>,
+struct RegionAssignedWidget<A: Clone + 'static> {
+    widget: StrongWidgetNodeEntry<A>,
     listens_to_pointer_events: bool,
     node_type: WidgetNodeType,
 }
 
-pub(crate) struct RegionTreeEntry<MSG> {
+pub(crate) struct RegionTreeEntry<A: Clone + 'static> {
     pub region: Region,
-    parent: Option<WeakRegionTreeEntry<MSG>>,
-    children: Option<Vec<StrongRegionTreeEntry<MSG>>>,
-    assigned_widget: Option<RegionAssignedWidget<MSG>>,
+    parent: Option<WeakRegionTreeEntry<A>>,
+    children: Option<Vec<StrongRegionTreeEntry<A>>>,
+    assigned_widget: Option<RegionAssignedWidget<A>>,
 }
 
-impl<MSG> RegionTreeEntry<MSG> {
+impl<A: Clone + 'static> RegionTreeEntry<A> {
     fn handle_pointer_event(
         &mut self,
         mut event: PointerEvent,
-        msg_out_queue: &mut Vec<MSG>,
-    ) -> PointerCapturedStatus<MSG> {
+        action_queue: &mut Vec<A>,
+    ) -> PointerCapturedStatus<A> {
         if self.region.is_visible() {
             if let Some(assigned_widget) = &mut self.assigned_widget {
                 if assigned_widget.listens_to_pointer_events {
@@ -846,7 +846,7 @@ impl<MSG> RegionTreeEntry<MSG> {
                             assigned_widget
                                 .widget
                                 .borrow_mut()
-                                .on_input_event(&InputEvent::Pointer(event), msg_out_queue)
+                                .on_input_event(&InputEvent::Pointer(event), action_queue)
                         };
                         let status = if let EventCapturedStatus::Captured(requests) = status {
                             PointerCapturedStatus::Captured {
@@ -867,7 +867,7 @@ impl<MSG> RegionTreeEntry<MSG> {
                     for child_region in children.iter_mut() {
                         match child_region
                             .borrow_mut()
-                            .handle_pointer_event(event, msg_out_queue)
+                            .handle_pointer_event(event, action_queue)
                         {
                             PointerCapturedStatus::Captured { widget, requests } => {
                                 return PointerCapturedStatus::Captured { widget, requests };
@@ -889,7 +889,7 @@ impl<MSG> RegionTreeEntry<MSG> {
 
     fn mark_dirty(
         &mut self,
-        dirty_widgets: &mut WidgetNodeSet<MSG>,
+        dirty_widgets: &mut WidgetNodeSet<A>,
         texture_rects_to_clear: &mut Vec<TextureRect>,
     ) {
         if self.region.is_visible() {
@@ -919,10 +919,10 @@ impl<MSG> RegionTreeEntry<MSG> {
         new_explicit_visibility: Option<bool>,
         layer_rect: Rect,
         scale_factor: ScaleFactor,
-        dirty_widgets: &mut WidgetNodeSet<MSG>,
+        dirty_widgets: &mut WidgetNodeSet<A>,
         texture_rects_to_clear: &mut Vec<TextureRect>,
-        widgets_just_shown: &mut WidgetNodeSet<MSG>,
-        widgets_just_hidden: &mut WidgetNodeSet<MSG>,
+        widgets_just_shown: &mut WidgetNodeSet<A>,
+        widgets_just_hidden: &mut WidgetNodeSet<A>,
     ) {
         let mut changed = false;
         if let Some(new_size) = new_size {
@@ -1021,10 +1021,10 @@ impl<MSG> RegionTreeEntry<MSG> {
         layer_rect: Rect,
         scale_factor: ScaleFactor,
         parent_explicit_visibility: bool,
-        dirty_widgets: &mut WidgetNodeSet<MSG>,
+        dirty_widgets: &mut WidgetNodeSet<A>,
         texture_rects_to_clear: &mut Vec<TextureRect>,
-        widgets_just_shown: &mut WidgetNodeSet<MSG>,
-        widgets_just_hidden: &mut WidgetNodeSet<MSG>,
+        widgets_just_shown: &mut WidgetNodeSet<A>,
+        widgets_just_hidden: &mut WidgetNodeSet<A>,
     ) {
         self.region.update_parent_rect(parent_rect, scale_factor);
         self.region.parent_explicit_visibility = parent_explicit_visibility;
@@ -1087,9 +1087,9 @@ impl<MSG> RegionTreeEntry<MSG> {
 }
 
 #[derive(Clone)]
-pub struct ContainerRegionRef<MSG> {
-    pub(crate) shared: WeakRegionTreeEntry<MSG>,
-    pub(crate) assigned_layer: WeakWidgetLayerEntry<MSG>,
+pub struct ContainerRegionRef<A: Clone + 'static> {
+    pub(crate) shared: WeakRegionTreeEntry<A>,
+    pub(crate) assigned_layer: WeakWidgetLayerEntry<A>,
     assigned_layer_id: u64,
     _unique_id: u64,
 }
@@ -1167,9 +1167,9 @@ impl Region {
 }
 
 #[derive(Clone)]
-pub enum ParentAnchorType<MSG> {
+pub enum ParentAnchorType<A: Clone + 'static> {
     Layer,
-    ContainerRegion(ContainerRegionRef<MSG>),
+    ContainerRegion(ContainerRegionRef<A>),
 }
 
 #[cfg(test)]
@@ -1207,8 +1207,8 @@ mod tests {
         }
     }
 
-    impl<MSG> StrongRegionTreeEntry<MSG> {
-        fn borrow(&self) -> Ref<'_, RegionTreeEntry<MSG>> {
+    impl<A: Clone + 'static> StrongRegionTreeEntry<A> {
+        fn borrow(&self) -> Ref<'_, RegionTreeEntry<A>> {
             RefCell::borrow(&self.shared)
         }
     }
@@ -1218,7 +1218,7 @@ mod tests {
     }
 
     impl WidgetNode<()> for EmptyPaintedTestWidget {
-        fn on_added(&mut self, _msg_out_queue: &mut Vec<()>) -> WidgetNodeType {
+        fn on_added(&mut self, _action_queue: &mut Vec<()>) -> WidgetNodeType {
             println!("empty painted test widget {} added", self.id);
             WidgetNodeType::Painted
         }
@@ -1226,7 +1226,7 @@ mod tests {
         fn on_input_event(
             &mut self,
             event: &InputEvent,
-            _msg_out_queue: &mut Vec<()>,
+            _action_queue: &mut Vec<()>,
         ) -> EventCapturedStatus {
             println!(
                 "empty painted test widget {} got input event {:?}",
@@ -1241,7 +1241,7 @@ mod tests {
     }
 
     impl WidgetNode<()> for EmptyPointerOnlyTestWidget {
-        fn on_added(&mut self, _msg_out_queue: &mut Vec<()>) -> WidgetNodeType {
+        fn on_added(&mut self, _action_queue: &mut Vec<()>) -> WidgetNodeType {
             println!("empty pointer only test widget {} added", self.id);
             WidgetNodeType::PointerOnly
         }
@@ -1249,7 +1249,7 @@ mod tests {
         fn on_input_event(
             &mut self,
             event: &InputEvent,
-            _msg_out_queue: &mut Vec<()>,
+            _action_queue: &mut Vec<()>,
         ) -> EventCapturedStatus {
             println!(
                 "empty pointer only test widget {} got input event {:?}",

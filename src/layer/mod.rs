@@ -9,33 +9,33 @@ pub(crate) use widget_layer::{WeakRegionTreeEntry, WidgetLayer};
 
 pub use widget_layer::{ContainerRegionRef, ParentAnchorType, RegionInfo};
 
-pub(crate) struct StrongWidgetLayerEntry<MSG> {
-    shared: Rc<RefCell<WidgetLayer<MSG>>>,
+pub(crate) struct StrongWidgetLayerEntry<A: Clone + 'static> {
+    shared: Rc<RefCell<WidgetLayer<A>>>,
 }
 
-impl<MSG> StrongWidgetLayerEntry<MSG> {
-    pub fn new(widget_layer: WidgetLayer<MSG>) -> Self {
+impl<A: Clone + 'static> StrongWidgetLayerEntry<A> {
+    pub fn new(widget_layer: WidgetLayer<A>) -> Self {
         Self {
             shared: Rc::new(RefCell::new(widget_layer)),
         }
     }
 
-    pub fn borrow(&self) -> Ref<'_, WidgetLayer<MSG>> {
+    pub fn borrow(&self) -> Ref<'_, WidgetLayer<A>> {
         RefCell::borrow(&self.shared)
     }
 
-    pub fn borrow_mut(&mut self) -> RefMut<'_, WidgetLayer<MSG>> {
+    pub fn borrow_mut(&mut self) -> RefMut<'_, WidgetLayer<A>> {
         RefCell::borrow_mut(&self.shared)
     }
 
-    pub fn downgrade(&self) -> WeakWidgetLayerEntry<MSG> {
+    pub fn downgrade(&self) -> WeakWidgetLayerEntry<A> {
         WeakWidgetLayerEntry {
             shared: Rc::downgrade(&self.shared),
         }
     }
 }
 
-impl<MSG> Clone for StrongWidgetLayerEntry<MSG> {
+impl<A: Clone + 'static> Clone for StrongWidgetLayerEntry<A> {
     fn clone(&self) -> Self {
         Self {
             shared: Rc::clone(&self.shared),
@@ -43,25 +43,25 @@ impl<MSG> Clone for StrongWidgetLayerEntry<MSG> {
     }
 }
 
-pub(crate) struct WeakWidgetLayerEntry<MSG> {
-    shared: Weak<RefCell<WidgetLayer<MSG>>>,
+pub(crate) struct WeakWidgetLayerEntry<A: Clone + 'static> {
+    shared: Weak<RefCell<WidgetLayer<A>>>,
 }
 
-impl<MSG> WeakWidgetLayerEntry<MSG> {
+impl<A: Clone + 'static> WeakWidgetLayerEntry<A> {
     pub fn new() -> Self {
         Self {
             shared: Weak::new(),
         }
     }
 
-    pub fn upgrade(&self) -> Option<StrongWidgetLayerEntry<MSG>> {
+    pub fn upgrade(&self) -> Option<StrongWidgetLayerEntry<A>> {
         self.shared
             .upgrade()
             .map(|shared| StrongWidgetLayerEntry { shared })
     }
 }
 
-impl<MSG> Clone for WeakWidgetLayerEntry<MSG> {
+impl<A: Clone + 'static> Clone for WeakWidgetLayerEntry<A> {
     fn clone(&self) -> Self {
         Self {
             shared: Weak::clone(&self.shared),
@@ -129,11 +129,11 @@ impl Clone for WeakBackgroundLayerEntry {
     }
 }
 
-pub struct WidgetLayerRef<MSG> {
-    pub(crate) shared: WeakWidgetLayerEntry<MSG>,
+pub struct WidgetLayerRef<A: Clone + 'static> {
+    pub(crate) shared: WeakWidgetLayerEntry<A>,
 }
 
-pub(crate) enum StrongLayerEntry<MSG> {
-    Widget(StrongWidgetLayerEntry<MSG>),
+pub(crate) enum StrongLayerEntry<A: Clone + 'static> {
+    Widget(StrongWidgetLayerEntry<A>),
     Background(StrongBackgroundLayerEntry),
 }
