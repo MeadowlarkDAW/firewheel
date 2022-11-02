@@ -629,7 +629,7 @@ impl<A: Clone + 'static> AppWindow<A> {
 
         let weak_layer_entry = layer.shared.clone();
 
-        let node_type = widget_node.on_added(action_queue);
+        let (node_type, requests) = widget_node.on_added(action_queue);
 
         let new_id = self.next_widget_id;
         self.next_widget_id += 1;
@@ -657,6 +657,8 @@ impl<A: Clone + 'static> AppWindow<A> {
         //self.widgets.insert(widget_entry.clone());
 
         self.handle_visibility_changes(action_queue);
+
+        self.handle_widget_requests(&mut widget_entry, requests);
 
         Ok(WidgetNodeRef {
             shared: widget_entry.downgrade(),

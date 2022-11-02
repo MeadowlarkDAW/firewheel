@@ -17,7 +17,7 @@ pub enum WidgetNodeType {
 }
 
 pub trait WidgetNode<A: Clone + 'static> {
-    fn on_added(&mut self, action_queue: &mut Vec<A>) -> WidgetNodeType;
+    fn on_added(&mut self, action_queue: &mut Vec<A>) -> (WidgetNodeType, WidgetNodeRequests);
 
     #[allow(unused)]
     fn on_visibility_hidden(&mut self, action_queue: &mut Vec<A>) {}

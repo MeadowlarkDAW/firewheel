@@ -15,6 +15,6 @@ pub enum BgColor {
         /// The gradient stops (maximum of 24 stops).
         ///
         /// `(percentage in the range [0.0..100.0], Color)`
-        stop: Vec<(f32, Color)>,
+        stops: Vec<(f32, Color)>,
     },
 }

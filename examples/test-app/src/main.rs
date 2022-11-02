@@ -1,32 +1,26 @@
-use firewheel::event::{InputEvent, Modifiers};
-use firewheel::vg::{Color, FontId, Paint, Path};
+use firewheel::event::{InputEvent, PointerEvent};
+use firewheel::vg::{Color, Paint, Path};
 use firewheel::{
-    Anchor, AppWindow, BackgroundNode, EventCapturedStatus, PaintRegionInfo, ParentAnchorType,
-    PhysicalSize, Point, Rect, RegionInfo, ScaleFactor, Size, WidgetNode, WidgetNodeRequests,
-    WidgetNodeType, VG,
+    Anchor, AppWindow, BackgroundNode, PaintRegionInfo, ParentAnchorType, PhysicalSize, Point,
+    RegionInfo, VG,
 };
-use glutin::config::{Api, ConfigSurfaceTypes, ConfigTemplateBuilder, GlConfig};
-use glutin::context::{
-    ContextApi, ContextAttributesBuilder, NotCurrentGlContextSurfaceAccessor, Version,
-};
+use glutin::config::{ConfigSurfaceTypes, ConfigTemplateBuilder, GlConfig};
+use glutin::context::{ContextApi, ContextAttributesBuilder, NotCurrentGlContextSurfaceAccessor};
 use glutin::display::{Display, DisplayApiPreference};
 use glutin::prelude::{GlDisplay, GlSurface};
-use glutin::surface::{Surface, SurfaceAttributesBuilder, SwapInterval, WindowSurface};
-use raw_window_handle::{
-    HasRawDisplayHandle, HasRawWindowHandle, RawDisplayHandle, RawWindowHandle,
-};
+use glutin::surface::{SurfaceAttributesBuilder, SwapInterval, WindowSurface};
+use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use std::any::Any;
 use std::num::NonZeroU32;
 use std::rc::Rc;
-use std::time::Instant;
 use winit::{
-    event::{Event, StartCause, WindowEvent},
+    event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
-    window::{Window, WindowBuilder},
+    window::WindowBuilder,
 };
 
 mod label_button;
-use label_button::{LabelButton, LabelButtonStyle};
+use label_button::{LabelButton, LabelButtonEvent, LabelButtonStyle};
 
 fn main() {
     env_logger::builder()
@@ -114,12 +108,11 @@ fn main() {
     // --- Initialize Firewheel app window ---------------------------------------------
 
     let mut app_window =
-        AppWindow::<MyMsg>::new_from_glutin_display(window.scale_factor().into(), &gl_display);
+        AppWindow::<MyAction>::new_from_glutin_display(window.scale_factor().into(), &gl_display);
 
     let mut window_size = PhysicalSize::new(window.inner_size().width, window.inner_size().height);
     let mut scale_factor = window.scale_factor().into();
-    let mut window_logical_size = window_size.to_logical(scale_factor);
-    let mut modifiers = Modifiers::default();
+    let window_logical_size = window_size.to_logical(scale_factor);
     let mut action_queue = Vec::new();
 
     let main_font_id = app_window
@@ -143,36 +136,42 @@ fn main() {
         true,
     );
 
+    let mut buttom_msg_i: usize = 0;
+
     let label_button_style = Rc::new(LabelButtonStyle::default());
     let test_button = LabelButton::new(
-        "Hello World!".into(),
+        BUTTON_MESSAGES[buttom_msg_i].into(),
         main_font_id,
         label_button_style.clone(),
-        None,
-        true,
+        Some(MyAction::ButtonPressed),
+        false,
     );
     //let test_button_size = test_button.compute_size(scale_factor, app_window.vg());
     let test_button_size = label_button_style.compute_size(
-        "Hello World!",
+        BUTTON_MESSAGES[buttom_msg_i],
         main_font_id,
         scale_factor,
         app_window.vg(),
     );
-    let mut test_button_ref = app_window.add_widget_node(
-        Box::new(test_button),
-        &widget_layer_ref,
-        RegionInfo {
-            size: test_button_size,
-            internal_anchor: Anchor::center(),
-            parent_anchor: Anchor::center(),
-            parent_anchor_type: ParentAnchorType::Layer,
-            anchor_offset: Point::new(0.0, 0.0),
-        },
-        true,
-        &mut action_queue,
-    );
+    let mut test_button_ref = app_window
+        .add_widget_node(
+            Box::new(test_button),
+            &widget_layer_ref,
+            RegionInfo {
+                size: test_button_size,
+                internal_anchor: Anchor::center(),
+                parent_anchor: Anchor::center(),
+                parent_anchor_type: ParentAnchorType::Layer,
+                anchor_offset: Point::new(0.0, 0.0),
+            },
+            true,
+            &mut action_queue,
+        )
+        .unwrap();
 
     // --- Run event loop --------------------------------------------------------------
+
+    let mut pointer_event_state = PointerEvent::default();
 
     event_loop.run(move |event, _, control_flow| match event {
         Event::WindowEvent {
@@ -189,7 +188,7 @@ fn main() {
                     );
 
                     window_size = PhysicalSize::new(physical_size.width, physical_size.height);
-                    window_logical_size = window_size.to_logical(scale_factor);
+                    let window_logical_size = window_size.to_logical(scale_factor);
 
                     app_window
                         .set_background_node_size(
@@ -221,7 +220,7 @@ fn main() {
                     app_window.set_scale_factor(scale_factor, &mut action_queue);
 
                     window_size = PhysicalSize::new(new_inner_size.width, new_inner_size.height);
-                    window_logical_size = window_size.to_logical(scale_factor);
+                    let window_logical_size = window_size.to_logical(scale_factor);
 
                     app_window
                         .set_background_node_size(
@@ -239,7 +238,28 @@ fn main() {
                 }
             }
             WindowEvent::ModifiersChanged(m) => {
-                modifiers = firewheel::event::from_winit_modifiers(m);
+                pointer_event_state.modifiers = firewheel::event::from_winit_modifiers(m);
+            }
+            WindowEvent::CursorMoved { position, .. } => {
+                pointer_event_state.update_from_winit_cursor_moved(*position, scale_factor);
+                app_window.handle_input_event(
+                    &InputEvent::Pointer(pointer_event_state.clone()),
+                    &mut action_queue,
+                );
+            }
+            WindowEvent::MouseInput { state, button, .. } => {
+                pointer_event_state.update_from_winit_mouse_input(state, button);
+                app_window.handle_input_event(
+                    &InputEvent::Pointer(pointer_event_state.clone()),
+                    &mut action_queue,
+                );
+            }
+            WindowEvent::MouseWheel { delta, phase, .. } => {
+                pointer_event_state.update_from_winit_mouse_wheel(delta, phase, scale_factor);
+                app_window.handle_input_event(
+                    &InputEvent::Pointer(pointer_event_state.clone()),
+                    &mut action_queue,
+                );
             }
             _ => {}
         },
@@ -249,16 +269,73 @@ fn main() {
             gl_surface.swap_buffers(&current_gl_context).unwrap();
         }
         Event::MainEventsCleared => {
+            let mut temp_action_queue = Vec::new();
+            std::mem::swap(&mut temp_action_queue, &mut action_queue);
+
+            for action in temp_action_queue.drain(..) {
+                match action {
+                    MyAction::ButtonPressed => {
+                        println!("button pressed!");
+
+                        buttom_msg_i = if buttom_msg_i + 1 >= BUTTON_MESSAGES.len() {
+                            0
+                        } else {
+                            buttom_msg_i + 1
+                        };
+                        let button_msg = BUTTON_MESSAGES[buttom_msg_i];
+
+                        let test_button_size = label_button_style.compute_size(
+                            button_msg,
+                            main_font_id,
+                            scale_factor,
+                            app_window.vg(),
+                        );
+
+                        app_window
+                            .send_user_event_to_widget(
+                                &mut test_button_ref,
+                                Box::new(LabelButtonEvent::<MyAction>::SetLabel(button_msg.into())),
+                                &mut action_queue,
+                            )
+                            .unwrap();
+                        app_window
+                            .modify_widget_region(
+                                &mut test_button_ref,
+                                Some(test_button_size),
+                                None,
+                                None,
+                                None,
+                                &mut action_queue,
+                            )
+                            .unwrap();
+                    }
+                }
+            }
+
+            temp_action_queue.append(&mut action_queue);
+            std::mem::swap(&mut temp_action_queue, &mut action_queue);
+
             if app_window.is_dirty() {
                 window.request_redraw();
             }
         }
+        //Event::DeviceEvent { device_id, event } => {}
         _ => {}
     });
 }
 
-#[derive(Clone)]
-enum MyMsg {}
+#[derive(Debug, Clone)]
+enum MyAction {
+    ButtonPressed,
+}
+
+const BUTTON_MESSAGES: [&str; 5] = [
+    "Hello World!",
+    "Click Me!",
+    "It is me. A button.",
+    "LOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOONG BOI",
+    "sup",
+];
 
 struct TestBackgroundNode {}
 

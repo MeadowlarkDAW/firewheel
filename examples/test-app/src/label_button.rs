@@ -1,4 +1,5 @@
 use firewheel::vg::{Color, FontId, Paint};
+use firewheel::GradientDirection;
 use firewheel::{
     event::InputEvent, BgColor, EventCapturedStatus, PaintRegionInfo, Point, Rect, ScaleFactor,
     Size, WidgetNode, WidgetNodeRequests, WidgetNodeType, VG,
@@ -6,6 +7,7 @@ use firewheel::{
 use std::any::Any;
 use std::rc::Rc;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ButtonState {
     Idle,
     KeyboardFocus,
@@ -95,12 +97,12 @@ impl Default for LabelButtonStyle {
             idle_font_color: Color::rgb(235, 235, 235),
 
             hover_border_width_pts: 1.0,
-            hover_bg_color: BgColor::Solid(Color::rgb(41, 41, 41)),
+            hover_bg_color: BgColor::Solid(Color::rgb(71, 71, 71)),
             hover_border_color: Color::rgb(22, 22, 22),
             hover_font_color: Color::rgb(235, 235, 235),
 
             down_border_width_pts: 1.0,
-            down_bg_color: BgColor::Solid(Color::rgb(41, 41, 41)),
+            down_bg_color: BgColor::Solid(Color::rgb(31, 31, 31)),
             down_border_color: Color::rgb(22, 22, 22),
             down_font_color: Color::rgb(235, 235, 235),
 
@@ -154,8 +156,14 @@ impl<A: Clone + 'static> LabelButton<A> {
 }
 
 impl<A: Clone + 'static> WidgetNode<A> for LabelButton<A> {
-    fn on_added(&mut self, _action_queue: &mut Vec<A>) -> WidgetNodeType {
-        WidgetNodeType::Painted
+    fn on_added(&mut self, _action_queue: &mut Vec<A>) -> (WidgetNodeType, WidgetNodeRequests) {
+        (
+            WidgetNodeType::Painted,
+            WidgetNodeRequests {
+                set_pointer_events_listen: Some(true),
+                ..Default::default()
+            },
+        )
     }
 
     fn on_visibility_hidden(&mut self, _action_queue: &mut Vec<A>) {
@@ -389,12 +397,33 @@ impl<A: Clone + 'static> WidgetNode<A> for LabelButton<A> {
             self.style.border_radius_pts,
         );
 
-        let mut bg_paint = Paint::color(Color::rgb(41, 41, 41));
-        let mut bg_stroke_paint = Paint::color(Color::rgb(22, 22, 22));
-        bg_stroke_paint.set_line_width((border_width_pts * region.scale_factor.0).round());
+        let bg_paint = match bg_color {
+            BgColor::Solid(color) => Paint::color(*color),
+            BgColor::LinearGradient { direction, stops } => match direction {
+                GradientDirection::Horizontal => Paint::linear_gradient_stops(
+                    0.0,
+                    0.0,
+                    region.physical_rect.size.width as f32
+                        - (f32::from(self.style.margin_lr_pts) * region.scale_factor.0 * 2.0),
+                    0.0,
+                    stops,
+                ),
+                GradientDirection::Vertical => Paint::linear_gradient_stops(
+                    0.0,
+                    0.0,
+                    0.0,
+                    region.physical_rect.size.height as f32
+                        - (f32::from(self.style.margin_tb_pts) * region.scale_factor.0 * 2.0),
+                    stops,
+                ),
+            },
+        };
+
+        let mut border_paint = Paint::color(*border_color);
+        border_paint.set_line_width((border_width_pts * region.scale_factor.0).round());
 
         vg.fill_path(&mut bg_path, &bg_paint);
-        vg.stroke_path(&mut bg_path, &bg_stroke_paint);
+        vg.stroke_path(&mut bg_path, &border_paint);
 
         let label_rect_width_px = region.physical_rect.size.width as f32
             - (f32::from(self.style.margin_lr_pts + self.style.padding_lr_pts)
@@ -402,26 +431,16 @@ impl<A: Clone + 'static> WidgetNode<A> for LabelButton<A> {
                 * 2.0)
                 .round()
                 .max(0.0);
-        let label_rect_height_px = region.physical_rect.size.height as f32
-            - (f32::from(self.style.margin_tb_pts + self.style.padding_tb_pts)
-                * region.scale_factor.0
-                * 2.0)
-                .round()
-                .max(0.0);
+        let label_rect_height_px = self.style.font_size_pts * region.scale_factor.0 * 1.43;
 
         if label_rect_width_px != 0.0 && label_rect_height_px != 0.0 {
             let label_rect_x_px = region.physical_rect.pos.x as f32
                 + (f32::from(self.style.margin_lr_pts + self.style.padding_lr_pts)
                     * region.scale_factor.0);
-            let label_rect_y_px = region.physical_rect.pos.y as f32
-                + (f32::from(self.style.margin_tb_pts + self.style.padding_tb_pts)
-                    * region.scale_factor.0);
-            let label_rect_y_center_px = (region.physical_rect.pos.y as f32
-                + (f32::from(self.style.margin_tb_pts + self.style.padding_tb_pts)
-                    * region.scale_factor.0)
-                + (self.font_bounds_pts.height() * region.scale_factor.0 / 2.0))
-                .round()
-                - 0.5;
+            let label_rect_y_px = (region.physical_rect.pos.y as f32
+                + (region.physical_rect.size.height as f32 / 2.0)
+                - (self.style.font_size_pts * 1.43 * region.scale_factor.0 / 2.0))
+                .round();
 
             vg.scissor(
                 label_rect_x_px,
@@ -433,14 +452,9 @@ impl<A: Clone + 'static> WidgetNode<A> for LabelButton<A> {
             let mut font_paint = Paint::color(*font_color);
             font_paint.set_font(&[self.font_id]);
             font_paint.set_font_size(self.style.font_size_pts * region.scale_factor.0);
-            font_paint.set_text_baseline(firewheel::vg::Baseline::Middle);
+            font_paint.set_text_baseline(firewheel::vg::Baseline::Top);
 
-            vg.fill_text(
-                label_rect_x_px,
-                label_rect_y_center_px,
-                &self.label,
-                &font_paint,
-            );
+            vg.fill_text(label_rect_x_px, label_rect_y_px, &self.label, &font_paint);
 
             vg.reset_scissor();
         }

@@ -839,8 +839,8 @@ impl<A: Clone + 'static> RegionTreeEntry<A> {
                 if assigned_widget.listens_to_pointer_events {
                     if self.region.rect.contains_point(event.position) {
                         // Remove the region's offset from the position of the mouse event.
-                        let temp_position = event.position;
-                        event.position -= self.region.rect.pos();
+                        //let temp_position = event.position;
+                        //event.position -= self.region.rect.pos();
 
                         let status = {
                             assigned_widget
@@ -857,7 +857,7 @@ impl<A: Clone + 'static> RegionTreeEntry<A> {
                             PointerCapturedStatus::InRegionButNotCaptured
                         };
 
-                        event.position = temp_position;
+                        //event.position = temp_position;
 
                         return status;
                     }
@@ -1218,9 +1218,12 @@ mod tests {
     }
 
     impl WidgetNode<()> for EmptyPaintedTestWidget {
-        fn on_added(&mut self, _action_queue: &mut Vec<()>) -> WidgetNodeType {
+        fn on_added(
+            &mut self,
+            _action_queue: &mut Vec<()>,
+        ) -> (WidgetNodeType, WidgetNodeRequests) {
             println!("empty painted test widget {} added", self.id);
-            WidgetNodeType::Painted
+            (WidgetNodeType::Painted, WidgetNodeRequests::default())
         }
 
         fn on_input_event(
@@ -1241,9 +1244,12 @@ mod tests {
     }
 
     impl WidgetNode<()> for EmptyPointerOnlyTestWidget {
-        fn on_added(&mut self, _action_queue: &mut Vec<()>) -> WidgetNodeType {
+        fn on_added(
+            &mut self,
+            _action_queue: &mut Vec<()>,
+        ) -> (WidgetNodeType, WidgetNodeRequests) {
             println!("empty pointer only test widget {} added", self.id);
-            WidgetNodeType::PointerOnly
+            (WidgetNodeType::PointerOnly, WidgetNodeRequests::default())
         }
 
         fn on_input_event(
