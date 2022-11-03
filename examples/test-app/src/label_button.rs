@@ -123,8 +123,6 @@ pub struct LabelButton<A> {
 
     pointer_bounds: Rect,
 
-    font_bounds_pts: Size,
-    do_recompute_font_bounds: bool,
     keyboard_focused: bool,
 
     action: Option<A>,
@@ -146,8 +144,6 @@ impl<A: Clone + Send + Sync + 'static> LabelButton<A> {
             font_id,
             style,
             pointer_bounds: Rect::default(),
-            font_bounds_pts: Size::default(),
-            do_recompute_font_bounds: true,
             keyboard_focused: false,
             action,
             emit_on_release,
@@ -192,7 +188,6 @@ impl<A: Clone + Send + Sync + 'static> WidgetNode<A> for LabelButton<A> {
                 LabelButtonEvent::SetLabel(label) => {
                     if self.label != label {
                         self.label = label;
-                        self.do_recompute_font_bounds = true;
 
                         return Some(WidgetNodeRequests {
                             repaint: true,
@@ -208,9 +203,6 @@ impl<A: Clone + Send + Sync + 'static> WidgetNode<A> for LabelButton<A> {
                     self.emit_on_release = emit_on_release;
                 }
                 LabelButtonEvent::SetStyle(style) => {
-                    if style.font_size_pts != self.style.font_size_pts {
-                        self.do_recompute_font_bounds = true;
-                    }
                     self.style = style;
 
                     return Some(WidgetNodeRequests {
@@ -221,7 +213,6 @@ impl<A: Clone + Send + Sync + 'static> WidgetNode<A> for LabelButton<A> {
                 LabelButtonEvent::SetFontID(font_id) => {
                     if self.font_id != font_id {
                         self.font_id = font_id;
-                        self.do_recompute_font_bounds = true;
 
                         return Some(WidgetNodeRequests {
                             repaint: true,
@@ -378,18 +369,6 @@ impl<A: Clone + Send + Sync + 'static> WidgetNode<A> for LabelButton<A> {
                 &self.style.keyboard_focus_font_color,
             ),
         };
-
-        if self.do_recompute_font_bounds {
-            self.do_recompute_font_bounds = false;
-
-            self.font_bounds_pts = firewheel::compute_font_bounds(
-                &self.label,
-                self.font_id,
-                self.style.font_size_pts,
-                region.scale_factor,
-                vg,
-            );
-        }
 
         let mut bg_path = region.spanning_rounded_rect_path(
             self.style.margin_lr_pts,
