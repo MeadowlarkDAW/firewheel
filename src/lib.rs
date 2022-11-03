@@ -10,6 +10,7 @@ pub(crate) mod widget_node_set;
 pub mod error;
 pub mod event;
 pub mod size;
+pub mod widgets;
 
 pub use anchor::{Anchor, HAlign, VAlign};
 pub use app_window::AppWindow;

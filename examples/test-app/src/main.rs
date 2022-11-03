@@ -1,5 +1,6 @@
 use firewheel::event::{InputEvent, PointerEvent};
 use firewheel::vg::{Color, Paint, Path};
+use firewheel::widgets::{LabelButton, LabelButtonEvent, LabelButtonStyle};
 use firewheel::{
     Anchor, AppWindow, BackgroundNode, PaintRegionInfo, ParentAnchorType, PhysicalSize, Point,
     RegionInfo, VG,
@@ -18,9 +19,6 @@ use winit::{
     event_loop::{ControlFlow, EventLoop},
     window::WindowBuilder,
 };
-
-mod label_button;
-use label_button::{LabelButton, LabelButtonEvent, LabelButtonStyle};
 
 fn main() {
     env_logger::builder()
