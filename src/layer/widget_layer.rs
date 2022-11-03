@@ -1,3 +1,5 @@
+use crossbeam_channel::Sender;
+
 use crate::anchor::Anchor;
 use crate::error::FirewheelError;
 use crate::event::PointerEvent;
@@ -13,7 +15,7 @@ use region_tree::RegionTree;
 pub(crate) use region_tree::WeakRegionTreeEntry;
 pub use region_tree::{ContainerRegionRef, ParentAnchorType, RegionInfo};
 
-pub(crate) struct WidgetLayer<A: Clone + 'static> {
+pub(crate) struct WidgetLayer<A: Clone + Send + Sync + 'static> {
     pub id: u64,
     pub z_order: i32,
     pub renderer: Option<WidgetLayerRenderer>,
@@ -23,7 +25,7 @@ pub(crate) struct WidgetLayer<A: Clone + 'static> {
     pub physical_outer_position: PhysicalPoint,
 }
 
-impl<A: Clone + 'static> WidgetLayer<A> {
+impl<A: Clone + Send + Sync + 'static> WidgetLayer<A> {
     pub fn new(
         id: u64,
         z_order: i32,
@@ -253,7 +255,7 @@ impl<A: Clone + 'static> WidgetLayer<A> {
     pub fn handle_pointer_event(
         &mut self,
         mut event: PointerEvent,
-        action_queue: &mut Vec<A>,
+        action_tx: &mut Sender<A>,
     ) -> Option<(StrongWidgetNodeEntry<A>, WidgetNodeRequests)> {
         if !self.region_tree.layer_explicit_visibility() {
             return None;
@@ -272,7 +274,7 @@ impl<A: Clone + 'static> WidgetLayer<A> {
         // Remove this layer's offset from the position of the mouse event.
         event.position -= self.outer_position;
 
-        self.region_tree.handle_pointer_event(event, action_queue)
+        self.region_tree.handle_pointer_event(event, action_tx)
     }
 
     pub fn is_empty(&self) -> bool {

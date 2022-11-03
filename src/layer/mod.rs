@@ -9,11 +9,11 @@ pub(crate) use widget_layer::{WeakRegionTreeEntry, WidgetLayer};
 
 pub use widget_layer::{ContainerRegionRef, ParentAnchorType, RegionInfo};
 
-pub(crate) struct StrongWidgetLayerEntry<A: Clone + 'static> {
+pub(crate) struct StrongWidgetLayerEntry<A: Clone + Send + Sync + 'static> {
     shared: Rc<RefCell<WidgetLayer<A>>>,
 }
 
-impl<A: Clone + 'static> StrongWidgetLayerEntry<A> {
+impl<A: Clone + Send + Sync + 'static> StrongWidgetLayerEntry<A> {
     pub fn new(widget_layer: WidgetLayer<A>) -> Self {
         Self {
             shared: Rc::new(RefCell::new(widget_layer)),
@@ -35,7 +35,7 @@ impl<A: Clone + 'static> StrongWidgetLayerEntry<A> {
     }
 }
 
-impl<A: Clone + 'static> Clone for StrongWidgetLayerEntry<A> {
+impl<A: Clone + Send + Sync + 'static> Clone for StrongWidgetLayerEntry<A> {
     fn clone(&self) -> Self {
         Self {
             shared: Rc::clone(&self.shared),
@@ -43,11 +43,11 @@ impl<A: Clone + 'static> Clone for StrongWidgetLayerEntry<A> {
     }
 }
 
-pub(crate) struct WeakWidgetLayerEntry<A: Clone + 'static> {
+pub(crate) struct WeakWidgetLayerEntry<A: Clone + Send + Sync + 'static> {
     shared: Weak<RefCell<WidgetLayer<A>>>,
 }
 
-impl<A: Clone + 'static> WeakWidgetLayerEntry<A> {
+impl<A: Clone + Send + Sync + 'static> WeakWidgetLayerEntry<A> {
     pub fn new() -> Self {
         Self {
             shared: Weak::new(),
@@ -61,7 +61,7 @@ impl<A: Clone + 'static> WeakWidgetLayerEntry<A> {
     }
 }
 
-impl<A: Clone + 'static> Clone for WeakWidgetLayerEntry<A> {
+impl<A: Clone + Send + Sync + 'static> Clone for WeakWidgetLayerEntry<A> {
     fn clone(&self) -> Self {
         Self {
             shared: Weak::clone(&self.shared),
@@ -129,11 +129,11 @@ impl Clone for WeakBackgroundLayerEntry {
     }
 }
 
-pub struct WidgetLayerRef<A: Clone + 'static> {
+pub struct WidgetLayerRef<A: Clone + Send + Sync + 'static> {
     pub(crate) shared: WeakWidgetLayerEntry<A>,
 }
 
-pub(crate) enum StrongLayerEntry<A: Clone + 'static> {
+pub(crate) enum StrongLayerEntry<A: Clone + Send + Sync + 'static> {
     Widget(StrongWidgetLayerEntry<A>),
     Background(StrongBackgroundLayerEntry),
 }

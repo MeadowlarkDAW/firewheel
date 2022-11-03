@@ -22,7 +22,7 @@ impl WidgetLayerRenderer {
         }
     }
 
-    pub fn render<A: Clone + 'static>(
+    pub fn render<A: Clone + Send + Sync + 'static>(
         &mut self,
         layer: &mut WidgetLayer<A>,
         vg: &mut femtovg::Canvas<femtovg::renderer::OpenGl>,

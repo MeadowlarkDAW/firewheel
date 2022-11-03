@@ -1,3 +1,4 @@
+use crossbeam_channel::Sender;
 use std::cell::{RefCell, RefMut};
 use std::rc::{Rc, Weak};
 
@@ -18,7 +19,7 @@ use crate::{
 // items.
 
 #[derive(Clone)]
-pub struct RegionInfo<A: Clone + 'static> {
+pub struct RegionInfo<A: Clone + Send + Sync + 'static> {
     pub size: Size,
     pub internal_anchor: Anchor,
     pub parent_anchor: Anchor,
@@ -26,7 +27,7 @@ pub struct RegionInfo<A: Clone + 'static> {
     pub anchor_offset: Point,
 }
 
-pub(crate) struct RegionTree<A: Clone + 'static> {
+pub(crate) struct RegionTree<A: Clone + Send + Sync + 'static> {
     pub dirty_widgets: WidgetNodeSet<A>,
     pub texture_rects_to_clear: Vec<TextureRect>,
     pub clear_whole_layer: bool,
@@ -41,7 +42,7 @@ pub(crate) struct RegionTree<A: Clone + 'static> {
     layer_id: u64,
 }
 
-impl<A: Clone + 'static> RegionTree<A> {
+impl<A: Clone + Send + Sync + 'static> RegionTree<A> {
     pub fn new(
         layer_size: Size,
         inner_position: Point,
@@ -720,7 +721,7 @@ impl<A: Clone + 'static> RegionTree<A> {
     pub fn handle_pointer_event(
         &mut self,
         mut event: PointerEvent,
-        action_queue: &mut Vec<A>,
+        action_tx: &mut Sender<A>,
     ) -> Option<(StrongWidgetNodeEntry<A>, WidgetNodeRequests)> {
         if !self.layer_explicit_visibility {
             return None;
@@ -730,10 +731,7 @@ impl<A: Clone + 'static> RegionTree<A> {
         event.position += self.layer_rect.pos();
 
         for region in self.roots.iter_mut() {
-            match region
-                .borrow_mut()
-                .handle_pointer_event(event, action_queue)
-            {
+            match region.borrow_mut().handle_pointer_event(event, action_tx) {
                 PointerCapturedStatus::Captured { widget, requests } => {
                     return Some((widget, requests));
                 }
@@ -748,12 +746,12 @@ impl<A: Clone + 'static> RegionTree<A> {
     }
 }
 
-struct StrongRegionTreeEntry<A: Clone + 'static> {
+struct StrongRegionTreeEntry<A: Clone + Send + Sync + 'static> {
     shared: Rc<RefCell<RegionTreeEntry<A>>>,
     region_id: u64,
 }
 
-impl<A: Clone + 'static> StrongRegionTreeEntry<A> {
+impl<A: Clone + Send + Sync + 'static> StrongRegionTreeEntry<A> {
     fn borrow_mut(&mut self) -> RefMut<'_, RegionTreeEntry<A>> {
         RefCell::borrow_mut(&self.shared)
     }
@@ -766,7 +764,7 @@ impl<A: Clone + 'static> StrongRegionTreeEntry<A> {
     }
 }
 
-impl<A: Clone + 'static> Clone for StrongRegionTreeEntry<A> {
+impl<A: Clone + Send + Sync + 'static> Clone for StrongRegionTreeEntry<A> {
     fn clone(&self) -> Self {
         Self {
             shared: Rc::clone(&self.shared),
@@ -775,12 +773,12 @@ impl<A: Clone + 'static> Clone for StrongRegionTreeEntry<A> {
     }
 }
 
-pub(crate) struct WeakRegionTreeEntry<A: Clone + 'static> {
+pub(crate) struct WeakRegionTreeEntry<A: Clone + Send + Sync + 'static> {
     shared: Weak<RefCell<RegionTreeEntry<A>>>,
     region_id: u64,
 }
 
-impl<A: Clone + 'static> WeakRegionTreeEntry<A> {
+impl<A: Clone + Send + Sync + 'static> WeakRegionTreeEntry<A> {
     pub fn new() -> Self {
         Self {
             shared: Weak::new(),
@@ -797,7 +795,7 @@ impl<A: Clone + 'static> WeakRegionTreeEntry<A> {
     }
 }
 
-impl<A: Clone + 'static> Clone for WeakRegionTreeEntry<A> {
+impl<A: Clone + Send + Sync + 'static> Clone for WeakRegionTreeEntry<A> {
     fn clone(&self) -> Self {
         Self {
             shared: Weak::clone(&self.shared),
@@ -806,7 +804,7 @@ impl<A: Clone + 'static> Clone for WeakRegionTreeEntry<A> {
     }
 }
 
-enum PointerCapturedStatus<A: Clone + 'static> {
+enum PointerCapturedStatus<A: Clone + Send + Sync + 'static> {
     Captured {
         widget: StrongWidgetNodeEntry<A>,
         requests: WidgetNodeRequests,
@@ -815,24 +813,24 @@ enum PointerCapturedStatus<A: Clone + 'static> {
     NotInRegion,
 }
 
-struct RegionAssignedWidget<A: Clone + 'static> {
+struct RegionAssignedWidget<A: Clone + Send + Sync + 'static> {
     widget: StrongWidgetNodeEntry<A>,
     listens_to_pointer_events: bool,
     node_type: WidgetNodeType,
 }
 
-pub(crate) struct RegionTreeEntry<A: Clone + 'static> {
+pub(crate) struct RegionTreeEntry<A: Clone + Send + Sync + 'static> {
     pub region: Region,
     parent: Option<WeakRegionTreeEntry<A>>,
     children: Option<Vec<StrongRegionTreeEntry<A>>>,
     assigned_widget: Option<RegionAssignedWidget<A>>,
 }
 
-impl<A: Clone + 'static> RegionTreeEntry<A> {
+impl<A: Clone + Send + Sync + 'static> RegionTreeEntry<A> {
     fn handle_pointer_event(
         &mut self,
         mut event: PointerEvent,
-        action_queue: &mut Vec<A>,
+        action_tx: &mut Sender<A>,
     ) -> PointerCapturedStatus<A> {
         if self.region.is_visible() {
             if let Some(assigned_widget) = &mut self.assigned_widget {
@@ -846,7 +844,7 @@ impl<A: Clone + 'static> RegionTreeEntry<A> {
                             assigned_widget
                                 .widget
                                 .borrow_mut()
-                                .on_input_event(&InputEvent::Pointer(event), action_queue)
+                                .on_input_event(&InputEvent::Pointer(event), action_tx)
                         };
                         let status = if let EventCapturedStatus::Captured(requests) = status {
                             PointerCapturedStatus::Captured {
@@ -867,7 +865,7 @@ impl<A: Clone + 'static> RegionTreeEntry<A> {
                     for child_region in children.iter_mut() {
                         match child_region
                             .borrow_mut()
-                            .handle_pointer_event(event, action_queue)
+                            .handle_pointer_event(event, action_tx)
                         {
                             PointerCapturedStatus::Captured { widget, requests } => {
                                 return PointerCapturedStatus::Captured { widget, requests };
@@ -1087,7 +1085,7 @@ impl<A: Clone + 'static> RegionTreeEntry<A> {
 }
 
 #[derive(Clone)]
-pub struct ContainerRegionRef<A: Clone + 'static> {
+pub struct ContainerRegionRef<A: Clone + Send + Sync + 'static> {
     pub(crate) shared: WeakRegionTreeEntry<A>,
     pub(crate) assigned_layer: WeakWidgetLayerEntry<A>,
     assigned_layer_id: u64,
@@ -1167,7 +1165,7 @@ impl Region {
 }
 
 #[derive(Clone)]
-pub enum ParentAnchorType<A: Clone + 'static> {
+pub enum ParentAnchorType<A: Clone + Send + Sync + 'static> {
     Layer,
     ContainerRegion(ContainerRegionRef<A>),
 }
@@ -1207,7 +1205,7 @@ mod tests {
         }
     }
 
-    impl<A: Clone + 'static> StrongRegionTreeEntry<A> {
+    impl<A: Clone + Send + Sync + 'static> StrongRegionTreeEntry<A> {
         fn borrow(&self) -> Ref<'_, RegionTreeEntry<A>> {
             RefCell::borrow(&self.shared)
         }
@@ -1220,7 +1218,7 @@ mod tests {
     impl WidgetNode<()> for EmptyPaintedTestWidget {
         fn on_added(
             &mut self,
-            _action_queue: &mut Vec<()>,
+            _action_tx: &mut Sender<()>,
         ) -> (WidgetNodeType, WidgetNodeRequests) {
             println!("empty painted test widget {} added", self.id);
             (WidgetNodeType::Painted, WidgetNodeRequests::default())
@@ -1229,7 +1227,7 @@ mod tests {
         fn on_input_event(
             &mut self,
             event: &InputEvent,
-            _action_queue: &mut Vec<()>,
+            _action_tx: &mut Sender<()>,
         ) -> EventCapturedStatus {
             println!(
                 "empty painted test widget {} got input event {:?}",
@@ -1246,7 +1244,7 @@ mod tests {
     impl WidgetNode<()> for EmptyPointerOnlyTestWidget {
         fn on_added(
             &mut self,
-            _action_queue: &mut Vec<()>,
+            _action_tx: &mut Sender<()>,
         ) -> (WidgetNodeType, WidgetNodeRequests) {
             println!("empty pointer only test widget {} added", self.id);
             (WidgetNodeType::PointerOnly, WidgetNodeRequests::default())
@@ -1255,7 +1253,7 @@ mod tests {
         fn on_input_event(
             &mut self,
             event: &InputEvent,
-            _action_queue: &mut Vec<()>,
+            _action_tx: &mut Sender<()>,
         ) -> EventCapturedStatus {
             println!(
                 "empty pointer only test widget {} got input event {:?}",

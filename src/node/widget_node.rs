@@ -1,3 +1,4 @@
+use crossbeam_channel::Sender;
 use std::any::Any;
 
 use crate::{
@@ -16,11 +17,11 @@ pub enum WidgetNodeType {
     PointerOnly,
 }
 
-pub trait WidgetNode<A: Clone + 'static> {
-    fn on_added(&mut self, action_queue: &mut Vec<A>) -> (WidgetNodeType, WidgetNodeRequests);
+pub trait WidgetNode<A: Clone + Send + Sync + 'static> {
+    fn on_added(&mut self, action_tx: &mut Sender<A>) -> (WidgetNodeType, WidgetNodeRequests);
 
     #[allow(unused)]
-    fn on_visibility_hidden(&mut self, action_queue: &mut Vec<A>) {}
+    fn on_visibility_hidden(&mut self, action_tx: &mut Sender<A>) {}
 
     #[allow(unused)]
     fn on_region_changed(&mut self, assigned_rect: Rect) {}
@@ -29,7 +30,7 @@ pub trait WidgetNode<A: Clone + 'static> {
     fn on_user_event(
         &mut self,
         event: Box<dyn Any>,
-        action_queue: &mut Vec<A>,
+        action_tx: &mut Sender<A>,
     ) -> Option<WidgetNodeRequests> {
         None
     }
@@ -37,7 +38,7 @@ pub trait WidgetNode<A: Clone + 'static> {
     fn on_input_event(
         &mut self,
         event: &InputEvent,
-        action_queue: &mut Vec<A>,
+        action_tx: &mut Sender<A>,
     ) -> EventCapturedStatus;
 
     #[allow(unused)]

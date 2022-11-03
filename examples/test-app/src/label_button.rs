@@ -1,3 +1,4 @@
+use crossbeam_channel::Sender;
 use firewheel::vg::{Color, FontId, Paint};
 use firewheel::GradientDirection;
 use firewheel::{
@@ -15,7 +16,7 @@ enum ButtonState {
     Down,
 }
 
-pub enum LabelButtonEvent<A: Clone + 'static> {
+pub enum LabelButtonEvent<A: Clone + Send + Sync + 'static> {
     SetLabel(String),
     SetAction {
         action: Option<A>,
@@ -132,7 +133,7 @@ pub struct LabelButton<A> {
     state: ButtonState,
 }
 
-impl<A: Clone + 'static> LabelButton<A> {
+impl<A: Clone + Send + Sync + 'static> LabelButton<A> {
     pub fn new(
         label: String,
         font_id: FontId,
@@ -155,8 +156,8 @@ impl<A: Clone + 'static> LabelButton<A> {
     }
 }
 
-impl<A: Clone + 'static> WidgetNode<A> for LabelButton<A> {
-    fn on_added(&mut self, _action_queue: &mut Vec<A>) -> (WidgetNodeType, WidgetNodeRequests) {
+impl<A: Clone + Send + Sync + 'static> WidgetNode<A> for LabelButton<A> {
+    fn on_added(&mut self, _action_tx: &mut Sender<A>) -> (WidgetNodeType, WidgetNodeRequests) {
         (
             WidgetNodeType::Painted,
             WidgetNodeRequests {
@@ -166,7 +167,7 @@ impl<A: Clone + 'static> WidgetNode<A> for LabelButton<A> {
         )
     }
 
-    fn on_visibility_hidden(&mut self, _action_queue: &mut Vec<A>) {
+    fn on_visibility_hidden(&mut self, _action_tx: &mut Sender<A>) {
         self.state = ButtonState::Idle;
     }
 
@@ -184,7 +185,7 @@ impl<A: Clone + 'static> WidgetNode<A> for LabelButton<A> {
     fn on_user_event(
         &mut self,
         event: Box<dyn Any>,
-        _action_queue: &mut Vec<A>,
+        _action_tx: &mut Sender<A>,
     ) -> Option<WidgetNodeRequests> {
         if let Ok(event) = event.downcast::<LabelButtonEvent<A>>() {
             match *event {
@@ -237,7 +238,7 @@ impl<A: Clone + 'static> WidgetNode<A> for LabelButton<A> {
     fn on_input_event(
         &mut self,
         event: &InputEvent,
-        action_queue: &mut Vec<A>,
+        action_tx: &mut Sender<A>,
     ) -> EventCapturedStatus {
         match event {
             InputEvent::Pointer(event) => {
@@ -253,7 +254,7 @@ impl<A: Clone + 'static> WidgetNode<A> for LabelButton<A> {
 
                                 if !self.emit_on_release {
                                     if let Some(action) = &self.action {
-                                        action_queue.push(action.clone());
+                                        action_tx.send(action.clone()).unwrap();
                                     }
                                 }
                             }
@@ -274,7 +275,7 @@ impl<A: Clone + 'static> WidgetNode<A> for LabelButton<A> {
 
                                 if !self.emit_on_release {
                                     if let Some(action) = &self.action {
-                                        action_queue.push(action.clone());
+                                        action_tx.send(action.clone()).unwrap();
                                     }
                                 }
 
@@ -311,7 +312,7 @@ impl<A: Clone + 'static> WidgetNode<A> for LabelButton<A> {
 
                                 if self.emit_on_release {
                                     if let Some(action) = &self.action {
-                                        action_queue.push(action.clone());
+                                        action_tx.send(action.clone()).unwrap();
                                     }
                                 }
 

@@ -1,9 +1,9 @@
+use crossbeam_channel::Sender;
+use femtovg::Color;
 use std::any::Any;
 use std::cell::RefCell;
 use std::ffi::c_void;
 use std::rc::Rc;
-
-use femtovg::Color;
 
 use crate::anchor::Anchor;
 use crate::error::FirewheelError;
@@ -23,10 +23,12 @@ use crate::{
     ScaleFactor, Size, WidgetNodeRequests, VG,
 };
 
-pub struct AppWindow<A: Clone + 'static> {
+pub struct AppWindow<A: Clone + Send + Sync + 'static> {
     pub(crate) layers_ordered: Vec<(i32, Vec<StrongLayerEntry<A>>)>,
     pub(crate) widget_layer_renderers_to_clean_up: Vec<WidgetLayerRenderer>,
     pub(crate) background_layer_renderers_to_clean_up: Vec<BackgroundLayerRenderer>,
+
+    action_tx: Sender<A>,
 
     next_layer_id: u64,
     next_widget_id: u64,
@@ -49,8 +51,8 @@ pub struct AppWindow<A: Clone + 'static> {
     do_repack_layers: bool,
 }
 
-impl<A: Clone + 'static> AppWindow<A> {
-    fn new(scale_factor: ScaleFactor, renderer: Renderer) -> Self {
+impl<A: Clone + Send + Sync + 'static> AppWindow<A> {
+    fn new(scale_factor: ScaleFactor, renderer: Renderer, action_tx: Sender<A>) -> Self {
         Self {
             next_layer_id: 0,
             next_widget_id: 0,
@@ -67,6 +69,7 @@ impl<A: Clone + 'static> AppWindow<A> {
             widgets_just_hidden: WidgetNodeSet::new(),
             widget_layer_renderers_to_clean_up: Vec::new(),
             background_layer_renderers_to_clean_up: Vec::new(),
+            action_tx,
             renderer: Some(renderer),
             scale_factor,
             window_visibility: true,
@@ -78,16 +81,29 @@ impl<A: Clone + 'static> AppWindow<A> {
     pub fn new_from_glutin_display(
         scale_factor: ScaleFactor,
         display: &glutin::display::Display,
+        action_tx: Sender<A>,
     ) -> Self {
-        Self::new(scale_factor, Renderer::new_from_glutin_display(display))
+        Self::new(
+            scale_factor,
+            Renderer::new_from_glutin_display(display),
+            action_tx,
+        )
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub unsafe fn new_from_function<F>(scale_factor: ScaleFactor, load_fn: F) -> Self
+    pub unsafe fn new_from_function<F>(
+        scale_factor: ScaleFactor,
+        load_fn: F,
+        action_tx: Sender<A>,
+    ) -> Self
     where
         F: FnMut(&str) -> *const c_void,
     {
-        Self::new(scale_factor, Renderer::new_from_function(load_fn))
+        Self::new(
+            scale_factor,
+            Renderer::new_from_function(load_fn),
+            action_tx,
+        )
     }
 
     pub fn vg(&mut self) -> &mut VG {
@@ -219,7 +235,6 @@ impl<A: Clone + 'static> AppWindow<A> {
         &mut self,
         layer: &mut WidgetLayerRef<A>,
         position: Point,
-        action_queue: &mut Vec<A>,
     ) -> Result<(), FirewheelError> {
         if let Some(mut layer_entry) = layer.shared.upgrade() {
             layer_entry.borrow_mut().set_inner_position(
@@ -231,7 +246,7 @@ impl<A: Clone + 'static> AppWindow<A> {
             return Err(FirewheelError::LayerRemoved);
         }
 
-        self.handle_visibility_changes(action_queue);
+        self.handle_visibility_changes();
 
         Ok(())
     }
@@ -240,7 +255,6 @@ impl<A: Clone + 'static> AppWindow<A> {
         &mut self,
         layer: &mut WidgetLayerRef<A>,
         size: Size,
-        action_queue: &mut Vec<A>,
     ) -> Result<(), FirewheelError> {
         if let Some(mut layer_entry) = layer.shared.upgrade() {
             layer_entry.borrow_mut().set_size(
@@ -253,7 +267,7 @@ impl<A: Clone + 'static> AppWindow<A> {
             return Err(FirewheelError::LayerRemoved);
         }
 
-        self.handle_visibility_changes(action_queue);
+        self.handle_visibility_changes();
 
         Ok(())
     }
@@ -262,7 +276,6 @@ impl<A: Clone + 'static> AppWindow<A> {
         &mut self,
         layer: &mut WidgetLayerRef<A>,
         explicit_visibility: bool,
-        action_queue: &mut Vec<A>,
     ) -> Result<(), FirewheelError> {
         if let Some(mut layer_entry) = layer.shared.upgrade() {
             layer_entry.borrow_mut().set_explicit_visibility(
@@ -274,7 +287,7 @@ impl<A: Clone + 'static> AppWindow<A> {
             return Err(FirewheelError::LayerRemoved);
         }
 
-        self.handle_visibility_changes(action_queue);
+        self.handle_visibility_changes();
 
         Ok(())
     }
@@ -484,7 +497,7 @@ impl<A: Clone + 'static> AppWindow<A> {
         Ok(())
     }
 
-    pub fn set_window_visibility(&mut self, visible: bool, action_queue: &mut Vec<A>) {
+    pub fn set_window_visibility(&mut self, visible: bool) {
         if self.window_visibility != visible {
             self.window_visibility = visible;
 
@@ -505,7 +518,7 @@ impl<A: Clone + 'static> AppWindow<A> {
                 }
             }
 
-            self.handle_visibility_changes(action_queue);
+            self.handle_visibility_changes();
         }
     }
 
@@ -558,7 +571,6 @@ impl<A: Clone + 'static> AppWindow<A> {
         new_internal_anchor: Option<Anchor>,
         new_parent_anchor: Option<Anchor>,
         new_anchor_offset: Option<Point>,
-        action_queue: &mut Vec<A>,
     ) -> Result<(), FirewheelError> {
         region
             .assigned_layer
@@ -575,7 +587,7 @@ impl<A: Clone + 'static> AppWindow<A> {
                 &mut self.widgets_just_hidden,
             )?;
 
-        self.handle_visibility_changes(action_queue);
+        self.handle_visibility_changes();
 
         Ok(())
     }
@@ -584,7 +596,6 @@ impl<A: Clone + 'static> AppWindow<A> {
         &mut self,
         region: &mut ContainerRegionRef<A>,
         visible: bool,
-        action_queue: &mut Vec<A>,
     ) -> Result<(), FirewheelError> {
         region
             .assigned_layer
@@ -598,7 +609,7 @@ impl<A: Clone + 'static> AppWindow<A> {
                 &mut self.widgets_just_hidden,
             )?;
 
-        self.handle_visibility_changes(action_queue);
+        self.handle_visibility_changes();
 
         Ok(())
     }
@@ -621,7 +632,6 @@ impl<A: Clone + 'static> AppWindow<A> {
         layer: &WidgetLayerRef<A>,
         region_info: RegionInfo<A>,
         explicit_visibility: bool,
-        action_queue: &mut Vec<A>,
     ) -> Result<WidgetNodeRef<A>, FirewheelError> {
         if layer.shared.upgrade().is_none() {
             return Err(FirewheelError::LayerRemoved);
@@ -629,7 +639,7 @@ impl<A: Clone + 'static> AppWindow<A> {
 
         let weak_layer_entry = layer.shared.clone();
 
-        let (node_type, requests) = widget_node.on_added(action_queue);
+        let (node_type, requests) = widget_node.on_added(&mut self.action_tx);
 
         let new_id = self.next_widget_id;
         self.next_widget_id += 1;
@@ -656,7 +666,7 @@ impl<A: Clone + 'static> AppWindow<A> {
 
         //self.widgets.insert(widget_entry.clone());
 
-        self.handle_visibility_changes(action_queue);
+        self.handle_visibility_changes();
 
         self.handle_widget_requests(&mut widget_entry, requests);
 
@@ -672,7 +682,6 @@ impl<A: Clone + 'static> AppWindow<A> {
         new_internal_anchor: Option<Anchor>,
         new_parent_anchor: Option<Anchor>,
         new_anchor_offset: Option<Point>,
-        action_queue: &mut Vec<A>,
     ) -> Result<(), FirewheelError> {
         let mut widget_entry = widget_node_ref
             .shared
@@ -694,7 +703,7 @@ impl<A: Clone + 'static> AppWindow<A> {
                 &mut self.widgets_just_hidden,
             );
 
-        self.handle_visibility_changes(action_queue);
+        self.handle_visibility_changes();
 
         Ok(())
     }
@@ -703,7 +712,6 @@ impl<A: Clone + 'static> AppWindow<A> {
         &mut self,
         widget_node_ref: &mut WidgetNodeRef<A>,
         visible: bool,
-        action_queue: &mut Vec<A>,
     ) -> Result<(), FirewheelError> {
         let mut widget_entry = widget_node_ref
             .shared
@@ -722,7 +730,7 @@ impl<A: Clone + 'static> AppWindow<A> {
                 &mut self.widgets_just_hidden,
             );
 
-        self.handle_visibility_changes(action_queue);
+        self.handle_visibility_changes();
 
         Ok(())
     }
@@ -770,14 +778,17 @@ impl<A: Clone + 'static> AppWindow<A> {
         &mut self,
         widget_node_ref: &mut WidgetNodeRef<A>,
         event: Box<dyn Any>,
-        action_queue: &mut Vec<A>,
     ) -> Result<(), FirewheelError> {
         let mut widget_entry = widget_node_ref
             .shared
             .upgrade()
             .ok_or_else(|| FirewheelError::WidgetNodeRemoved)?;
 
-        let res = { widget_entry.borrow_mut().on_user_event(event, action_queue) };
+        let res = {
+            widget_entry
+                .borrow_mut()
+                .on_user_event(event, &mut self.action_tx)
+        };
         if let Some(requests) = res {
             self.handle_widget_requests(&mut widget_entry, requests);
         }
@@ -804,7 +815,7 @@ impl<A: Clone + 'static> AppWindow<A> {
         Ok(())
     }
 
-    pub fn set_scale_factor(&mut self, scale_factor: ScaleFactor, action_queue: &mut Vec<A>) {
+    pub fn set_scale_factor(&mut self, scale_factor: ScaleFactor) {
         if self.scale_factor != scale_factor {
             self.scale_factor = scale_factor;
 
@@ -830,15 +841,11 @@ impl<A: Clone + 'static> AppWindow<A> {
                 }
             }
 
-            self.handle_visibility_changes(action_queue);
+            self.handle_visibility_changes();
         }
     }
 
-    pub fn handle_input_event(
-        &mut self,
-        event: &InputEvent,
-        action_queue: &mut Vec<A>,
-    ) -> InputEventResult {
+    pub fn handle_input_event(&mut self, event: &InputEvent) -> InputEventResult {
         match event {
             InputEvent::Animation(_) => {
                 let mut widgets_to_remove_from_animation: Vec<StrongWidgetNodeEntry<A>> =
@@ -855,7 +862,7 @@ impl<A: Clone + 'static> AppWindow<A> {
                     let res = {
                         widget_entry
                             .borrow_mut()
-                            .on_input_event(event, action_queue)
+                            .on_input_event(event, &mut self.action_tx)
                     };
                     if let EventCapturedStatus::Captured(requests) = res {
                         widget_requests.push((widget_entry.clone(), requests));
@@ -895,7 +902,7 @@ impl<A: Clone + 'static> AppWindow<A> {
                     let res = {
                         widget_entry
                             .borrow_mut()
-                            .on_input_event(event, action_queue)
+                            .on_input_event(event, &mut self.action_tx)
                     };
                     if let EventCapturedStatus::Captured(requests) = res {
                         self.handle_widget_requests(&mut widget_entry, requests);
@@ -912,7 +919,7 @@ impl<A: Clone + 'static> AppWindow<A> {
                             let res = {
                                 widget_entry
                                     .borrow_mut()
-                                    .on_input_event(event, action_queue)
+                                    .on_input_event(event, &mut self.action_tx)
                             };
                             if let EventCapturedStatus::Captured(requests) = res {
                                 widget_requests.push((widget_entry.clone(), requests));
@@ -932,7 +939,7 @@ impl<A: Clone + 'static> AppWindow<A> {
                             if let StrongLayerEntry::Widget(layer_entry) = layer_entry {
                                 if let Some(captured_res) = layer_entry
                                     .borrow_mut()
-                                    .handle_pointer_event(e, action_queue)
+                                    .handle_pointer_event(e, &mut self.action_tx)
                                 {
                                     widget_requests = Some(captured_res);
                                     break;
@@ -952,7 +959,11 @@ impl<A: Clone + 'static> AppWindow<A> {
             InputEvent::PointerUnlocked => {
                 let mut requests = None;
                 if let Some((mut last_widget, _lock_type)) = self.widget_with_pointer_lock.take() {
-                    let res = { last_widget.borrow_mut().on_input_event(event, action_queue) };
+                    let res = {
+                        last_widget
+                            .borrow_mut()
+                            .on_input_event(event, &mut self.action_tx)
+                    };
                     if let EventCapturedStatus::Captured(r) = res {
                         requests = Some((last_widget.clone(), r));
                     }
@@ -971,7 +982,7 @@ impl<A: Clone + 'static> AppWindow<A> {
                     let res = {
                         widget_entry
                             .borrow_mut()
-                            .on_input_event(event, action_queue)
+                            .on_input_event(event, &mut self.action_tx)
                     };
                     if let EventCapturedStatus::Captured(requests) = res {
                         widget_requests.push((widget_entry.clone(), requests));
@@ -990,7 +1001,7 @@ impl<A: Clone + 'static> AppWindow<A> {
                     let res = {
                         widget_entry
                             .borrow_mut()
-                            .on_input_event(event, action_queue)
+                            .on_input_event(event, &mut self.action_tx)
                     };
                     if let EventCapturedStatus::Captured(r) = res {
                         requests = Some((widget_entry.clone(), r));
@@ -1008,27 +1019,16 @@ impl<A: Clone + 'static> AppWindow<A> {
 
         // Handle any extra events that have occurred as a result of handling
         // widget requests.
-        let mut widgets_to_send_input_event: Vec<(StrongWidgetNodeEntry<A>, InputEvent)> =
-            Vec::new();
-        std::mem::swap(
-            &mut widgets_to_send_input_event,
-            &mut self.widgets_to_send_input_event,
-        );
-        for (mut widget_entry, event) in widgets_to_send_input_event.drain(..) {
+        while let Some((mut widget_entry, event)) = self.widgets_to_send_input_event.pop() {
             let res = {
                 widget_entry
                     .borrow_mut()
-                    .on_input_event(&event, action_queue)
+                    .on_input_event(&event, &mut self.action_tx)
             };
             if let EventCapturedStatus::Captured(requests) = res {
                 self.handle_widget_requests(&mut widget_entry, requests);
             }
         }
-        widgets_to_send_input_event.append(&mut self.widgets_to_send_input_event);
-        std::mem::swap(
-            &mut widgets_to_send_input_event,
-            &mut self.widgets_to_send_input_event,
-        );
 
         let lock_pointer_in_place = self
             .widget_with_pointer_lock
@@ -1228,38 +1228,34 @@ impl<A: Clone + 'static> AppWindow<A> {
         }
     }
 
-    fn handle_visibility_changes(&mut self, action_queue: &mut Vec<A>) {
+    fn handle_visibility_changes(&mut self) {
         // Handle widgets that have just been shown.
-        let mut widget_requests: Vec<(StrongWidgetNodeEntry<A>, WidgetNodeRequests)> = Vec::new();
-        std::mem::swap(&mut widget_requests, &mut self.widget_requests);
-        for widget_entry in self.widgets_just_shown.iter_mut() {
+        while let Some(mut widget_entry) = self.widgets_just_shown.pop() {
             let status = {
                 widget_entry
                     .borrow_mut()
-                    .on_input_event(&InputEvent::VisibilityShown, action_queue)
+                    .on_input_event(&InputEvent::VisibilityShown, &mut self.action_tx)
             };
             if let EventCapturedStatus::Captured(requests) = status {
-                widget_requests.push((widget_entry.clone(), requests));
+                self.handle_widget_requests(&mut widget_entry, requests);
             }
         }
         self.widgets_just_shown.clear();
-        for (mut widget_entry, requests) in widget_requests.drain(..) {
-            self.handle_widget_requests(&mut widget_entry, requests);
-        }
-        std::mem::swap(&mut widget_requests, &mut self.widget_requests);
 
         // Handle widgets that have just been hidden.
-        for widget_entry in self.widgets_just_hidden.iter_mut() {
+        while let Some(mut widget_entry) = self.widgets_just_hidden.pop() {
             {
-                widget_entry.borrow_mut().on_visibility_hidden(action_queue);
+                widget_entry
+                    .borrow_mut()
+                    .on_visibility_hidden(&mut self.action_tx);
             }
 
             // Remove all event listeners for this widget (except for pointer
             // input events, because the region tree already culls pointer
             // input events from hidden widgets).
-            self.widgets_scheduled_for_animation.remove(widget_entry);
-            self.widgets_with_keyboard_listen.remove(widget_entry);
-            self.widgets_with_pointer_leave_listen.remove(widget_entry);
+            self.widgets_scheduled_for_animation.remove(&widget_entry);
+            self.widgets_with_keyboard_listen.remove(&widget_entry);
+            self.widgets_with_pointer_leave_listen.remove(&widget_entry);
             if let Some((last_widget, lock_type)) = self.widget_with_pointer_lock.take() {
                 if last_widget.unique_id() != widget_entry.unique_id() {
                     self.widget_with_pointer_lock = Some((last_widget, lock_type));
@@ -1275,7 +1271,7 @@ impl<A: Clone + 'static> AppWindow<A> {
     }
 }
 
-impl<A: Clone + 'static> Drop for AppWindow<A> {
+impl<A: Clone + Send + Sync + 'static> Drop for AppWindow<A> {
     fn drop(&mut self) {
         for (_z_order, layers) in self.layers_ordered.iter_mut() {
             for layer_entry in layers.iter_mut() {

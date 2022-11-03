@@ -101,14 +101,14 @@ impl PaintRegionInfo {
     }
 }
 
-pub(crate) struct StrongWidgetNodeEntry<A: Clone + 'static> {
+pub(crate) struct StrongWidgetNodeEntry<A: Clone + Send + Sync + 'static> {
     shared: Rc<RefCell<Box<dyn WidgetNode<A>>>>,
     assigned_layer: WeakWidgetLayerEntry<A>,
     assigned_region: WeakRegionTreeEntry<A>,
     unique_id: u64,
 }
 
-impl<A: Clone + 'static> StrongWidgetNodeEntry<A> {
+impl<A: Clone + Send + Sync + 'static> StrongWidgetNodeEntry<A> {
     pub fn new(
         shared: Rc<RefCell<Box<dyn WidgetNode<A>>>>,
         assigned_layer: WeakWidgetLayerEntry<A>,
@@ -157,7 +157,7 @@ impl<A: Clone + 'static> StrongWidgetNodeEntry<A> {
     }
 }
 
-impl<A: Clone + 'static> Clone for StrongWidgetNodeEntry<A> {
+impl<A: Clone + Send + Sync + 'static> Clone for StrongWidgetNodeEntry<A> {
     fn clone(&self) -> Self {
         Self {
             shared: Rc::clone(&self.shared),
@@ -168,28 +168,28 @@ impl<A: Clone + 'static> Clone for StrongWidgetNodeEntry<A> {
     }
 }
 
-impl<A: Clone + 'static> PartialEq for StrongWidgetNodeEntry<A> {
+impl<A: Clone + Send + Sync + 'static> PartialEq for StrongWidgetNodeEntry<A> {
     fn eq(&self, other: &Self) -> bool {
         self.unique_id.eq(&other.unique_id)
     }
 }
 
-impl<A: Clone + 'static> Eq for StrongWidgetNodeEntry<A> {}
+impl<A: Clone + Send + Sync + 'static> Eq for StrongWidgetNodeEntry<A> {}
 
-impl<A: Clone + 'static> Hash for StrongWidgetNodeEntry<A> {
+impl<A: Clone + Send + Sync + 'static> Hash for StrongWidgetNodeEntry<A> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.unique_id.hash(state)
     }
 }
 
-pub(crate) struct WeakWidgetNodeEntry<A: Clone + 'static> {
+pub(crate) struct WeakWidgetNodeEntry<A: Clone + Send + Sync + 'static> {
     shared: Weak<RefCell<Box<dyn WidgetNode<A>>>>,
     assigned_layer: WeakWidgetLayerEntry<A>,
     assigned_region: WeakRegionTreeEntry<A>,
     unique_id: u64,
 }
 
-impl<A: Clone + 'static> WeakWidgetNodeEntry<A> {
+impl<A: Clone + Send + Sync + 'static> WeakWidgetNodeEntry<A> {
     pub fn upgrade(&self) -> Option<StrongWidgetNodeEntry<A>> {
         self.shared.upgrade().map(|shared| StrongWidgetNodeEntry {
             shared,
@@ -266,11 +266,11 @@ impl WeakBackgroundNodeEntry {
     }
 }
 
-pub struct WidgetNodeRef<A: Clone + 'static> {
+pub struct WidgetNodeRef<A: Clone + Send + Sync + 'static> {
     pub(crate) shared: WeakWidgetNodeEntry<A>,
 }
 
-impl<A: Clone + 'static> WidgetNodeRef<A> {
+impl<A: Clone + Send + Sync + 'static> WidgetNodeRef<A> {
     pub fn unique_id(&self) -> u64 {
         self.shared.unique_id
     }

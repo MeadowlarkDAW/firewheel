@@ -3,12 +3,12 @@ use fnv::FnvHashSet;
 use crate::node::StrongWidgetNodeEntry;
 
 /// A set of widgets optimized for iteration.
-pub(crate) struct WidgetNodeSet<A: Clone + 'static> {
+pub(crate) struct WidgetNodeSet<A: Clone + Send + Sync + 'static> {
     unique_ids: FnvHashSet<u64>,
     entries: Vec<StrongWidgetNodeEntry<A>>,
 }
 
-impl<A: Clone + 'static> WidgetNodeSet<A> {
+impl<A: Clone + Send + Sync + 'static> WidgetNodeSet<A> {
     pub fn new() -> Self {
         Self {
             unique_ids: FnvHashSet::default(),
@@ -39,6 +39,10 @@ impl<A: Clone + 'static> WidgetNodeSet<A> {
 
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut StrongWidgetNodeEntry<A>> {
         self.entries.iter_mut()
+    }
+
+    pub fn pop(&mut self) -> Option<StrongWidgetNodeEntry<A>> {
+        self.entries.pop()
     }
 
     pub fn is_empty(&self) -> bool {
