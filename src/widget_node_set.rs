@@ -54,10 +54,6 @@ impl<A: Clone + Send + Sync + 'static> WidgetNodeSet<A> {
         self.entries.clear();
     }
 
-    pub fn len(&self) -> usize {
-        self.entries.len()
-    }
-
     /// Used for testing purposes
     #[allow(unused)]
     pub fn contains(&self, widget_entry: &StrongWidgetNodeEntry<A>) -> bool {

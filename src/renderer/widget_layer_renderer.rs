@@ -26,11 +26,9 @@ impl WidgetLayerRenderer {
         &mut self,
         layer: &mut WidgetLayer<A>,
         vg: &mut femtovg::Canvas<femtovg::renderer::OpenGl>,
-        //glow_context: &mut glow::Context,
         scale_factor: ScaleFactor,
     ) {
         let physical_size = layer.region_tree.layer_physical_size();
-        let layer_physical_internal_offset = layer.region_tree.layer_physical_internal_offset();
         if physical_size.width == 0 || physical_size.height == 0 {
             return;
         }
@@ -98,11 +96,7 @@ impl WidgetLayerRenderer {
                     let (assigned_rect, physical_rect) = {
                         let mut assigned_region = assigned_region.borrow_mut();
 
-                        // Remove the layer's internal offset from the physical region so
-                        // it is in the correct place in the texture.
-                        let mut physical_rect = assigned_region.region.physical_rect;
-                        physical_rect.pos.x -= layer_physical_internal_offset.x;
-                        physical_rect.pos.y -= layer_physical_internal_offset.y;
+                        let physical_rect = assigned_region.region.physical_rect;
 
                         // The `clear_rect` method in femtovg wants coordinates in `u32`, not
                         // `i32`, so we use this type to correctly clear the region the next
@@ -130,33 +124,16 @@ impl WidgetLayerRenderer {
 
         // -- Blit the layer to the screen ---------------------------------------------------------
 
-        /*
-        unsafe {
-            glow_context.bind_framebuffer(
-                glow::READ_FRAMEBUFFER,
-                Some(texture_state.native_framebuffer),
-            );
-            glow_context.bind_framebuffer(glow::DRAW_FRAMEBUFFER, None);
-
-            glow_context.blit_framebuffer(
-                0,
-                0,
-                physical_size.width as i32,
-                physical_size.height as i32,
-                layer.physical_outer_position.x,
-                layer.physical_outer_position.y,
-                layer.physical_outer_position.x + physical_size.width as i32,
-                layer.physical_outer_position.y + physical_size.height as i32,
-                glow::COLOR_BUFFER_BIT,
-                glow::NEAREST,
-            );
-        }
-        */
+        vg.save();
+        vg.translate(
+            layer.physical_outer_position.x as f32,
+            layer.physical_outer_position.y as f32,
+        );
 
         let mut path = femtovg::Path::new();
         path.rect(
-            layer.physical_outer_position.x as f32,
-            layer.physical_outer_position.y as f32,
+            0.0,
+            0.0,
             physical_size.width as f32,
             physical_size.height as f32,
         );
@@ -172,13 +149,10 @@ impl WidgetLayerRenderer {
         );
 
         vg.fill_path(&mut path, &paint);
+        vg.restore();
     }
 
-    pub fn clean_up(
-        &mut self,
-        vg: &mut femtovg::Canvas<femtovg::renderer::OpenGl>,
-        //glow_context: &mut glow::Context,
-    ) {
+    pub fn clean_up(&mut self, vg: &mut femtovg::Canvas<femtovg::renderer::OpenGl>) {
         if let Some(mut texture_state) = self.texture_state.take() {
             texture_state.free(vg)
         }

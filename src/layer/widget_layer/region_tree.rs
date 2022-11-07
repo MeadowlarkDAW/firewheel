@@ -56,7 +56,7 @@ impl<A: Clone + Send + Sync + 'static> RegionTree<A> {
             roots: Vec::new(),
             dirty_widgets: WidgetNodeSet::new(),
             texture_rects_to_clear: Vec::new(),
-            layer_rect: Rect::new(inner_position, layer_size),
+            layer_rect: Rect::new(Point::new(0.0, 0.0) - inner_position, layer_size),
             layer_physical_rect: PhysicalRect::new(
                 inner_position.to_physical(scale_factor),
                 layer_size.to_physical(scale_factor),
@@ -696,10 +696,6 @@ impl<A: Clone + Send + Sync + 'static> RegionTree<A> {
         self.layer_physical_rect.size
     }
 
-    pub fn layer_physical_internal_offset(&self) -> PhysicalPoint {
-        self.layer_physical_rect.pos
-    }
-
     pub fn layer_rect(&self) -> Rect {
         self.layer_rect
     }
@@ -720,7 +716,7 @@ impl<A: Clone + Send + Sync + 'static> RegionTree<A> {
 
     pub fn handle_pointer_event(
         &mut self,
-        mut event: PointerEvent,
+        event: PointerEvent,
         action_tx: &mut Sender<A>,
     ) -> Option<(StrongWidgetNodeEntry<A>, WidgetNodeRequests)> {
         if !self.layer_explicit_visibility {
@@ -728,7 +724,7 @@ impl<A: Clone + Send + Sync + 'static> RegionTree<A> {
         }
 
         // Add this layer's inner position to the position of the pointer.
-        event.position += self.layer_rect.pos();
+        //event.position += self.layer_rect.pos();
 
         for region in self.roots.iter_mut() {
             match region.borrow_mut().handle_pointer_event(event, action_tx) {
@@ -829,17 +825,13 @@ pub(crate) struct RegionTreeEntry<A: Clone + Send + Sync + 'static> {
 impl<A: Clone + Send + Sync + 'static> RegionTreeEntry<A> {
     fn handle_pointer_event(
         &mut self,
-        mut event: PointerEvent,
+        event: PointerEvent,
         action_tx: &mut Sender<A>,
     ) -> PointerCapturedStatus<A> {
         if self.region.is_visible() {
             if let Some(assigned_widget) = &mut self.assigned_widget {
                 if assigned_widget.listens_to_pointer_events {
                     if self.region.rect.contains_point(event.position) {
-                        // Remove the region's offset from the position of the mouse event.
-                        //let temp_position = event.position;
-                        //event.position -= self.region.rect.pos();
-
                         let status = {
                             assigned_widget
                                 .widget
@@ -854,8 +846,6 @@ impl<A: Clone + Send + Sync + 'static> RegionTreeEntry<A> {
                         } else {
                             PointerCapturedStatus::InRegionButNotCaptured
                         };
-
-                        //event.position = temp_position;
 
                         return status;
                     }

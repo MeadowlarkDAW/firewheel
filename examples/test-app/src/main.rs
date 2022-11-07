@@ -138,28 +138,28 @@ fn main() {
         true,
     );
 
-    let mut buttom_msg_i: usize = 0;
-
     let label_button_style = Rc::new(LabelButtonStyle::default());
-    let test_button = LabelButton::new(
-        BUTTON_MESSAGES[buttom_msg_i].into(),
+
+    let mut button_msg_i: usize = 0;
+    let my_label_button = LabelButton::new(
+        BUTTON_MESSAGES[button_msg_i].into(),
         main_font_id,
         label_button_style.clone(),
-        Some(MyAction::ButtonPressed),
+        Some(MyAction::LabelButtonPressed),
         true,
     );
-    let test_button_size = label_button_style.compute_size(
-        BUTTON_MESSAGES[buttom_msg_i],
+    let my_label_button_size = label_button_style.compute_size(
+        BUTTON_MESSAGES[button_msg_i],
         main_font_id,
         scale_factor,
         app_window.vg(),
     );
-    let mut test_button_ref = app_window
+    let mut my_label_button_ref = app_window
         .add_widget_node(
-            Box::new(test_button),
+            Box::new(my_label_button),
             &widget_layer_ref,
             RegionInfo {
-                size: test_button_size,
+                size: my_label_button_size,
                 internal_anchor: Anchor::center(),
                 parent_anchor: Anchor::center(),
                 parent_anchor_type: ParentAnchorType::Layer,
@@ -250,21 +250,23 @@ fn main() {
             app_window.render(window_size, Color::rgb(30, 30, 30));
 
             gl_surface.swap_buffers(&current_gl_context).unwrap();
+
+            *control_flow = ControlFlow::Wait
         }
         Event::MainEventsCleared => {
             for action in action_rx.try_iter() {
                 match action {
-                    MyAction::ButtonPressed => {
+                    MyAction::LabelButtonPressed => {
                         println!("button pressed!");
 
-                        buttom_msg_i = if buttom_msg_i + 1 >= BUTTON_MESSAGES.len() {
+                        button_msg_i = if button_msg_i + 1 >= BUTTON_MESSAGES.len() {
                             0
                         } else {
-                            buttom_msg_i + 1
+                            button_msg_i + 1
                         };
-                        let button_msg = BUTTON_MESSAGES[buttom_msg_i];
+                        let button_msg = BUTTON_MESSAGES[button_msg_i];
 
-                        let test_button_size = label_button_style.compute_size(
+                        let my_label_button_size = label_button_style.compute_size(
                             button_msg,
                             main_font_id,
                             scale_factor,
@@ -273,14 +275,14 @@ fn main() {
 
                         app_window
                             .send_user_event_to_widget(
-                                &mut test_button_ref,
+                                &mut my_label_button_ref,
                                 Box::new(LabelButtonEvent::<MyAction>::SetLabel(button_msg.into())),
                             )
                             .unwrap();
                         app_window
                             .modify_widget_region(
-                                &mut test_button_ref,
-                                Some(test_button_size),
+                                &mut my_label_button_ref,
+                                Some(my_label_button_size),
                                 None,
                                 None,
                                 None,
@@ -293,6 +295,8 @@ fn main() {
             if app_window.is_dirty() {
                 window.request_redraw();
             }
+
+            *control_flow = ControlFlow::Wait
         }
         //Event::DeviceEvent { device_id, event } => {}
         _ => {}
@@ -301,7 +305,7 @@ fn main() {
 
 #[derive(Debug, Clone)]
 enum MyAction {
-    ButtonPressed,
+    LabelButtonPressed,
 }
 
 const BUTTON_MESSAGES: [&str; 5] = [
