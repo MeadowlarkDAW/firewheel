@@ -357,7 +357,7 @@ pub struct PhysicalRect {
 
 impl PhysicalRect {
     pub fn new(pos: PhysicalPoint, size: PhysicalSize) -> Self {
-        Self { pos: pos, size }
+        Self { pos, size }
     }
 
     #[inline]

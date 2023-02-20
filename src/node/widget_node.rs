@@ -47,7 +47,7 @@ pub trait WidgetNode<A: Clone + Send + Sync + 'static> {
 
 pub struct WidgetNodeRequests {
     pub repaint: bool,
-    pub set_recieve_next_animation_event: Option<bool>,
+    pub set_receive_next_animation_event: Option<bool>,
     pub set_pointer_events_listen: Option<bool>,
     pub set_keyboard_events_listen: Option<KeyboardEventsListen>,
     pub set_pointer_lock: Option<SetPointerLockType>,
@@ -58,7 +58,7 @@ impl Default for WidgetNodeRequests {
     fn default() -> Self {
         Self {
             repaint: false,
-            set_recieve_next_animation_event: None,
+            set_receive_next_animation_event: None,
             set_pointer_events_listen: None,
             set_keyboard_events_listen: None,
             set_pointer_lock: None,
