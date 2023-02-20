@@ -1085,8 +1085,8 @@ impl<A: Clone + Send + Sync + 'static> AppWindow<A> {
                 .borrow_mut()
                 .mark_widget_region_dirty(widget_entry);
         }
-        if let Some(recieve_next_animation_event) = requests.set_recieve_next_animation_event {
-            if recieve_next_animation_event {
+        if let Some(receive_next_animation_event) = requests.set_receive_next_animation_event {
+            if receive_next_animation_event {
                 let is_visible = {
                     widget_entry
                         .assigned_region()

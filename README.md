@@ -35,7 +35,7 @@ If you are just looking for a easy-to-use/feature rich GUI toolkit in Rust, plea
     * There is no "widget tree" or DOM. Every widget is essentially "root level", and you get to organize them in your code however you like.
     * There are no "container" or "panel" widgets. You simply define all backgrounds as literally a series of rectangles, lines, and/or textures to draw in a single draw pass on a "background" layer, and then the widget layers are blitted on top. You can of course have as many background layers and widget layers as you want in your application.
 * Layout system
-    * Layout of widgets is performed via a tree of abstract rectangular regions. Each region contains an internal anchor point, a parent achor point, and an offset between those two points. No "Flexbox", "margins", or "padding" logic.
+    * Layout of widgets is performed via a tree of abstract rectangular regions. Each region contains an internal anchor point, a parent anchor point, and an offset between those two points. No "Flexbox", "margins", or "padding" logic.
     * The size, anchors, and anchor offsets are defined manually for each region. However, a change to the size or anchor offset of a container (parent) region will automatically update the position of its child regions.
     * Only widget regions are allowed to paint to the screen. Container (parent) regions are completely abstract, and a widget region cannot be a container region.
     * Any region can be set to be explicitly visible/invisible. A region that is explicitly invisible will have it and all its children automatically culled from both rendering and input logic.
